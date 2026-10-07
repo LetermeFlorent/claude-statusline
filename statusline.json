@@ -1,0 +1,27 @@
+{
+  "bar_width": 8,
+  "bold": true,
+  "glyphs": { "filled": "■", "empty": "■", "half": "▪" },
+  "auto_compact_marker": "ª",
+  "effort_style": "gradient",
+  "segments": { "ctx": true, "5h": true, "7d": true, "model": true },
+  "gradient": { "5h": 0.55, "7d": 0.3 },
+  "terminal_background": "light",
+  "colors": {
+    "ctx_from_light": "#7DB9FF",
+    "ctx_to_light": "#285AB4",
+    "ctx_from_dark": "#96CDFF",
+    "ctx_to_dark": "#4682DC"
+  },
+  "system": {
+    "enabled": true,
+    "metrics": ["ram", "io", "cpu"],
+    "disk_path": "C:\\",
+    "gradient": 0.45,
+    "colors": {
+      "ram": { "ok": "#1E787D" },
+      "dsk": { "ok": "#697855" },
+      "cpu": { "ok": "#375A8C" }
+    }
+  }
+}
