@@ -99,6 +99,8 @@ jobs:
       - name: installeur
         if: matrix.run && runner.os != 'Windows'
         run: |
+          # rustup cherche sa chaine dans le HOME d'origine
+          export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
           export HOME="$RUNNER_TEMP/i"
           mkdir -p "$HOME/.claude-compte2"
           sh install.sh

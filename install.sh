@@ -8,10 +8,10 @@ bin_dir="$main/bin"
 repo="https://github.com/LetermeFlorent/claude-statusline"
 
 mkdir -p "$bin_dir"
-if command -v cargo >/dev/null 2>&1; then
-  (cd "$here" && cargo build --release --quiet --target-dir "$here/target")
+if command -v cargo >/dev/null 2>&1 && (cd "$here" && cargo build --release --quiet --target-dir "$here/target"); then
   cp "$here/target/release/statusline" "$bin_dir/statusline.new"
 else
+  command -v cargo >/dev/null 2>&1 && echo "compilation impossible, passage au binaire publie" >&2
   case "$(uname -s)-$(uname -m)" in
     Linux-x86_64) asset=statusline-linux-x86_64 ;;
     Linux-aarch64 | Linux-arm64) asset=statusline-linux-arm64 ;;
