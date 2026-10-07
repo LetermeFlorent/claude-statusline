@@ -4,6 +4,8 @@ Barre d'état pour Claude Code sous Windows : contexte utilisé, quotas 5 h et 7
 
 ## Installation
 
+Le guide complet, avec la vérification, la mise à jour et la désinstallation, est dans [INSTALL.md](INSTALL.md). Version courte :
+
 ```powershell
 git clone https://github.com/LetermeFlorent/claude-statusline.git
 cd claude-statusline
