@@ -54,6 +54,6 @@ Retirer le bloc `statusLine` du `settings.json` de chaque compte, ou y remettre 
 
 Si Windows bloque l'exécutable après un téléchargement en ZIP, ouvrir ses propriétés et cocher "Débloquer", ou lancer `Unblock-File "$env:USERPROFILE\.claude\bin\statusline.exe"`. L'exécutable n'est pas signé numériquement, ce qui peut déclencher un avertissement de SmartScreen ou de l'antivirus.
 
-Si les quotas 5 h et 7 j affichent `--%`, Claude Code ne les a pas transmis pour cette session ; la barre se remplit quand ils sont disponibles.
+Si les quotas 5 h et 7 j affichent `--%`, Claude Code ne les a pas transmis pour cette session ; la barre se remplit quand ils sont disponibles. Sur un poste multi-comptes, le dépôt `claude-account-menu` rafraîchit ces valeurs à chaque lancement (hook `SessionStart`). Le 5 h reste à `--%` tant que le compte n'a pas de fenêtre de 5 h ouverte, c'est-à-dire avant son premier message.
 
 Si le script d'installation s'arrête sur une erreur de lecture de `settings.json`, le fichier contient probablement du JSON invalide (une virgule en trop, par exemple). Le corriger, puis relancer l'installeur.
