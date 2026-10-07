@@ -1,0 +1,6 @@
+{
+  "name": "barre-etat",
+  "version": "1.0.0",
+  "description": "Barre d'état au-dessus du prompt : contexte, quotas 5 h et 7 j, modèle et effort, puis RAM, disque et processeur",
+  "author": { "name": "LetermeFlorent" }
+}
