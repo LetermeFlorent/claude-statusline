@@ -1,0 +1,128 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            asset: statusline-linux-x86_64
+            run: true
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            asset: statusline-linux-arm64
+            run: true
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            asset: statusline-macos-arm64
+            run: true
+          # Compile sur le runner arm64 sans pouvoir l'y lancer
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            asset: statusline-macos-x86_64
+            run: false
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: statusline-windows-x86_64.exe
+            run: true
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - run: rustup target add ${{ matrix.target }}
+
+      - name: tests unitaires
+        if: matrix.run && runner.os != 'Windows'
+        run: cargo test --locked
+
+      # Les tests ont besoin de std et du CRT : RUSTFLAGS remplace les options
+      # de liaison sans CRT de .cargo/config.toml
+      - name: tests unitaires (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          RUSTFLAGS: -Cdebuginfo=0
+        run: cargo test --locked
+
+      - name: clippy
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: binaire
+        run: |
+          cargo build --release --locked --target ${{ matrix.target }}
+          mkdir dist
+          ext=""
+          [ "$RUNNER_OS" = Windows ] && ext=.exe
+          cp "target/${{ matrix.target }}/release/statusline$ext" "dist/${{ matrix.asset }}"
+          ls -l dist
+
+      - name: essai du binaire
+        if: matrix.run
+        run: |
+          b="dist/${{ matrix.asset }}"
+          export HOME="$RUNNER_TEMP/h" USERPROFILE="$RUNNER_TEMP/h" LOCALAPPDATA="$RUNNER_TEMP/h/local" XDG_STATE_HOME="$RUNNER_TEMP/h/state"
+          mkdir -p "$HOME"
+          "$b" --version
+          "$b" --theme
+          out=$("$b" --demo)
+          echo "$out" | grep -q ctx
+          now=$(date +%s)
+          in='{"model":{"display_name":"Opus"},"context_window":{"context_window_size":200000,"used_percentage":30},"rate_limits":{"five_hour":{"used_percentage":36,"resets_at":'$((now+3600))'}}}'
+          out=$(echo "$in" | "$b")
+          echo "$out" | grep -q 36%
+          sleep 1
+          out=$(echo "$in" | "$b")
+          echo "$out" | tail -n 1 | grep -q cpu
+          "$b" --bench 50
+          "$b" --install
+          grep -q '"statusLine"' "$HOME/.claude/settings.json"
+          "$b" --uninstall
+          if grep -q '"statusLine"' "$HOME/.claude/settings.json"; then exit 1; fi
+          set +e
+          "$b" --inconnu 2>/dev/null
+          [ $? -eq 2 ]
+
+      - name: installeur
+        if: matrix.run && runner.os != 'Windows'
+        run: |
+          export HOME="$RUNNER_TEMP/i"
+          mkdir -p "$HOME/.claude-compte2"
+          sh install.sh
+          grep -q '"statusLine"' "$HOME/.claude/settings.json"
+          grep -q '"statusLine"' "$HOME/.claude-compte2/settings.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -l dist
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "Binaires de la barre pour Linux, macOS et Windows."
