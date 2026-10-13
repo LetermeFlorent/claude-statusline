@@ -47,13 +47,36 @@ foreach ($d in $found) {
   if (-not $dirs.Contains($key)) { $dirs[$key] = $d }
 }
 
-# Le binaire pose lui-meme l'entree statusLine, compte par compte
+# Le binaire pose lui-meme l'entree statusLine, compte par compte.
+# Il reecrit toujours command avec son propre chemin : un chemin perime
+# (migration vers un autre PC ou un autre nom d'utilisateur) est donc repare.
 $prev = $env:CLAUDE_CONFIG_DIR
 try {
   foreach ($d in $dirs.Values) {
+    $old = $null
+    $sfile = Join-Path $d "settings.json"
+    if (Test-Path -LiteralPath $sfile) {
+      try { $old = (Get-Content -LiteralPath $sfile -Raw | ConvertFrom-Json).statusLine.command } catch { $old = $null }
+    }
     $env:CLAUDE_CONFIG_DIR = $d
     & $exe --install
     if ($LASTEXITCODE -ne 0) { Write-Warning ("compte laisse tel quel : " + $d) }
+    elseif ($old -and (($old -replace "/", "\") -ne $exe)) { Write-Host ("chemin perime repare pour " + $d + " (etait : " + $old + ")") }
   }
 } finally { $env:CLAUDE_CONFIG_DIR = $prev }
+
+# Le statusLine global de .claude.json peut lui aussi designer l'ancien poste :
+# il est repare quand il vise un programme absent, sans toucher au reste du fichier.
+$gconf = Join-Path $env:USERPROFILE ".claude.json"
+if (Test-Path -LiteralPath $gconf) {
+  try {
+    $text = Get-Content -LiteralPath $gconf -Raw
+    $m = [regex]::Match($text, '"statusLine"\s*:\s*\{[^}]*"command"\s*:\s*"([^"]+)"')
+    if ($m.Success -and -not (Test-Path -LiteralPath ($m.Groups[1].Value -replace "/", "\"))) {
+      $fixed = $text.Substring(0, $m.Groups[1].Index) + ($exe -replace "\\", "/") + $text.Substring($m.Groups[1].Index + $m.Groups[1].Length)
+      [System.IO.File]::WriteAllText($gconf, $fixed)
+      Write-Host ("statusLine global repare dans " + $gconf + " (etait : " + $m.Groups[1].Value + ")")
+    }
+  } catch { Write-Warning ("fichier global laisse tel quel : " + $gconf) }
+}
 Write-Host "termine, relance Claude Code"

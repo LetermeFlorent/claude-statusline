@@ -19,12 +19,13 @@ cd claude-statusline
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-Le script fait quatre choses :
+Le script fait cinq choses :
 
 1. Il copie le programme dans `%USERPROFILE%\.claude\bin\statusline.exe`. Un ancien programme en cours d'utilisation est d'abord renommé en `.old`, ce qui permet le remplacement même pendant une session Claude Code, puis supprimé quand c'est possible. La copie est débloquée (`Unblock-File`).
 2. Il installe `statusline.json` dans `%USERPROFILE%\.claude`, seulement s'il n'existe pas. Les autres comptes lisent ce même fichier, sauf s'ils ont le leur dans leur dossier.
 3. Il dresse la liste des comptes : `.claude`, chaque dossier `.claude-compte*` du dossier personnel, et chaque `Dir` de `.claude-accounts.json` (le registre de [claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)), sans doublon et sans les dossiers absents. Un registre illisible donne un avertissement.
-4. Pour chaque compte, il lance `statusline.exe --install` avec `CLAUDE_CONFIG_DIR` pointé sur son dossier. Un échec est signalé par "compte laisse tel quel" et n'arrête pas les autres comptes.
+4. Pour chaque compte, il lance `statusline.exe --install` avec `CLAUDE_CONFIG_DIR` pointé sur son dossier. Le chemin `command` est toujours réécrit avec celui du programme : un chemin périmé (ancien PC, ancien nom d'utilisateur) est réparé et signalé par "chemin perime repare". Un échec est signalé par "compte laisse tel quel" et n'arrête pas les autres comptes.
+5. Il répare le `statusLine` global de `%USERPROFILE%\.claude.json` quand il désigne un programme absent, sans toucher au reste du fichier.
 
 Avec `-Build`, le script compile les sources (`cargo build --release`, Rust requis) au lieu de prendre le binaire du dépôt.
 
@@ -38,7 +39,7 @@ sh install.sh
 
 Le programme va dans `~/.claude/bin/statusline`. Si `cargo` est présent, le script compile les sources dans le dossier `target` du dépôt. Si `cargo` manque, ou si la compilation échoue (le script affiche alors "compilation impossible, passage au binaire publie"), il télécharge le binaire de la dernière version publiée qui correspond à `uname`. Sur un autre système ou une autre architecture, il s'arrête avec un message qui renvoie vers Rust.
 
-Le binaire est d'abord écrit en `statusline.new`, puis renommé, pour qu'une barre en cours d'exécution garde l'ancien fichier jusqu'à la fin. La suite est la même que sous Windows : `statusline.json` installé s'il manque, puis `--install` pour `.claude`, chaque `.claude-compte*` et chaque `Dir` du registre. Le registre est lu par `grep` et `sed`, sans analyseur JSON : il doit garder le format écrit par claude-account-menu.
+Le binaire est d'abord écrit en `statusline.new`, puis renommé, pour qu'une barre en cours d'exécution garde l'ancien fichier jusqu'à la fin. La suite est la même que sous Windows : `statusline.json` installé s'il manque, puis `--install` pour `.claude`, chaque `.claude-compte*` et chaque `Dir` du registre (les chemins périmés y sont réparés de la même façon), et réparation du `statusLine` global de `~/.claude.json` quand il désigne un programme absent. Le registre est lu par `grep` et `sed`, sans analyseur JSON : il doit garder le format écrit par claude-account-menu. La réparation du fichier global demande `python3`, sinon elle est sautée avec un avertissement.
 
 ## Ce que fait --install
 
@@ -100,6 +101,8 @@ Supprimer ensuite le programme, `~/.claude/bin/statusline` (`statusline.exe` sou
 - Linux : `~/.local/state/claude-statusline`, ou `$XDG_STATE_HOME/claude-statusline`.
 
 ## En cas de problème
+
+Si la barre a disparu après une migration vers un autre PC ou un autre nom d'utilisateur, le chemin inscrit dans `statusLine` désigne l'ancien poste (`C:/Users/<ancien>/...`) et Claude Code ne trouve plus le programme. Faire `git pull` dans le dossier cloné puis relancer le script d'installation : il repose le programme, réécrit le chemin dans le `settings.json` de chaque compte et répare le `statusLine` global de `~/.claude.json` quand il désigne un programme absent.
 
 Si Windows bloque le programme, lancer `Unblock-File "$env:USERPROFILE\.claude\bin\statusline.exe"`. L'installeur le fait déjà, mais le déblocage peut échouer, ou le dépôt peut avoir été récupéré en ZIP. Le programme n'est pas signé numériquement, ce qui peut déclencher un avertissement de SmartScreen ou de l'antivirus.
 

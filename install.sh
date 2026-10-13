@@ -57,4 +57,21 @@ if [ -f "$reg" ]; then
     install_for "$HOME/$rel"
   done
 fi
+# Le statusLine global de ~/.claude.json peut lui aussi designer l'ancien poste
+# (migration vers un autre PC ou un autre nom d'utilisateur) : il est repare
+# quand il vise un programme absent, sans toucher au reste du fichier.
+gconf="$HOME/.claude.json"
+if [ -f "$gconf" ] && command -v python3 >/dev/null 2>&1; then
+  python3 - "$gconf" "$bin_dir/statusline" <<'EOF' || echo "fichier global laisse tel quel : $gconf" >&2
+import os, re, sys
+path, exe = sys.argv[1], sys.argv[2]
+with open(path, "r", encoding="utf-8") as f:
+    text = f.read()
+m = re.search(r'"statusLine"\s*:\s*\{[^}]*"command"\s*:\s*"([^"]+)"', text)
+if m and not os.path.exists(m.group(1)):
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(text[:m.start(1)] + exe + text[m.end(1):])
+    print("statusLine global repare dans " + path + " (etait : " + m.group(1) + ")")
+EOF
+fi
 echo "termine, relancer Claude Code"
