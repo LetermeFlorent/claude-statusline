@@ -1,7 +1,15 @@
 #[cfg(not(windows))]
+mod spawn_unix;
+#[cfg(not(windows))]
+pub use spawn_unix::*;
+#[cfg(not(windows))]
 mod unix;
 #[cfg(not(windows))]
 pub use unix::*;
+#[cfg(windows)]
+mod spawn_windows;
+#[cfg(windows)]
+pub use spawn_windows::*;
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]

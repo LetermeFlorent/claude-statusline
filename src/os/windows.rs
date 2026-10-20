@@ -67,9 +67,10 @@ const GENERIC_WRITE: u32 = 0x4000_0000;
 const SHARE_ALL: u32 = 7;
 const OPEN_EXISTING: u32 = 3;
 const CREATE_ALWAYS: u32 = 2;
+const CREATE_NEW: u32 = 1;
 const EPOCH: u64 = 116_444_736_000_000_000;
 
-fn wide(s: &str) -> Vec<u16> {
+pub(super) fn wide(s: &str) -> Vec<u16> {
     let mut v: Vec<u16> = s.encode_utf16().collect();
     v.push(0);
     v
@@ -196,6 +197,25 @@ pub fn write_atomic(path: &str, data: &[u8]) -> bool {
 pub fn remove(path: &str) -> bool {
     let w = wide(path);
     unsafe { DeleteFileW(w.as_ptr()) != 0 }
+}
+
+pub fn rename(from: &str, to: &str) -> bool {
+    let (f, t) = (wide(from), wide(to));
+    unsafe { MoveFileExW(f.as_ptr(), t.as_ptr(), 1) != 0 }
+}
+
+pub fn create_new(path: &str) -> bool {
+    let w = wide(path);
+    let h = unsafe { CreateFileW(w.as_ptr(), GENERIC_WRITE, 0, null_mut(), CREATE_NEW, 0x80, 0) };
+    if h == INVALID {
+        return false;
+    }
+    unsafe { CloseHandle(h) };
+    true
+}
+
+pub fn make_executable(path: &str) -> bool {
+    exists(path)
 }
 
 // (taille, date de modification en secondes Unix)

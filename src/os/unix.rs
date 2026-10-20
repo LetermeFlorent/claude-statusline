@@ -38,6 +38,19 @@ pub fn remove(path: &str) -> bool {
     std::fs::remove_file(path).is_ok()
 }
 
+pub fn rename(from: &str, to: &str) -> bool {
+    std::fs::rename(from, to).is_ok()
+}
+
+pub fn create_new(path: &str) -> bool {
+    std::fs::OpenOptions::new().write(true).create_new(true).open(path).is_ok()
+}
+
+pub fn make_executable(path: &str) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).is_ok()
+}
+
 // (taille, date de modification en secondes Unix)
 pub fn stamp(path: &str) -> Option<(u64, i64)> {
     use std::os::unix::fs::MetadataExt;
@@ -327,7 +340,7 @@ mod sys {
     // Nanosecondes : (temps ecoule, temps de lecture et d'ecriture de tous les disques)
     pub fn disk(_path: &str) -> Option<(i64, i64)> {
         let mut iter = 0u32;
-        let matching = unsafe { IOServiceMatching(b"IOBlockStorageDriver\0".as_ptr()) };
+        let matching = unsafe { IOServiceMatching(c"IOBlockStorageDriver".as_ptr().cast()) };
         if matching.is_null() || unsafe { IOServiceGetMatchingServices(0, matching, &mut iter) } != 0 {
             return None;
         }
@@ -367,7 +380,7 @@ mod sys {
     pub fn memory() -> Option<(f64, f64)> {
         let mut total = 0u64;
         let mut len = 8usize;
-        let r = unsafe { sysctlbyname(b"hw.memsize\0".as_ptr(), &mut total as *mut u64 as *mut c_void, &mut len, std::ptr::null_mut(), 0) };
+        let r = unsafe { sysctlbyname(c"hw.memsize".as_ptr().cast(), &mut total as *mut u64 as *mut c_void, &mut len, std::ptr::null_mut(), 0) };
         if r != 0 || total == 0 {
             return None;
         }

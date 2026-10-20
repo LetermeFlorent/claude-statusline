@@ -2,10 +2,13 @@ use crate::compact;
 use crate::config::{Config, Metric};
 use crate::json::{self, Value};
 use crate::os;
+use crate::portable;
 use crate::render::{self, Data, SysValue};
 use crate::session::Session;
 use crate::state::{self, State};
 use crate::theme;
+use crate::update;
+use crate::update_watch;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -20,6 +23,7 @@ barre sur la sortie standard.
   --demo        affiche un rendu d'exemple, sans Claude Code
   --bench [n]   cout du travail seul, lancement du processus exclu
   --theme       fond detecte pour le terminal : light ou dark
+  --update      installe la derniere version publiee sur GitHub
   --version     numero de version
   --help        cette aide
 
@@ -63,17 +67,17 @@ fn load_state() -> State {
     State::parse(&state_path().and_then(|p| os::read_text(&p)).unwrap_or_default())
 }
 
-fn save_state(state: &State) {
+fn save_state(state: &State) -> bool {
     if !state.changed() {
-        return;
+        return false;
     }
-    let Some(p) = state_path() else { return };
+    let Some(p) = state_path() else { return false };
     if let Some(d) = os::parent(&p) {
         if !os::exists(d) {
             os::mkdirs(d);
         }
     }
-    os::write_atomic(&p, state.text().as_bytes());
+    os::write_atomic(&p, state.text().as_bytes())
 }
 
 fn load_config() -> Config {
@@ -136,7 +140,7 @@ fn read_file(p: &str) -> Option<String> {
     }
 }
 
-fn run(input: &str, now: f64, laps: &mut Laps) -> (String, State) {
+fn run(input: &str, now: f64, laps: &mut Laps) -> (String, State, bool) {
     let cfg = load_config();
     laps.lap(1);
     let s = Session::parse(input);
@@ -153,10 +157,11 @@ fn run(input: &str, now: f64, laps: &mut Laps) -> (String, State) {
     };
     let sys = sample(&cfg, &mut state);
     laps.lap(0);
-    let data = Data { ctx: s.ctx, window, quotas, model: s.model, effort: s.effort, sys };
+    let updating = update_watch::busy(now);
+    let data = Data { ctx: s.ctx, window, quotas, model: s.model, effort: s.effort, sys, updating };
     let out = render::render(&cfg, &cfg.colors(light), &data, now);
     laps.lap(3);
-    (out, state)
+    (out, state, cfg.auto_update)
 }
 
 fn demo_input(now: f64) -> String {
@@ -180,7 +185,7 @@ fn bench(n: usize) {
     let start = os::ticks();
     for _ in 0..n {
         laps.last = os::ticks();
-        let (out, state) = run(&input, os::now(), &mut laps);
+        let (out, state, _) = run(&input, os::now(), &mut laps);
         bytes = out.len();
         let w = os::ticks();
         if let Some(t) = &target {
@@ -248,7 +253,7 @@ fn install() -> i32 {
         _ => Value::Obj(Vec::new()),
     };
     line.set("type", Value::Str(String::from("command")));
-    line.set("command", Value::Str(exe.replace('\\', "/")));
+    line.set("command", Value::Str(portable::command(&exe)));
     if line.get("refreshInterval").is_none() {
         line.set("refreshInterval", Value::Num(3.0, String::from("3")));
     }
@@ -295,14 +300,18 @@ pub fn main(args: Vec<String>) -> i32 {
     match args.get(1).map(|s| s.as_str()) {
         None => {
             let input = os::stdin().unwrap_or_default();
-            let (out, state) = run(&input, os::now(), &mut Laps::new());
+            let now = os::now();
+            let (out, mut state, auto_update) = run(&input, now, &mut Laps::new());
             os::out(&out);
-            save_state(&state);
+            let due = auto_update && update_watch::due(&mut state, now);
+            if save_state(&state) && due {
+                update_watch::launch();
+            }
             0
         }
         Some("--demo") => {
             let now = os::now();
-            let (out, _) = run(&demo_input(now), now, &mut Laps::new());
+            let (out, _, _) = run(&demo_input(now), now, &mut Laps::new());
             os::out(&out);
             0
         }
@@ -321,6 +330,7 @@ pub fn main(args: Vec<String>) -> i32 {
         }
         Some("--install") => install(),
         Some("--uninstall") => uninstall(),
+        Some("--update") => update::run(),
         Some("--version") | Some("-V") => {
             os::out(concat!("statusline ", env!("CARGO_PKG_VERSION"), "\n"));
             0

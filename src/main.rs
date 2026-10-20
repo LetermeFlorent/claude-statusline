@@ -11,10 +11,13 @@ mod config;
 mod json;
 mod num;
 mod os;
+mod portable;
 mod render;
 mod session;
 mod state;
 mod theme;
+mod update;
+mod update_watch;
 
 #[cfg(not(windows))]
 fn main() {

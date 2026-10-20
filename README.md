@@ -7,7 +7,7 @@ ctx ■■▪■■■■■ 340k/1M | 5h ■■▪■■■■■ 36% 3h29m | 7
 ram ■■■■■▪■■ 11.3/15.3G | C: ▪■■■■■■■ 2% | cpu ▪■■■■■■■ 8%
 ```
 
-C'est un petit programme Rust sans dépendance. Claude Code le lance toutes les 3 secondes par le réglage `statusLine` : il lit le JSON de la session sur son entrée standard, écrit la barre sur sa sortie standard et rend la main en un peu plus d'une milliseconde de travail. Sous Windows, le binaire se passe de la bibliothèque C et pèse environ 200 Ko.
+C'est un petit programme Rust sans dépendance. Claude Code le lance toutes les 3 secondes par le réglage `statusLine` : il lit le JSON de la session sur son entrée standard, écrit la barre sur sa sortie standard et rend la main en un peu plus d'une milliseconde de travail. Sous Windows, le binaire se passe de la bibliothèque C et pèse environ 220 Ko. Il se met à jour seul depuis les versions publiées sur GitHub.
 
 ## Installation
 
@@ -56,7 +56,7 @@ Dans une barre, les carrés s'éclaircissent légèrement de gauche à droite su
 
 ### Quand un élément disparaît
 
-Les segments `5h` et `7d` restent masqués tant qu'aucun quota n'est connu pour le compte : ni dans le JSON de la session, ni dans le fichier d'état depuis moins de 10 minutes. La seconde ligne disparaît quand `system.enabled` vaut `false`, ou quand la liste `system.metrics` ne contient aucun nom reconnu. Chaque segment peut aussi être masqué par le réglage `segments`. Si les quatre le sont, la première ligne reste vide.
+Les segments `5h` et `7d` restent masqués tant qu'aucun quota n'est connu pour le compte : ni dans le JSON de la session, ni dans le fichier d'état depuis moins de 10 minutes. La seconde ligne disparaît quand `system.enabled` vaut `false`, ou quand la liste `system.metrics` ne contient aucun nom reconnu. Chaque segment peut aussi être masqué par le réglage `segments`. Si les quatre le sont, la première ligne reste vide. Pendant une mise à jour, `update` s'affiche au bout de la seconde ligne, et sur une ligne à lui quand la seconde ligne est coupée.
 
 ## Quotas 5 h et 7 j
 
@@ -148,6 +148,7 @@ Il est relu à chaque rafraîchissement. Le JSON y tolère les commentaires `//`
 | `system.disk_path` | `C:\` sous Windows, `/` ailleurs | disque suivi |
 | `system.colors.ram.ok`, `.dsk.ok`, `.cpu.ok` | `#1E787D`, `#697855`, `#375A8C` | teinte normale de chaque métrique |
 | `system.colors.<métrique>.warn`, `.hot` | `#BE823C`, `#C83C3C` | teintes d'alerte et critique |
+| `auto_update` | `true` | `false` coupe la recherche automatique de mises à jour |
 
 Les noms de `system.metrics` s'écrivent en minuscules, et les noms inconnus sont ignorés. Une liste vide, ou absente, revient aux trois métriques. La couleur du disque se règle sous `dsk`, même si la métrique s'appelle `io`.
 
@@ -155,7 +156,7 @@ Les noms de `system.metrics` s'écrivent en minuscules, et les noms inconnus son
 
 ## Ligne de commande
 
-Le programme s'installe dans `~/.claude/bin`, sous le nom `statusline.exe` sous Windows et `statusline` ailleurs. Ce dossier n'est pas dans le PATH, il faut donc l'appeler par son chemin complet, par exemple `~/.claude/bin/statusline --theme`.
+Le programme s'installe dans `~/.claude/bin`, sous le nom `statusline.exe` sous Windows et `statusline` ailleurs. Ce dossier n'est pas dans le PATH, il faut donc l'appeler par son chemin complet, par exemple `~/.claude/bin/statusline --theme`. C'est sous cette forme, avec `~`, que `--install` l'inscrit dans `settings.json` : la même commande vaut sur tous les PC, quel que soit le nom d'utilisateur.
 
 | Commande | Effet |
 |---|---|
@@ -165,10 +166,21 @@ Le programme s'installe dans `~/.claude/bin`, sous le nom `statusline.exe` sous 
 | `--theme` | affiche le fond retenu, `light` ou `dark` |
 | `--install` | pose le bloc `statusLine` dans le `settings.json` du compte courant (voir [INSTALL.md](INSTALL.md)) |
 | `--uninstall` | retire ce bloc |
+| `--update` | installe la dernière version publiée si elle est plus récente (voir plus bas) |
 | `--version`, `-V` | affiche `statusline` suivi du numéro de version |
 | `--help`, `-h` | affiche l'aide |
 
-Seul le premier argument est lu. Le code de sortie vaut 0 en cas de succès, 1 quand `--install` ou `--uninstall` échoue, 2 pour un argument inconnu, qui est rappelé avec l'aide.
+Seul le premier argument est lu. Le code de sortie vaut 0 en cas de succès, 1 quand `--install`, `--uninstall` ou `--update` échoue, 2 pour un argument inconnu, qui est rappelé avec l'aide.
+
+## Mise à jour automatique
+
+Au plus toutes les 6 heures, un rendu de la barre lance `statusline --update` en arrière-plan, sans fenêtre et en priorité basse, puis rend la main sans l'attendre. Ce lancement n'a lieu que si le programme tourne depuis `~/.claude/bin` et qu'un binaire est publié pour le système. L'heure de la dernière recherche est gardée dans le fichier d'état, sous la clé `update_at`.
+
+`--update` demande la dernière version publiée à l'API GitHub, avec `curl`. Si elle est plus récente, il télécharge le binaire du système à côté du programme (`statusline.new.exe`, ou `statusline.new`), vérifie qu'il répond à `--version`, puis le met à la place de l'ancien. Sous Windows, le programme en cours d'exécution ne peut pas être écrasé : il est renommé `statusline.exe.old-<horodatage>`, et ce fichier est supprimé à la recherche suivante.
+
+Pendant le téléchargement, puis 5 secondes après le remplacement, la barre affiche `update`. Le rafraîchissement suivant lance le nouveau programme, sans redémarrer Claude Code. Un échec (réseau coupé, binaire absent, remplacement refusé) laisse l'ancien programme en place jusqu'à la recherche suivante.
+
+Un verrou `update.lock`, dans le dossier du fichier d'état, empêche deux mises à jour en même temps. Il est ignoré au bout de 15 minutes, tout comme le marqueur `updating` qui fait afficher `update`. `"auto_update": false` dans `statusline.json` coupe la recherche automatique, et `statusline --update` reste utilisable à la main.
 
 ## Fichier d'état
 
@@ -178,7 +190,7 @@ Les compteurs, les quotas et le thème détecté sont rangés dans un seul fichi
 - macOS : `~/Library/Application Support/claude-statusline/state` ;
 - Linux : `$XDG_STATE_HOME/claude-statusline/state`, à défaut `~/.local/state/claude-statusline/state`.
 
-C'est un fichier texte, une ligne `clé valeur` par entrée. On y trouve les quotas de chaque compte (`q_at@<compte>`, `q5_at@<compte>`, `q5_pct@<compte>`, `q7_at@<compte>`, `q7_pct@<compte>`), le thème (`bg_host`, `bg_stamp`), le seuil d'auto-compactage (`compact_window`, `compact_key`, `compact_stamp`, `compact_at`) et les derniers relevés du disque et du processeur (`io_clock`, `io_value`, `cpu_clock`, `cpu_value`). Les clés inconnues sont conservées. Les clés de la version 1 (`bg_at`, et les quotas sans suffixe de compte) sont retirées au premier passage.
+C'est un fichier texte, une ligne `clé valeur` par entrée. On y trouve les quotas de chaque compte (`q_at@<compte>`, `q5_at@<compte>`, `q5_pct@<compte>`, `q7_at@<compte>`, `q7_pct@<compte>`), le thème (`bg_host`, `bg_stamp`), le seuil d'auto-compactage (`compact_window`, `compact_key`, `compact_stamp`, `compact_at`) les derniers relevés du disque et du processeur (`io_clock`, `io_value`, `cpu_clock`, `cpu_value`) et l'heure de la dernière recherche de mise à jour (`update_at`). Les clés inconnues sont conservées. Les clés de la version 1 (`bg_at`, et les quotas sans suffixe de compte) sont retirées au premier passage.
 
 Le fichier n'est réécrit que si son contenu change, par un fichier temporaire ensuite renommé, de sorte qu'aucune lecture ne tombe sur un fichier à moitié écrit. Sans dossier personnel connu (`HOME`, ou `USERPROFILE` sous Windows), rien n'est écrit. `--bench` écrit à côté un fichier `state.bench` et le supprime à la fin.
 
@@ -198,6 +210,7 @@ Le programme lit les variables suivantes, toutes facultatives :
 | `WT_PROFILE_ID` | profil Windows Terminal en cours |
 | `GTK_THEME`, `XDG_CURRENT_DESKTOP` | thème du système sous Linux |
 | `HOME`, `USERPROFILE`, `LOCALAPPDATA`, `APPDATA`, `XDG_STATE_HOME`, `XDG_CONFIG_HOME` | emplacement des fichiers |
+| `SystemRoot` | emplacement de `curl.exe` sous Windows, pour `--update` |
 
 Une variable vide compte comme absente.
 
@@ -213,9 +226,9 @@ Les tests (`cargo test`) tournent tels quels sous Linux et macOS. Sous Windows, 
 
 ## CI et versions publiées
 
-La CI tourne à chaque envoi sur `main`, à chaque étiquette `v*` et sur chaque pull request. Pour chacune des cinq cibles, elle compile en mode publication puis essaie le binaire : version, thème, rendu d'exemple, lecture d'un JSON de session, mesure, installation puis désinstallation, et refus d'un argument inconnu. Elle lance aussi les tests unitaires (sauf pour macOS Intel), `clippy` sous Linux, et un essai complet de `install.sh` sous Linux et macOS.
+La CI tourne à chaque envoi sur `main`, à chaque étiquette `v*` et sur chaque pull request. Pour chacune des cinq cibles, elle compile en mode publication puis essaie le binaire : version, thème, rendu d'exemple, lecture d'un JSON de session, mesure, installation puis désinstallation, installation depuis `~/.claude/bin` avec sa commande en `~`, et refus d'un argument inconnu. Elle lance aussi les tests unitaires (sauf pour macOS Intel), `clippy` sous Linux, et un essai complet de `install.sh` sous Linux et macOS.
 
-Une étiquette `v*` publie une version avec ces binaires :
+Une étiquette `v*` publie une version avec les binaires ci-dessous. Elle doit reprendre la version de `Cargo.toml` (`v2.1.0` pour `2.1.0`), sinon la CI échoue avant de compiler. C'est cette version que la mise à jour automatique compare à la sienne.
 
 | Fichier | Système |
 |---|---|
@@ -229,6 +242,6 @@ Une étiquette `v*` publie une version avec ces binaires :
 
 ## Limites
 
-Le binaire macOS Intel est compilé par la CI sans y être lancé. Il n'y a pas de binaire Windows ARM64 natif. Sur les autres Unix (BSD par exemple), la barre fonctionne sans métriques du poste ni thème du système : `--%` partout sur la seconde ligne et fond sombre, sauf réglage.
+Le binaire macOS Intel est compilé par la CI sans y être lancé. Il n'y a pas de binaire Windows ARM64 natif. Sur les autres Unix (BSD par exemple), la barre fonctionne sans métriques du poste, sans thème du système et sans mise à jour automatique : `--%` partout sur la seconde ligne et fond sombre, sauf réglage. La mise à jour automatique demande `curl`, livré avec Windows 10 depuis la version 1803 et avec macOS, à installer sur certains Linux.
 
 Les couleurs sont envoyées en 24 bits, sans repli sur 256 couleurs, et la variable `NO_COLOR` n'est pas prise en compte. La détection du fond par le terminal hôte couvre VS Code et ses dérivés, Windows Terminal, Zed et Ghostty. Les autres terminaux passent par `COLORFGBG` ou le thème du système, et `STATUSLINE_BG` permet de forcer le choix.

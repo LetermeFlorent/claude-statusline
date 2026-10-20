@@ -42,6 +42,11 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v5
+
+      - name: version du tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: test "v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)" = "$GITHUB_REF_NAME"
+
       - run: rustup target add ${{ matrix.target }}
 
       - name: tests unitaires
@@ -92,6 +97,12 @@ jobs:
           grep -q '"statusLine"' "$HOME/.claude/settings.json"
           "$b" --uninstall
           if grep -q '"statusLine"' "$HOME/.claude/settings.json"; then exit 1; fi
+          ext=""
+          [ "$RUNNER_OS" = Windows ] && ext=.exe
+          mkdir -p "$HOME/.claude/bin"
+          cp "$b" "$HOME/.claude/bin/statusline$ext"
+          "$HOME/.claude/bin/statusline$ext" --install
+          grep -q "\"~/.claude/bin/statusline$ext\"" "$HOME/.claude/settings.json"
           set +e
           "$b" --inconnu 2>/dev/null
           [ $? -eq 2 ]
@@ -104,8 +115,8 @@ jobs:
           export HOME="$RUNNER_TEMP/i"
           mkdir -p "$HOME/.claude-compte2"
           sh install.sh
-          grep -q '"statusLine"' "$HOME/.claude/settings.json"
-          grep -q '"statusLine"' "$HOME/.claude-compte2/settings.json"
+          grep -q '"~/.claude/bin/statusline"' "$HOME/.claude/settings.json"
+          grep -q '"~/.claude/bin/statusline"' "$HOME/.claude-compte2/settings.json"
 
       - uses: actions/upload-artifact@v4
         with:

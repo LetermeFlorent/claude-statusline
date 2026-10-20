@@ -49,6 +49,7 @@ pub struct Config {
     pub sys_enabled: bool,
     pub metrics: Vec<Metric>,
     pub disk_path: String,
+    pub auto_update: bool,
 }
 
 pub struct Colors {
@@ -169,6 +170,7 @@ impl Config {
             sys_enabled: sysget("enabled").and_then(|v| v.bool()) != Some(false),
             metrics,
             disk_path,
+            auto_update: raw.get("auto_update").and_then(|v| v.bool()) != Some(false),
             raw,
         }
     }
@@ -221,6 +223,8 @@ mod tests {
         assert!(c.bold);
         assert_eq!(c.empty, "");
         assert_eq!(c.metrics, [Metric::Io, Metric::Io]);
+        assert!(c.auto_update);
+        assert!(!Config::parse(Some("{\"auto_update\": false}")).auto_update);
         assert_eq!(Config::parse(Some("{\"bar_width\": 1000}")).width, 40);
         assert_eq!(Config::parse(Some("{\"bar_width\": -3}")).width, 1);
         assert_eq!(Config::parse(Some("[1]")).width, 8);

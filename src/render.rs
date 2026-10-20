@@ -32,6 +32,7 @@ pub struct Data {
     pub model: String,
     pub effort: Option<String>,
     pub sys: Vec<SysValue>,
+    pub updating: bool,
 }
 
 const RESET: &str = "\x1b[0m";
@@ -336,12 +337,16 @@ pub fn render(cfg: &Config, col: &Colors, d: &Data, now: f64) -> String {
         o.sep(&mut first);
         o.model(d);
     }
-    if !d.sys.is_empty() {
+    if !d.sys.is_empty() || d.updating {
         o.s.push('\n');
-        let mut first = true;
+        first = true;
         for v in &d.sys {
             o.sep(&mut first);
             o.system(v);
+        }
+        if d.updating {
+            o.sep(&mut first);
+            o.label("update");
         }
     }
     o.s.push_str(RESET);

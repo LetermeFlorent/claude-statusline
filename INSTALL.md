@@ -21,11 +21,11 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 Le script fait cinq choses :
 
-1. Il copie le programme dans `%USERPROFILE%\.claude\bin\statusline.exe`. Un ancien programme en cours d'utilisation est d'abord renommé en `.old`, ce qui permet le remplacement même pendant une session Claude Code, puis supprimé quand c'est possible. La copie est débloquée (`Unblock-File`).
+1. Il copie le programme dans `%USERPROFILE%\.claude\bin\statusline.exe`. Un ancien programme en cours d'utilisation est d'abord renommé en `statusline.exe.old-<horodatage>`, ce qui permet le remplacement même pendant une session Claude Code, puis supprimé quand c'est possible, avec les copies `.old` laissées par une mise à jour automatique. La copie est débloquée (`Unblock-File`).
 2. Il installe `statusline.json` dans `%USERPROFILE%\.claude`, seulement s'il n'existe pas. Les autres comptes lisent ce même fichier, sauf s'ils ont le leur dans leur dossier.
 3. Il dresse la liste des comptes : `.claude`, chaque dossier `.claude-compte*` du dossier personnel, et chaque `Dir` de `.claude-accounts.json` (le registre de [claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)), sans doublon et sans les dossiers absents. Un registre illisible donne un avertissement.
-4. Pour chaque compte, il lance `statusline.exe --install` avec `CLAUDE_CONFIG_DIR` pointé sur son dossier. Le chemin `command` est toujours réécrit avec celui du programme : un chemin périmé (ancien PC, ancien nom d'utilisateur) est réparé et signalé par "chemin perime repare". Un échec est signalé par "compte laisse tel quel" et n'arrête pas les autres comptes.
-5. Il répare le `statusLine` global de `%USERPROFILE%\.claude.json` quand il désigne un programme absent, sans toucher au reste du fichier.
+4. Pour chaque compte, il lance `statusline.exe --install` avec `CLAUDE_CONFIG_DIR` pointé sur son dossier. La commande est réécrite sous sa forme portable, `~/.claude/bin/statusline.exe` : une autre commande, comme le chemin d'un ancien PC ou d'un ancien nom d'utilisateur, est remplacée et signalée par "commande remplacee pour". Un échec est signalé par "compte laisse tel quel" et n'arrête pas les autres comptes.
+5. Il répare le `statusLine` global de `%USERPROFILE%\.claude.json` quand il désigne un programme absent, avec la même commande, sans toucher au reste du fichier.
 
 Avec `-Build`, le script compile les sources (`cargo build --release`, Rust requis) au lieu de prendre le binaire du dépôt.
 
@@ -46,7 +46,7 @@ Le binaire est d'abord écrit en `statusline.new`, puis renommé, pour qu'une ba
 `--install` modifie le `settings.json` du compte courant : celui du dossier `CLAUDE_CONFIG_DIR` s'il est défini, sinon `~/.claude/settings.json`. Les étapes sont les suivantes :
 
 - Une copie du fichier est gardée à côté, sous le nom `settings.json.bak-<horodatage>`, où l'horodatage est en secondes depuis 1970 (`-1`, `-2` sont ajoutés en cas de collision). Il n'y a pas de copie si le fichier n'existait pas.
-- Le bloc `statusLine` reçoit `"type": "command"` et `"command"` avec le chemin du programme qui exécute la commande, écrit avec des `/`. `refreshInterval` est mis à 3 seulement s'il manque, et les autres clés du bloc sont conservées.
+- Le bloc `statusLine` reçoit `"type": "command"` et `"command"`. Quand le programme est dans le dossier personnel, la commande part de `~` : `~/.claude/bin/statusline.exe` sous Windows, `~/.claude/bin/statusline` ailleurs. Elle vaut alors sur tous les PC, ce qui permet de synchroniser `settings.json` entre postes. Le chemin complet, écrit avec des `/`, est gardé quand le programme est hors du dossier personnel, quand la suite de son chemin contient une espace, ou quand `HOME` désigne un autre dossier que `USERPROFILE` sous Windows. `refreshInterval` est mis à 3 seulement s'il manque, et les autres clés du bloc sont conservées.
 - Le fichier est réécrit avec une indentation de 2 espaces et ses clés triées par ordre alphabétique. Les valeurs ne changent pas, mais la mise en forme et l'ordre des clés, oui.
 - Si aucun `statusline.json` n'est trouvé, un modèle réduit est écrit dans le dossier du compte.
 
@@ -60,11 +60,11 @@ Fermer puis relancer Claude Code : la barre s'affiche sous le prompt. Pour essay
 ~/.claude/bin/statusline --demo
 ```
 
-Sous Windows, `& "$env:USERPROFILE\.claude\bin\statusline.exe" --demo`. Deux lignes de barres doivent s'afficher. Si rien n'apparaît dans Claude Code alors que ce test fonctionne, ouvrir le `settings.json` du compte et vérifier la présence du bloc suivant, avec le chemin du poste :
+Sous Windows, `& "$env:USERPROFILE\.claude\bin\statusline.exe" --demo`. Deux lignes de barres doivent s'afficher. Si rien n'apparaît dans Claude Code alors que ce test fonctionne, ouvrir le `settings.json` du compte et vérifier la présence du bloc suivant (`~/.claude/bin/statusline` hors Windows) :
 
 ```json
 "statusLine": {
-  "command": "C:/Users/<utilisateur>/.claude/bin/statusline.exe",
+  "command": "~/.claude/bin/statusline.exe",
   "refreshInterval": 3,
   "type": "command"
 }
@@ -88,13 +88,17 @@ Une liste `metrics` vide revient aux trois métriques : pour tout masquer, il fa
 
 ## Mettre à jour
 
-Faire `git pull` dans le dossier cloné et relancer le script d'installation. Le programme est remplacé, même si une session Claude Code tourne. `statusline.json` et le reste des réglages sont conservés, et chaque `settings.json` reçoit une nouvelle copie `.bak-`.
+La barre se met à jour seule : au plus toutes les 6 heures, elle cherche une version plus récente sur GitHub, l'installe en arrière-plan et affiche `update` le temps du remplacement. Claude Code n'a pas à redémarrer. Le détail est dans la section "Mise à jour automatique" du README, et `"auto_update": false` dans `statusline.json` la coupe.
+
+`statusline --update` lance la même mise à jour à la main et affiche son résultat : "deja a jour", "mise a jour : 2.1.0 -> v2.2.0", ou la raison d'un échec.
+
+On peut aussi faire `git pull` dans le dossier cloné et relancer le script d'installation. Le programme est remplacé, même si une session Claude Code tourne. `statusline.json` et le reste des réglages sont conservés, et chaque `settings.json` reçoit une nouvelle copie `.bak-`.
 
 ## Désinstaller
 
 `statusline --uninstall` retire le bloc `statusLine` du compte courant, après une copie `settings.json.bak-<horodatage>`, et réécrit le fichier avec ses clés triées. Pour un autre compte, définir `CLAUDE_CONFIG_DIR` avec son dossier avant de lancer la commande. Si le compte n'a pas de bloc `statusLine`, la commande l'indique et ne touche à rien.
 
-Supprimer ensuite le programme, `~/.claude/bin/statusline` (`statusline.exe` sous Windows). Si on n'en veut plus, supprimer aussi `~/.claude/statusline.json`, les éventuels `statusline.json` des dossiers de comptes, les copies `settings.json.bak-*`, et le dossier d'état :
+Supprimer ensuite le programme, `~/.claude/bin/statusline` (`statusline.exe` sous Windows, avec les éventuels `statusline.exe.old-*`). Si on n'en veut plus, supprimer aussi `~/.claude/statusline.json`, les éventuels `statusline.json` des dossiers de comptes, les copies `settings.json.bak-*`, et le dossier d'état :
 
 - Windows : `%LOCALAPPDATA%\claude-statusline` ;
 - macOS : `~/Library/Application Support/claude-statusline` ;
@@ -102,7 +106,9 @@ Supprimer ensuite le programme, `~/.claude/bin/statusline` (`statusline.exe` sou
 
 ## En cas de problème
 
-Si la barre a disparu après une migration vers un autre PC ou un autre nom d'utilisateur, le chemin inscrit dans `statusLine` désigne l'ancien poste (`C:/Users/<ancien>/...`) et Claude Code ne trouve plus le programme. Faire `git pull` dans le dossier cloné puis relancer le script d'installation : il repose le programme, réécrit le chemin dans le `settings.json` de chaque compte et répare le `statusLine` global de `~/.claude.json` quand il désigne un programme absent.
+Si la barre a disparu après une migration vers un autre PC ou un autre nom d'utilisateur, ou après une synchronisation de `settings.json` entre postes, la commande inscrite dans `statusLine` désigne sans doute un chemin de l'autre poste (`C:/Users/<ancien>/...`), écrit par une version antérieure à la 2.1.0, et Claude Code ne trouve plus le programme. Faire `git pull` dans le dossier cloné puis relancer le script d'installation : il repose le programme, inscrit la commande portable dans le `settings.json` de chaque compte et répare le `statusLine` global de `~/.claude.json` quand il désigne un programme absent.
+
+Si `update` reste affiché, la mise à jour est en cours ou s'est arrêtée en route : le marqueur est ignoré au bout de 15 minutes. `statusline --update` lancé à la main montre où elle échoue. Le réseau doit laisser passer `api.github.com` et `github.com`.
 
 Si Windows bloque le programme, lancer `Unblock-File "$env:USERPROFILE\.claude\bin\statusline.exe"`. L'installeur le fait déjà, mais le déblocage peut échouer, ou le dépôt peut avoir été récupéré en ZIP. Le programme n'est pas signé numériquement, ce qui peut déclencher un avertissement de SmartScreen ou de l'antivirus.
 

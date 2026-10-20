@@ -17,14 +17,19 @@ $main = Join-Path $env:USERPROFILE ".claude"
 $binDir = Join-Path $main "bin"
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 $exe = Join-Path $binDir "statusline.exe"
+function Remove-OldCopies { Get-ChildItem -LiteralPath $binDir -Filter "statusline.exe.old*" | Remove-Item -Force -ErrorAction SilentlyContinue }
+function Get-StatusCommand([string]$file) {
+  if (-not (Test-Path -LiteralPath $file)) { return $null }
+  try { return (Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).statusLine.command } catch { return $null }
+}
 # Claude Code peut etre en train de lancer la barre : un exe en cours ne se remplace pas, il se renomme
 if (Test-Path -LiteralPath $exe) {
-  Remove-Item -LiteralPath ($exe + ".old") -Force -ErrorAction SilentlyContinue
-  Move-Item -LiteralPath $exe -Destination ($exe + ".old") -Force
+  Remove-OldCopies
+  Move-Item -LiteralPath $exe -Destination ($exe + ".old-" + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
 }
 Copy-Item -LiteralPath $src -Destination $exe
 Unblock-File -LiteralPath $exe -ErrorAction SilentlyContinue
-Remove-Item -LiteralPath ($exe + ".old") -Force -ErrorAction SilentlyContinue
+Remove-OldCopies
 Write-Host ("programme copie dans " + $exe)
 
 $conf = Join-Path $main "statusline.json"
@@ -48,32 +53,31 @@ foreach ($d in $found) {
 }
 
 # Le binaire pose lui-meme l'entree statusLine, compte par compte.
-# Il reecrit toujours command avec son propre chemin : un chemin perime
-# (migration vers un autre PC ou un autre nom d'utilisateur) est donc repare.
 $prev = $env:CLAUDE_CONFIG_DIR
 try {
   foreach ($d in $dirs.Values) {
-    $old = $null
     $sfile = Join-Path $d "settings.json"
-    if (Test-Path -LiteralPath $sfile) {
-      try { $old = (Get-Content -LiteralPath $sfile -Raw | ConvertFrom-Json).statusLine.command } catch { $old = $null }
-    }
+    $old = Get-StatusCommand $sfile
     $env:CLAUDE_CONFIG_DIR = $d
     & $exe --install
-    if ($LASTEXITCODE -ne 0) { Write-Warning ("compte laisse tel quel : " + $d) }
-    elseif ($old -and (($old -replace "/", "\") -ne $exe)) { Write-Host ("chemin perime repare pour " + $d + " (etait : " + $old + ")") }
+    if ($LASTEXITCODE -ne 0) { Write-Warning ("compte laisse tel quel : " + $d); continue }
+    $new = Get-StatusCommand $sfile
+    if ($old -and $old -ne $new) { Write-Host ("commande remplacee pour " + $d + " (etait : " + $old + ")") }
   }
 } finally { $env:CLAUDE_CONFIG_DIR = $prev }
+$command = Get-StatusCommand (Join-Path $main "settings.json")
+if (-not $command) { $command = $exe -replace "\\", "/" }
 
 # Le statusLine global de .claude.json peut lui aussi designer l'ancien poste :
 # il est repare quand il vise un programme absent, sans toucher au reste du fichier.
 $gconf = Join-Path $env:USERPROFILE ".claude.json"
 if (Test-Path -LiteralPath $gconf) {
   try {
-    $text = Get-Content -LiteralPath $gconf -Raw
+    $text = Get-Content -LiteralPath $gconf -Raw -Encoding UTF8
     $m = [regex]::Match($text, '"statusLine"\s*:\s*\{[^}]*"command"\s*:\s*"([^"]+)"')
-    if ($m.Success -and -not (Test-Path -LiteralPath ($m.Groups[1].Value -replace "/", "\"))) {
-      $fixed = $text.Substring(0, $m.Groups[1].Index) + ($exe -replace "\\", "/") + $text.Substring($m.Groups[1].Index + $m.Groups[1].Length)
+    $target = $m.Groups[1].Value -replace "^~(?=[\\/])", $env:USERPROFILE.Replace('$', '$$')
+    if ($m.Success -and -not (Test-Path -LiteralPath ($target -replace "/", "\"))) {
+      $fixed = $text.Substring(0, $m.Groups[1].Index) + $command + $text.Substring($m.Groups[1].Index + $m.Groups[1].Length)
       [System.IO.File]::WriteAllText($gconf, $fixed)
       Write-Host ("statusLine global repare dans " + $gconf + " (etait : " + $m.Groups[1].Value + ")")
     }
