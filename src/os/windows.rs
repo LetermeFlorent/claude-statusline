@@ -62,11 +62,6 @@ extern "system" {
         r: *mut u32,
         ov: *mut c_void,
     ) -> i32;
-    fn ExitProcess(code: u32) -> !;
-    fn GetProcessHeap() -> Handle;
-    fn HeapAlloc(h: Handle, flags: u32, n: usize) -> *mut u8;
-    fn HeapReAlloc(h: Handle, flags: u32, p: *mut u8, n: usize) -> *mut u8;
-    fn HeapFree(h: Handle, flags: u32, p: *mut u8) -> i32;
 }
 
 #[link(name = "shell32", kind = "raw-dylib")]
@@ -506,6 +501,15 @@ pub fn state_dir() -> Option<String> {
 mod rt {
     use super::*;
     use core::alloc::{GlobalAlloc, Layout};
+
+    #[link(name = "kernel32", kind = "raw-dylib")]
+    extern "system" {
+        fn ExitProcess(code: u32) -> !;
+        fn GetProcessHeap() -> Handle;
+        fn HeapAlloc(h: Handle, flags: u32, n: usize) -> *mut u8;
+        fn HeapReAlloc(h: Handle, flags: u32, p: *mut u8, n: usize) -> *mut u8;
+        fn HeapFree(h: Handle, flags: u32, p: *mut u8) -> i32;
+    }
 
     struct Heap;
 
