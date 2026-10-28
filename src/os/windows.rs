@@ -772,7 +772,10 @@ mod tests {
             ..Default::default()
         };
         let mut state = State::parse("");
-        assert_eq!(state.counter("io", Some(before.activity(1))), None);
-        assert_eq!(state.counter("io", Some(after.activity(1))), Some(50.0));
+        assert_eq!(state.counter("io", Some(before.activity(1)), 1000.0), None);
+        assert_eq!(
+            state.counter("io", Some(after.activity(1)), 1005.0),
+            Some(50.0)
+        );
     }
 }

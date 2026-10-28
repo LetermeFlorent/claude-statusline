@@ -44,7 +44,7 @@ The second line shows three machine metrics:
 - the disk, labelled with its drive letter on Windows (`C:`) and `dsk` elsewhere: the share of time since the previous refresh during which the disk had at least one read or write in progress. macOS has no such counter, so there the bar adds up the time each request spent in progress, over every disk: requests served at the same time add up, and the bar can reach 100% on a disk that is not saturated.
 - `cpu`: processor load since the previous refresh. On Linux, time spent waiting on I/O does not count as load.
 
-Disk and CPU are differences between two readings, so they show `--%` on the very first run, after the watched disk changes (a new `disk_path`, or on macOS a disk plugged in or removed), and whenever their source does not answer. They come from the system counters: `GetSystemTimes` and `IOCTL_DISK_PERFORMANCE` on Windows, `/proc/stat`, `/proc/diskstats` and `/proc/meminfo` on Linux, Mach and IOKit on macOS. The percentage is capped at 100.
+Disk and CPU are differences between two readings, so they show `--%` on the very first run, after more than a minute without a refresh, after the watched disk changes (a new `disk_path`, or on macOS a disk plugged in or removed), and whenever their source does not answer. Two refreshes less than a second apart show the same percentage, and the second one keeps the earlier reading to compare with. They come from the system counters: `GetSystemTimes` and `IOCTL_DISK_PERFORMANCE` on Windows, `/proc/stat`, `/proc/diskstats` and `/proc/meminfo` on Linux, Mach and IOKit on macOS. The percentage is capped at 100.
 
 Token counts are written as they are below 1000, then in `k`, `M` and `B`, rounded to the unit.
 
@@ -62,7 +62,7 @@ The `5h` and `7d` segments stay hidden as long as no quota is known for the acco
 
 Claude Code sends the quotas in the session JSON (`rate_limits.five_hour` and `rate_limits.seven_day`, with `used_percentage` and `resets_at`), starting with the first API response. The bar shows them and stores them in the state file under the account's keys.
 
-Before that first response, it reuses the values stored for the same account when they are less than 10 minutes old. A window whose reset time has passed keeps a time, moved on to the next reset, but loses its percentage, which shows as `--%`. The 5-hour quota stays at `--%` while the account has no 5-hour window open, that is before its first message.
+Before that first response, it reuses the values stored for the same account when they are less than 10 minutes old. A window whose reset time has passed, whether it comes from the session JSON or from the stored values, loses its percentage, which shows as `--%`, and keeps a reset time moved on by whole windows. That time is an estimate: a new 5-hour window only opens with the next message. The 5-hour quota stays at `--%` while the account has no 5-hour window open, that is before its first message.
 
 The account is recognized by the name of its configuration folder: `CLAUDE_CONFIG_DIR` when it is set and not empty, `~/.claude` otherwise. The name loses its leading dot and goes to lowercase, and any character outside `a-z`, `0-9`, `.`, `_` and `-` becomes `_`. `.claude-compte2` gives `claude-compte2`, and an empty name gives `claude`. Several accounts open at the same time share the state file without mixing their values.
 

@@ -11,6 +11,8 @@ pub struct State {
 }
 
 const FRESH: f64 = 600.0;
+const SAME_READING: f64 = 1.0;
+const STALE_READING: f64 = 60.0;
 const HOUR: f64 = 3600.0;
 const FIVE_HOUR_PERIOD: f64 = 5.0 * HOUR;
 const SEVEN_DAY_PERIOD: f64 = 7.0 * 24.0 * HOUR;
@@ -33,6 +35,34 @@ pub fn fingerprint<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
         }
     }
     format!("{:016x}", hash)
+}
+
+pub fn recent(at: f64, now: f64, span: f64) -> bool {
+    now >= at && now - at < span
+}
+
+fn quota_as_of(quota: Quota, period: f64, now: f64) -> Quota {
+    let Some(at) = quota.at.filter(|at| (YEAR_2000..YEAR_2100).contains(at)) else {
+        return Quota { at: None, ..quota };
+    };
+    if at > now {
+        return quota;
+    }
+    let periods = crate::num::floor((now - at) / period) + 1.0;
+    Quota {
+        pct: None,
+        at: Some(at + periods * period),
+    }
+}
+
+fn percent(previous: Activity, reading: Activity) -> Option<f64> {
+    let elapsed = reading.clock.wrapping_sub(previous.clock);
+    let busy = reading.busy.wrapping_sub(previous.busy);
+    if elapsed <= 0 || busy < 0 {
+        return None;
+    }
+    let pct = busy as f64 / elapsed as f64 * 100.0;
+    Some(if pct > 100.0 { 100.0 } else { pct })
 }
 
 impl State {
@@ -116,14 +146,12 @@ impl State {
                 }
             }
             return Some(Quotas {
-                five_hour: five.map(|w| w.quota()),
-                seven_day: seven.map(|w| w.quota()),
+                five_hour: five.map(|w| quota_as_of(w.quota(), FIVE_HOUR_PERIOD, now)),
+                seven_day: seven.map(|w| quota_as_of(w.quota(), SEVEN_DAY_PERIOD, now)),
             });
         }
-        let q_at = self.num(&format!("q_at@{}", tag))?;
-        if !(now - q_at < FRESH) {
-            return None;
-        }
+        self.num(&format!("q_at@{}", tag))
+            .filter(|at| recent(*at, now, FRESH))?;
         let five_hour = self.stored("q5", tag, FIVE_HOUR_PERIOD, now);
         let seven_day = self.stored("q7", tag, SEVEN_DAY_PERIOD, now);
         if five_hour.is_none() && seven_day.is_none() {
@@ -136,47 +164,45 @@ impl State {
     }
 
     fn stored(&self, prefix: &str, tag: &str, period: f64, now: f64) -> Option<Quota> {
-        let at = self
-            .num(&format!("{}_at@{}", prefix, tag))
-            .filter(|at| (YEAR_2000..YEAR_2100).contains(at))?;
-        if at > now {
-            let pct = self.num(&format!("{}_pct@{}", prefix, tag));
-            return Some(Quota { pct, at: Some(at) });
-        }
-        let periods = crate::num::floor((now - at) / period) + 1.0;
-        Some(Quota {
-            pct: None,
-            at: Some(at + periods * period),
-        })
+        let at = self.num(&format!("{}_at@{}", prefix, tag));
+        let pct = self.num(&format!("{}_pct@{}", prefix, tag));
+        Some(quota_as_of(Quota { pct, at }, period, now)).filter(|quota| quota.at.is_some())
     }
 
-    pub fn counter(&mut self, name: &str, current: Option<Activity>) -> Option<f64> {
-        let source_key = format!("{}_source", name);
-        let clock_key = format!("{}_clock", name);
-        let value_key = format!("{}_value", name);
-        let Some(now) = current else {
-            self.remove(&source_key);
-            self.remove(&clock_key);
-            self.remove(&value_key);
+    pub fn counter(&mut self, name: &str, current: Option<Activity>, now: f64) -> Option<f64> {
+        let keys =
+            ["source", "clock", "value", "at", "pct"].map(|part| format!("{}_{}", name, part));
+        let [source_key, clock_key, value_key, at_key, pct_key] = &keys;
+        let Some(reading) = current else {
+            keys.iter().for_each(|key| self.remove(key));
             return None;
         };
-        let source = format!("{}", now.source);
-        let same_source = self.get(&source_key) == Some(source.as_str());
-        let previous = (self.int(&clock_key), self.int(&value_key));
-        self.set(&source_key, &source);
-        self.set(&clock_key, &format!("{}", now.clock));
-        self.set(&value_key, &format!("{}", now.busy));
-        let (previous_clock, previous_value) = (previous.0?, previous.1?);
-        if !same_source {
-            return None;
+        let source = format!("{}", reading.source);
+        let at = self
+            .num(at_key)
+            .filter(|_| self.get(source_key) == Some(source.as_str()));
+        if at.is_some_and(|at| recent(at, now, SAME_READING)) {
+            return self.num(pct_key);
         }
-        let elapsed = now.clock.wrapping_sub(previous_clock);
-        let busy = now.busy.wrapping_sub(previous_value);
-        if elapsed <= 0 || busy < 0 {
-            return None;
+        let previous = self
+            .int(clock_key)
+            .zip(self.int(value_key))
+            .filter(|_| at.is_some_and(|at| recent(at, now, STALE_READING)))
+            .map(|(clock, busy)| Activity {
+                clock,
+                busy,
+                ..reading
+            });
+        self.set(source_key, &source);
+        self.set(clock_key, &format!("{}", reading.clock));
+        self.set(value_key, &format!("{}", reading.busy));
+        self.set(at_key, &format!("{}", now));
+        let pct = previous.and_then(|previous| percent(previous, reading));
+        match pct {
+            Some(pct) => self.set(pct_key, &format!("{}", pct)),
+            None => self.remove(pct_key),
         }
-        let pct = busy as f64 / elapsed as f64 * 100.0;
-        Some(if pct > 100.0 { 100.0 } else { pct })
+        pct
     }
 }
 
@@ -299,18 +325,67 @@ mod tests {
 
     #[test]
     fn counter_percent_comes_from_the_previous_reading() {
-        let mut state = State::parse("cpu_source 0\ncpu_clock 100\ncpu_value 10\n");
-        assert_eq!(state.counter("cpu", reading(0, 200, 60)), Some(50.0));
-        assert_eq!(state.counter("cpu", reading(0, 200, 70)), None);
-        assert_eq!(state.counter("io", None), None);
+        let mut state = State::parse("cpu_source 0\ncpu_clock 100\ncpu_value 10\ncpu_at 1000\n");
+        assert_eq!(
+            state.counter("cpu", reading(0, 200, 60), 1003.0),
+            Some(50.0)
+        );
+        assert_eq!(state.counter("cpu", reading(0, 200, 70), 1006.0), None);
+        assert_eq!(state.counter("io", None, 1006.0), None);
         assert_eq!(state.get("cpu_value"), Some("70"));
     }
 
     #[test]
     fn a_reading_from_another_source_starts_over() {
         let mut state = State::parse("");
-        assert_eq!(state.counter("io", reading(1, 100, 10)), None);
-        assert_eq!(state.counter("io", reading(2, 200, 90)), None);
-        assert_eq!(state.counter("io", reading(2, 300, 140)), Some(50.0));
+        assert_eq!(state.counter("io", reading(1, 100, 10), 1000.0), None);
+        assert_eq!(state.counter("io", reading(2, 200, 90), 1003.0), None);
+        assert_eq!(
+            state.counter("io", reading(2, 300, 140), 1006.0),
+            Some(50.0)
+        );
+    }
+
+    #[test]
+    fn close_readings_keep_the_reference_and_late_ones_give_no_percent() {
+        let mut state = State::parse("");
+        assert_eq!(state.counter("cpu", reading(0, 100, 10), 1000.0), None);
+        assert_eq!(
+            state.counter("cpu", reading(0, 200, 60), 1003.0),
+            Some(50.0)
+        );
+        assert_eq!(
+            state.counter("cpu", reading(0, 201, 61), 1003.01),
+            Some(50.0)
+        );
+        assert_eq!(state.get("cpu_clock"), Some("200"));
+        assert_eq!(state.counter("cpu", reading(0, 300, 160), 1123.0), None);
+        assert_eq!(
+            state.counter("cpu", reading(0, 400, 210), 1126.0),
+            Some(50.0)
+        );
+    }
+
+    #[test]
+    fn a_live_quota_past_its_reset_loses_its_percentage() {
+        let now = 1_800_000_000.0;
+        let live = Live {
+            pct: Some(85.0),
+            at: Some(now - 600.0),
+        };
+        let mut state = State::parse("");
+        let quotas = state.quotas(Some((Some(live), None)), now, "a").unwrap();
+        let at = Some(now - 600.0 + FIVE_HOUR_PERIOD);
+        assert_eq!(quotas.five_hour, Some(Quota { pct: None, at }));
+        assert_eq!(state.get("q5_pct@a"), Some("85"));
+    }
+
+    #[test]
+    fn times_stamped_in_the_future_are_not_recent() {
+        assert!(recent(100.0, 129.0, 30.0));
+        assert!(!recent(100.0, 130.0, 30.0));
+        assert!(!recent(100.0, 99.0, 30.0));
+        let mut state = State::parse("q_at@a 1800000600\nq5_at@a 1800010000\nq5_pct@a 40\n");
+        assert!(state.quotas(None, 1_800_000_000.0, "a").is_none());
     }
 }

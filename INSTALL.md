@@ -115,7 +115,7 @@ If Windows blocks the program, run `Unblock-File "$env:USERPROFILE\.claude\bin\s
 
 If the `5h` and `7d` segments do not appear, Claude Code has not sent the quotas for this session yet, and the bar has no value less than 10 minutes old for this account: they appear after the first response. With claude-account-menu, the `SessionStart` hook fills them in at startup. If the 5-hour quota shows `--%`, the account has no 5-hour window open, meaning no message since the last reset.
 
-Disk and CPU show `--%` on the first refresh, until there are two readings to compare. They stay at `--%` on systems other than Windows, Linux and macOS. On Linux the disk also stays at `--%` when `disk_path` sits on a filesystem with no device behind it, such as ZFS, `/mnt/c` under WSL or the root of a container, on a machine with several disks: point `disk_path` to a folder on an ordinary disk partition, or remove `io` from `system.metrics`.
+Disk and CPU show `--%` on the first refresh, until there are two readings to compare, and after more than a minute without a refresh. They stay at `--%` on systems other than Windows, Linux and macOS. On Linux the disk also stays at `--%` when `disk_path` sits on a filesystem with no device behind it, such as ZFS, `/mnt/c` under WSL or the root of a container, on a machine with several disks: point `disk_path` to a folder on an ordinary disk partition, or remove `io` from `system.metrics`.
 
 If the colors are wrong or the squares turn into question marks, the terminal does not handle 24-bit colors or the font lacks the `■` and `▪` characters. These characters can be changed in `glyphs`.
 

@@ -112,7 +112,7 @@ impl Laps {
     }
 }
 
-fn sample(cfg: &Config, state: &mut State) -> Vec<SysValue> {
+fn sample(cfg: &Config, state: &mut State, now: f64) -> Vec<SysValue> {
     let mut out = Vec::new();
     if !cfg.sys_enabled {
         return out;
@@ -126,12 +126,12 @@ fn sample(cfg: &Config, state: &mut State) -> Vec<SysValue> {
             },
             Metric::Io => SysValue {
                 metric: *metric,
-                pct: state.counter("io", os::disk(&cfg.disk_path)),
+                pct: state.counter("io", os::disk(&cfg.disk_path), now),
                 ram: None,
             },
             Metric::Cpu => SysValue {
                 metric: *metric,
-                pct: state.counter("cpu", os::cpu()),
+                pct: state.counter("cpu", os::cpu(), now),
                 ram: None,
             },
         };
@@ -200,7 +200,7 @@ fn run(input: &str, now: f64, laps: &mut Laps) -> (String, State, bool) {
     } else {
         None
     };
-    let sys = sample(&cfg, &mut state);
+    let sys = sample(&cfg, &mut state, now);
     laps.lap(Stage::State);
     let updating = update_watch::busy(now);
     let data = Data {
