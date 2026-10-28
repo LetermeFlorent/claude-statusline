@@ -38,14 +38,24 @@ pub struct Data {
 
 const RESET: &str = "\x1b[0m";
 const MAX_TOKENS: u64 = 999_000_000_000;
-const MAX_RESET_SECS: f64 = 99.0 * 86400.0;
+const MINUTE: i64 = 60;
+const HOUR: i64 = 60 * MINUTE;
+const DAY: i64 = 24 * HOUR;
+const MAX_RESET_DAYS: i64 = 99;
+const MAX_RESET_SECS: f64 = (MAX_RESET_DAYS * DAY) as f64;
 pub const MAX_LABEL_CHARS: usize = 48;
 const BIDI_CONTROLS: [RangeInclusive<u32>; 2] = [0x202A..=0x202E, 0x2066..=0x2069];
+const GIB: f64 = 1_073_741_824.0;
+const MAX_CHANNEL: f64 = 255.0;
+const LIGHT_GRADIENT_SHADE: f64 = 0.65;
+const DARK_GRADIENT_TINT: f64 = 0.3;
+const LINE_CAPACITY: usize = 2048;
+const EFFORT_LEVELS: usize = 6;
 
 type Pair = (Rgb, Rgb);
 
 fn effort_pair(light: bool, key: &str) -> Pair {
-    let l: [(&str, Pair); 6] = [
+    let light_pairs: [(&str, Pair); EFFORT_LEVELS] = [
         ("low", ([70.0, 100.0, 97.0], [72.0, 92.0, 114.0])),
         ("medium", ([71.0, 90.0, 115.0], [77.0, 85.0, 117.0])),
         ("high", ([75.0, 84.0, 118.0], [90.0, 81.0, 117.0])),
@@ -53,7 +63,7 @@ fn effort_pair(light: bool, key: &str) -> Pair {
         ("max", ([102.0, 78.0, 116.0], [114.0, 80.0, 114.0])),
         ("", ([116.0, 80.0, 117.0], [128.0, 93.0, 121.0])),
     ];
-    let d: [(&str, Pair); 6] = [
+    let dark_pairs: [(&str, Pair); EFFORT_LEVELS] = [
         ("low", ([120.0, 172.0, 168.0], [124.0, 158.0, 196.0])),
         ("medium", ([122.0, 156.0, 198.0], [132.0, 146.0, 202.0])),
         ("high", ([130.0, 144.0, 204.0], [156.0, 140.0, 202.0])),
@@ -61,8 +71,12 @@ fn effort_pair(light: bool, key: &str) -> Pair {
         ("max", ([176.0, 134.0, 200.0], [196.0, 138.0, 196.0])),
         ("", ([200.0, 138.0, 202.0], [220.0, 160.0, 208.0])),
     ];
-    let t = if light { &l } else { &d };
-    t.iter().find(|(k, _)| *k == key).unwrap_or(&t[5]).1
+    let pairs = if light { &light_pairs } else { &dark_pairs };
+    pairs
+        .iter()
+        .find(|(k, _)| *k == key)
+        .unwrap_or(&pairs[EFFORT_LEVELS - 1])
+        .1
 }
 
 fn lerp(a: Rgb, b: Rgb, t: f64) -> Rgb {
@@ -78,7 +92,7 @@ fn rgb(c: Rgb) -> Rgb {
 }
 
 struct Out<'a> {
-    s: String,
+    line: String,
     cfg: &'a Config,
     col: &'a Colors,
 }
@@ -86,7 +100,7 @@ struct Out<'a> {
 impl Out<'_> {
     fn fg(&mut self, c: Rgb) {
         let _ = write!(
-            self.s,
+            self.line,
             "\x1b[38;2;{};{};{}m",
             c[0] as i64, c[1] as i64, c[2] as i64
         );
@@ -94,15 +108,15 @@ impl Out<'_> {
 
     fn bold(&mut self) {
         if self.cfg.bold {
-            self.s.push_str("\x1b[1m");
+            self.line.push_str("\x1b[1m");
         }
     }
 
     fn strong(&mut self, text: &str, c: Rgb) {
         self.bold();
         self.fg(c);
-        self.s.push_str(text);
-        self.s.push_str(RESET);
+        self.line.push_str(text);
+        self.line.push_str(RESET);
     }
 
     fn label(&mut self, text: &str) {
@@ -111,55 +125,55 @@ impl Out<'_> {
     }
 
     // Une cellule par couleur ; une barre sans valeur est un seul bloc vide
-    fn bar(&mut self, p: Option<f64>, color_at: &dyn Fn(usize, usize) -> Rgb) -> Option<Rgb> {
-        let w = self.cfg.width;
+    fn bar(&mut self, pct: Option<f64>, color_at: &dyn Fn(usize, usize) -> Rgb) -> Option<Rgb> {
+        let width = self.cfg.width;
         let empty = self.col.empty;
-        let Some(p) = p else {
+        let Some(pct) = pct else {
             self.fg(empty);
-            for _ in 0..w {
-                self.s.push_str(&self.cfg.empty);
+            for _ in 0..width {
+                self.line.push_str(&self.cfg.empty);
             }
-            self.s.push_str(RESET);
+            self.line.push_str(RESET);
             return None;
         };
-        let n = cell_count(p, w);
+        let filled = cell_count(pct, width);
         let mut last = None;
-        for i in 0..w {
-            if i < n {
-                let c = color_at(i, n);
+        for i in 0..width {
+            if i < filled {
+                let c = color_at(i, filled);
                 last = Some(c);
                 self.fg(c);
-                let g = if i == n - 1 {
+                let glyph = if i == filled - 1 {
                     &self.cfg.half
                 } else {
                     &self.cfg.filled
                 };
-                self.s.push_str(g);
+                self.line.push_str(glyph);
             } else {
                 self.fg(empty);
-                self.s.push_str(&self.cfg.empty);
+                self.line.push_str(&self.cfg.empty);
             }
         }
-        self.s.push_str(RESET);
+        self.line.push_str(RESET);
         last
     }
 
-    fn gradient_bar(&mut self, p: Option<f64>, start: Rgb, g: f64) -> Option<Rgb> {
+    fn gradient_bar(&mut self, pct: Option<f64>, start: Rgb, gradient: f64) -> Option<Rgb> {
         let light = self.col.light;
-        let target = start.map(|c| {
+        let target = start.map(|channel| {
             num::round(if light {
-                c * 0.65
+                channel * LIGHT_GRADIENT_SHADE
             } else {
-                c + (255.0 - c) * 0.3
+                channel + (MAX_CHANNEL - channel) * DARK_GRADIENT_TINT
             })
         });
-        let end = lerp(start, target, g);
-        self.bar(p, &|i, n| {
+        let end = lerp(start, target, gradient);
+        self.bar(pct, &|cell, filled| {
             rgb(lerp(
                 start,
                 end,
-                if n > 1 {
-                    i as f64 / (n - 1) as f64
+                if filled > 1 {
+                    cell as f64 / (filled - 1) as f64
                 } else {
                     0.0
                 },
@@ -167,40 +181,40 @@ impl Out<'_> {
         })
     }
 
-    fn value(&mut self, text: &str, p: Option<f64>, last: Option<Rgb>) {
-        let c = match (p, last) {
+    fn value(&mut self, text: &str, pct: Option<f64>, last: Option<Rgb>) {
+        let color = match (pct, last) {
             (Some(p), Some(l)) if num::round(p) >= 100.0 => l,
             _ => self.col.ink,
         };
-        self.strong(text, c);
+        self.strong(text, color);
     }
 
-    fn ctx(&mut self, d: &Data) {
-        let size = d.ctx.size.filter(|s| *s > 0.0);
-        let mut pct = d.ctx.pct;
-        let used: Option<f64> = match (d.ctx.tokens, pct, size) {
+    fn ctx(&mut self, data: &Data) {
+        let size = data.ctx.size.filter(|s| *s > 0.0);
+        let mut pct = data.ctx.pct;
+        let used: Option<f64> = match (data.ctx.tokens, pct, size) {
             (Some(t), _, _) => Some(t as f64),
             (None, Some(p), Some(s)) => Some((p * s / 100.0) as u64 as f64),
             _ => None,
         };
         let mut denom = size;
         let mut marked = false;
-        if let (Some(s), Some(w)) = (size, d.window) {
-            if w > 0 && (w as f64) < s {
-                denom = Some(w as f64);
-                pct = used.map(|u| u / w as f64 * 100.0);
+        if let (Some(size), Some(window)) = (size, data.window) {
+            if window > 0 && (window as f64) < size {
+                denom = Some(window as f64);
+                pct = used.map(|u| u / window as f64 * 100.0);
                 marked = true;
             }
         }
         if marked {
-            self.s.push_str("\x1b[2m");
+            self.line.push_str("\x1b[2m");
             let ink = self.col.ink;
             self.fg(ink);
-            self.s.push_str(&self.cfg.marker);
-            self.s.push_str(RESET);
+            self.line.push_str(&self.cfg.marker);
+            self.line.push_str(RESET);
         }
         self.label("ctx");
-        self.s.push(' ');
+        self.line.push(' ');
         let (from, to) = (self.col.ctx_from, self.col.ctx_to);
         let span = if self.cfg.width > 1 {
             (self.cfg.width - 1) as f64
@@ -208,42 +222,51 @@ impl Out<'_> {
             1.0
         };
         let last = self.bar(pct, &|i, _| rgb(lerp(from, to, i as f64 / span)));
-        self.s.push(' ');
+        self.line.push(' ');
         let text = match (denom, used) {
-            (Some(dn), Some(u)) => format!("{}/{}", tokens(u as u64), tokens(dn as u64)),
+            (Some(denom), Some(used)) => {
+                format!("{}/{}", tokens(used as u64), tokens(denom as u64))
+            }
             _ => pct_text(pct),
         };
         self.value(&text, pct, last);
     }
 
-    fn quota(&mut self, name: &str, q: Option<Quota>, pal: Palette, g: f64, now: f64) {
-        let q = q.unwrap_or_default();
+    fn quota(
+        &mut self,
+        name: &str,
+        quota: Option<Quota>,
+        palette: Palette,
+        gradient: f64,
+        now: f64,
+    ) {
+        let quota = quota.unwrap_or_default();
         self.label(name);
-        self.s.push(' ');
-        let start = match q.pct {
-            Some(p) if p >= self.cfg.quota_hot => pal.hot,
-            Some(p) if p >= self.cfg.quota_warn => pal.warn,
-            _ => pal.ok,
+        self.line.push(' ');
+        let start = match quota.pct {
+            Some(p) if p >= self.cfg.quota_hot => palette.hot,
+            Some(p) if p >= self.cfg.quota_warn => palette.warn,
+            _ => palette.ok,
         };
-        let last = self.gradient_bar(q.pct, start, g);
-        self.s.push(' ');
-        self.value(&pct_text(q.pct), q.pct, last);
-        if let Some(at) = q.at {
-            self.s.push(' ');
+        let last = self.gradient_bar(quota.pct, start, gradient);
+        self.line.push(' ');
+        self.value(&pct_text(quota.pct), quota.pct, last);
+        if let Some(at) = quota.at {
+            self.line.push(' ');
             self.label(&reset_text(at - now, name == "7d"));
         } else if name == "5h" {
-            self.s.push(' ');
+            self.line.push(' ');
             self.label("--");
         }
     }
 
-    fn model(&mut self, d: &Data) {
-        self.s.push_str("\x1b[4m");
+    fn model(&mut self, data: &Data) {
+        self.line.push_str("\x1b[4m");
         let ink = self.col.ink;
         self.fg(ink);
-        self.s.push_str(&d.model);
-        self.s.push_str(RESET);
-        let Some(level) = d.effort.as_deref() else {
+        self.line.push_str(&data.model);
+        self.line.push_str(RESET);
+        let Some(level) = data.effort.as_deref() else {
             return;
         };
         let mut key = level.to_lowercase();
@@ -262,72 +285,81 @@ impl Out<'_> {
             return;
         }
         let chars: Vec<char> = word.chars().collect();
-        for (i, ch) in chars.iter().enumerate() {
-            let t = if chars.len() > 1 {
+        for (i, letter) in chars.iter().enumerate() {
+            let progress = if chars.len() > 1 {
                 i as f64 / (chars.len() - 1) as f64
             } else {
                 0.0
             };
             self.bold();
-            self.fg(rgb(lerp(start, end, t)));
-            self.s.push(*ch);
+            self.fg(rgb(lerp(start, end, progress)));
+            self.line.push(*letter);
         }
-        self.s.push_str(RESET);
+        self.line.push_str(RESET);
     }
 
-    fn system(&mut self, v: &SysValue) {
+    fn system(&mut self, reading: &SysValue) {
         let cfg = self.cfg;
-        let (name, pal, p, text) = match v.metric {
+        let (name, palette, pct, text) = match reading.metric {
             Metric::Ram => {
-                let p = v
+                let pct = reading
                     .ram
-                    .filter(|(t, _)| *t > 0.0)
-                    .map(|(t, a)| (t - a) / t * 100.0);
-                let text = match (p, v.ram) {
-                    (Some(_), Some((t, a))) => {
-                        let gib = 1073741824.0;
-                        format!("{:.1}/{:.1}G", (t - a) / gib, t / gib)
+                    .filter(|(total, _)| *total > 0.0)
+                    .map(|(total, available)| (total - available) / total * 100.0);
+                let text = match (pct, reading.ram) {
+                    (Some(_), Some((total, available))) => {
+                        format!("{:.1}/{:.1}G", (total - available) / GIB, total / GIB)
                     }
                     _ => String::from("--%"),
                 };
-                (String::from("ram"), cfg.pal_ram, p, text)
+                (String::from("ram"), cfg.pal_ram, pct, text)
             }
-            Metric::Io => (cfg.disk_label(), cfg.pal_dsk, v.pct, pct_text(v.pct)),
-            Metric::Cpu => (String::from("cpu"), cfg.pal_cpu, v.pct, pct_text(v.pct)),
+            Metric::Io => (
+                cfg.disk_label(),
+                cfg.pal_dsk,
+                reading.pct,
+                pct_text(reading.pct),
+            ),
+            Metric::Cpu => (
+                String::from("cpu"),
+                cfg.pal_cpu,
+                reading.pct,
+                pct_text(reading.pct),
+            ),
         };
         self.label(&name);
-        self.s.push(' ');
-        let start = match p {
-            Some(p) if p > cfg.sys_hot => pal.hot,
-            Some(p) if p > cfg.sys_warn => pal.warn,
-            _ => pal.ok,
+        self.line.push(' ');
+        let start = match pct {
+            Some(p) if p > cfg.sys_hot => palette.hot,
+            Some(p) if p > cfg.sys_warn => palette.warn,
+            _ => palette.ok,
         };
-        let last = self.gradient_bar(p, start, cfg.grad_sys);
-        self.s.push(' ');
-        self.value(&text, p, last);
+        let last = self.gradient_bar(pct, start, cfg.grad_sys);
+        self.line.push(' ');
+        self.value(&text, pct, last);
     }
 
     fn sep(&mut self, first: &mut bool) {
         if !*first {
-            self.s.push(' ');
+            self.line.push(' ');
             self.label("|");
-            self.s.push(' ');
+            self.line.push(' ');
         }
         *first = false;
     }
 }
 
-pub fn cell_count(p: f64, w: usize) -> usize {
-    if !(p > 0.0) {
+pub fn cell_count(pct: f64, width: usize) -> usize {
+    if !(pct > 0.0) {
         return 0;
     }
-    let units = num::round(p * 2.0 * w as f64 / 100.0);
-    let n = num::ceil(units / 2.0);
-    let n = if n < 1.0 { 1.0 } else { n };
-    if n > w as f64 {
-        w
+    let half_cells = num::round(pct * 2.0 * width as f64 / 100.0);
+    let cells = num::ceil(half_cells / 2.0);
+    let cells = if cells < 1.0 { 1.0 } else { cells };
+    if cells > width as f64 {
+        width
     } else {
-        n as usize
+        cells as usize
     }
 }
 
@@ -339,32 +371,32 @@ pub fn pct_text(p: Option<f64>) -> String {
     }
 }
 
-pub fn tokens(n: u64) -> String {
-    let n = n.min(MAX_TOKENS);
-    let f = n as f64;
-    if n < 1000 {
-        format!("{}", n)
-    } else if f < 1e6 {
-        format!("{:.0}k", f / 1e3)
-    } else if f < 1e9 {
-        format!("{:.0}M", f / 1e6)
+pub fn tokens(count: u64) -> String {
+    let count = count.min(MAX_TOKENS);
+    let amount = count as f64;
+    if count < 1000 {
+        format!("{}", count)
+    } else if amount < 1e6 {
+        format!("{:.0}k", amount / 1e3)
+    } else if amount < 1e9 {
+        format!("{:.0}M", amount / 1e6)
     } else {
-        format!("{:.0}B", f / 1e9)
+        format!("{:.0}B", amount / 1e9)
     }
 }
 
 pub fn reset_text(secs: f64, long: bool) -> String {
-    let s = num::floor(num::clamp(secs, 0.0, MAX_RESET_SECS)) as i64;
-    if s <= 0 {
+    let secs = num::floor(num::clamp(secs, 0.0, MAX_RESET_SECS)) as i64;
+    if secs <= 0 {
         return String::from("0m");
     }
-    if s < 3600 {
-        return format!("{}m", s / 60);
+    if secs < HOUR {
+        return format!("{}m", secs / MINUTE);
     }
-    if long && s >= 86400 {
-        return format!("{}d{:02}h", s / 86400, (s % 86400) / 3600);
+    if long && secs >= DAY {
+        return format!("{}d{:02}h", secs / DAY, (secs % DAY) / HOUR);
     }
-    format!("{}h{:02}m", s / 3600, (s % 3600) / 60)
+    format!("{}h{:02}m", secs / HOUR, (secs % HOUR) / MINUTE)
 }
 
 fn is_printable(c: char) -> bool {
@@ -387,46 +419,46 @@ pub fn label_text(text: &str) -> String {
     String::from(capped.trim_end())
 }
 
-pub fn render(cfg: &Config, col: &Colors, d: &Data, now: f64) -> String {
-    let mut o = Out {
-        s: String::with_capacity(2048),
+pub fn render(cfg: &Config, col: &Colors, data: &Data, now: f64) -> String {
+    let mut out = Out {
+        line: String::with_capacity(LINE_CAPACITY),
         cfg,
         col,
     };
     let mut first = true;
     if cfg.seg_ctx {
-        o.sep(&mut first);
-        o.ctx(d);
+        out.sep(&mut first);
+        out.ctx(data);
     }
-    if let Some((q5, q7)) = d.quotas {
+    if let Some((q5, q7)) = data.quotas {
         if cfg.seg_5h {
-            o.sep(&mut first);
-            o.quota("5h", q5, cfg.pal_5h, cfg.grad_5h, now);
+            out.sep(&mut first);
+            out.quota("5h", q5, cfg.pal_5h, cfg.grad_5h, now);
         }
         if cfg.seg_7d {
-            o.sep(&mut first);
-            o.quota("7d", q7, cfg.pal_7d, cfg.grad_7d, now);
+            out.sep(&mut first);
+            out.quota("7d", q7, cfg.pal_7d, cfg.grad_7d, now);
         }
     }
     if cfg.seg_model {
-        o.sep(&mut first);
-        o.model(d);
+        out.sep(&mut first);
+        out.model(data);
     }
-    if !d.sys.is_empty() || d.updating {
-        o.s.push('\n');
+    if !data.sys.is_empty() || data.updating {
+        out.line.push('\n');
         first = true;
-        for v in &d.sys {
-            o.sep(&mut first);
-            o.system(v);
+        for reading in &data.sys {
+            out.sep(&mut first);
+            out.system(reading);
         }
-        if d.updating {
-            o.sep(&mut first);
-            o.label("update");
+        if data.updating {
+            out.sep(&mut first);
+            out.label("update");
         }
     }
-    o.s.push_str(RESET);
-    o.s.push('\n');
-    o.s
+    out.line.push_str(RESET);
+    out.line.push('\n');
+    out.line
 }
 
 #[cfg(test)]
@@ -456,10 +488,9 @@ mod tests {
     }
 
     const NOW: f64 = 1_000_000.0;
-    const GIB: f64 = 1073741824.0;
 
-    fn readable(s: &str) -> String {
-        let mut parts = s.split('\x1b');
+    fn readable(rendered: &str) -> String {
+        let mut parts = rendered.split('\x1b');
         let mut out = String::from(parts.next().unwrap_or(""));
         for part in parts {
             let (code, text) = part[1..].split_once('m').unwrap();
@@ -469,13 +500,17 @@ mod tests {
                 "2" => out.push_str("[dim]"),
                 "4" => out.push_str("[u]"),
                 _ => {
-                    let c: Vec<u8> = code
+                    let channels: Vec<u8> = code
                         .strip_prefix("38;2;")
                         .unwrap()
                         .split(';')
                         .map(|x| x.parse().unwrap())
                         .collect();
-                    let _ = write!(out, "[#{:02x}{:02x}{:02x}]", c[0], c[1], c[2]);
+                    let _ = write!(
+                        out,
+                        "[#{:02x}{:02x}{:02x}]",
+                        channels[0], channels[1], channels[2]
+                    );
                 }
             }
             out.push_str(text);
@@ -524,18 +559,18 @@ mod tests {
         }
     }
 
-    fn line(light: bool, config: Option<&str>, d: &Data) -> String {
+    fn line(light: bool, config: Option<&str>, data: &Data) -> String {
         let cfg = Config::parse(config);
-        readable(&render(&cfg, &cfg.colors(light), d, NOW))
+        readable(&render(&cfg, &cfg.colors(light), data, NOW))
     }
 
     fn quota_only(pct: Option<f64>) -> String {
-        let mut d = sample();
-        d.quotas = Some((Some(Quota { pct, at: None }), None));
-        d.sys.clear();
-        d.updating = false;
+        let mut data = sample();
+        data.quotas = Some((Some(Quota { pct, at: None }), None));
+        data.sys.clear();
+        data.updating = false;
         let only_5h = "{\"segments\": {\"ctx\": false, \"7d\": false, \"model\": false}}";
-        line(false, Some(only_5h), &d)
+        line(false, Some(only_5h), &data)
     }
 
     const DISK: &str = if cfg!(windows) { "C:" } else { "dsk" };
