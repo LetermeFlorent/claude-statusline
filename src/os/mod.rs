@@ -1,5 +1,5 @@
 #[cfg(any(target_os = "linux", test))]
-mod cgroup;
+mod linux;
 #[cfg(not(windows))]
 mod spawn_unix;
 #[cfg(not(windows))]
@@ -21,6 +21,14 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 pub const MAX_READ_BYTES: usize = 1 << 20;
+pub const CPU_SOURCE: u64 = 0;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Activity {
+    pub source: u64,
+    pub clock: i64,
+    pub busy: i64,
+}
 
 #[derive(Debug, PartialEq)]
 pub enum Contents {

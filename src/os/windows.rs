@@ -1,3 +1,4 @@
+use super::{Activity, CPU_SOURCE};
 use alloc::format;
 use alloc::string::String;
 use alloc::vec;
@@ -532,16 +533,20 @@ pub fn ticks() -> f64 {
     }
 }
 
-pub fn cpu() -> Option<(i64, i64)> {
+pub fn cpu() -> Option<Activity> {
     let (mut idle, mut kernel, mut user) = (0u64, 0u64, 0u64);
     if unsafe { GetSystemTimes(&mut idle, &mut kernel, &mut user) } == 0 {
         return None;
     }
     let clock = kernel.wrapping_add(user);
-    Some((clock as i64, clock.wrapping_sub(idle) as i64))
+    Some(Activity {
+        source: CPU_SOURCE,
+        clock: clock as i64,
+        busy: clock.wrapping_sub(idle) as i64,
+    })
 }
 
-pub fn disk(path: &str) -> Option<(i64, i64)> {
+pub fn disk(path: &str) -> Option<Activity> {
     let letter: String = path
         .chars()
         .take(1)
@@ -583,10 +588,17 @@ pub fn disk(path: &str) -> Option<(i64, i64)> {
     if ok == 0 || (got as usize) < needed {
         return None;
     }
-    Some((
-        perf.query_time,
-        perf.read_time.wrapping_add(perf.write_time),
-    ))
+    Some(perf.activity(letter.chars().next().map_or(0, u64::from)))
+}
+
+impl DiskPerformance {
+    fn activity(&self, source: u64) -> Activity {
+        Activity {
+            source,
+            clock: self.query_time,
+            busy: self.query_time.wrapping_sub(self.idle_time),
+        }
+    }
 }
 
 pub fn memory() -> Option<(f64, f64)> {
@@ -716,5 +728,30 @@ mod rt {
     pub extern "system" fn start() -> ! {
         let code = crate::app::main(args());
         unsafe { ExitProcess(code as u32) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DiskPerformance;
+    use crate::state::State;
+
+    #[test]
+    fn overlapping_requests_count_the_busy_time_once() {
+        let before = DiskPerformance {
+            read_time: 40_000_000,
+            idle_time: 70_000_000,
+            query_time: 100_000_000,
+            ..Default::default()
+        };
+        let after = DiskPerformance {
+            read_time: 70_000_000,
+            idle_time: 75_000_000,
+            query_time: 110_000_000,
+            ..Default::default()
+        };
+        let mut state = State::parse("");
+        assert_eq!(state.counter("io", Some(before.activity(1))), None);
+        assert_eq!(state.counter("io", Some(after.activity(1))), Some(50.0));
     }
 }

@@ -1,3 +1,4 @@
+use crate::os::Activity;
 use crate::render::{Quota, Quotas};
 use crate::session::Live;
 use alloc::format;
@@ -149,20 +150,28 @@ impl State {
         })
     }
 
-    pub fn counter(&mut self, name: &str, current: Option<(i64, i64)>) -> Option<f64> {
+    pub fn counter(&mut self, name: &str, current: Option<Activity>) -> Option<f64> {
+        let source_key = format!("{}_source", name);
         let clock_key = format!("{}_clock", name);
         let value_key = format!("{}_value", name);
-        let previous = (self.int(&clock_key), self.int(&value_key));
-        let Some((clock, value)) = current else {
+        let Some(now) = current else {
+            self.remove(&source_key);
             self.remove(&clock_key);
             self.remove(&value_key);
             return None;
         };
-        self.set(&clock_key, &format!("{}", clock));
-        self.set(&value_key, &format!("{}", value));
+        let source = format!("{}", now.source);
+        let same_source = self.get(&source_key) == Some(source.as_str());
+        let previous = (self.int(&clock_key), self.int(&value_key));
+        self.set(&source_key, &source);
+        self.set(&clock_key, &format!("{}", now.clock));
+        self.set(&value_key, &format!("{}", now.busy));
         let (previous_clock, previous_value) = (previous.0?, previous.1?);
-        let elapsed = clock.wrapping_sub(previous_clock);
-        let busy = value.wrapping_sub(previous_value);
+        if !same_source {
+            return None;
+        }
+        let elapsed = now.clock.wrapping_sub(previous_clock);
+        let busy = now.busy.wrapping_sub(previous_value);
         if elapsed <= 0 || busy < 0 {
             return None;
         }
@@ -280,12 +289,28 @@ mod tests {
         assert_eq!(account_tag(""), "claude");
     }
 
+    fn reading(source: u64, clock: i64, busy: i64) -> Option<Activity> {
+        Some(Activity {
+            source,
+            clock,
+            busy,
+        })
+    }
+
     #[test]
     fn counter_percent_comes_from_the_previous_reading() {
-        let mut state = State::parse("cpu_clock 100\ncpu_value 10\n");
-        assert_eq!(state.counter("cpu", Some((200, 60))), Some(50.0));
-        assert_eq!(state.counter("cpu", Some((200, 70))), None);
+        let mut state = State::parse("cpu_source 0\ncpu_clock 100\ncpu_value 10\n");
+        assert_eq!(state.counter("cpu", reading(0, 200, 60)), Some(50.0));
+        assert_eq!(state.counter("cpu", reading(0, 200, 70)), None);
         assert_eq!(state.counter("io", None), None);
         assert_eq!(state.get("cpu_value"), Some("70"));
+    }
+
+    #[test]
+    fn a_reading_from_another_source_starts_over() {
+        let mut state = State::parse("");
+        assert_eq!(state.counter("io", reading(1, 100, 10)), None);
+        assert_eq!(state.counter("io", reading(2, 200, 90)), None);
+        assert_eq!(state.counter("io", reading(2, 300, 140)), Some(50.0));
     }
 }

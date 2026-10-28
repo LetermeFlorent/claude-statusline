@@ -41,10 +41,10 @@ The first line chains four segments separated by `|`, always in this order:
 The second line shows three machine metrics:
 
 - `ram`: memory used over total memory, in GiB with one decimal. Used memory is the total minus the available memory. On Linux, a cgroup v2 memory limit below the memory of the machine, as in a container, becomes the total, and the used memory is then what the group uses minus its inactive file cache.
-- the disk, labelled with its drive letter on Windows (`C:`) and `dsk` elsewhere: the share of time spent reading and writing since the previous refresh.
+- the disk, labelled with its drive letter on Windows (`C:`) and `dsk` elsewhere: the share of time since the previous refresh during which the disk had at least one read or write in progress. macOS has no such counter, so there the bar adds up the time each request spent in progress, over every disk: requests served at the same time add up, and the bar can reach 100% on a disk that is not saturated.
 - `cpu`: processor load since the previous refresh. On Linux, time spent waiting on I/O does not count as load.
 
-Disk and CPU are differences between two readings, so they show `--%` on the very first run, and again whenever their source does not answer. They come from the system counters: `GetSystemTimes` and `IOCTL_DISK_PERFORMANCE` on Windows, `/proc/stat`, `/proc/diskstats` and `/proc/meminfo` on Linux, Mach and IOKit on macOS. The percentage is capped at 100.
+Disk and CPU are differences between two readings, so they show `--%` on the very first run, after the watched disk changes (a new `disk_path`, or on macOS a disk plugged in or removed), and whenever their source does not answer. They come from the system counters: `GetSystemTimes` and `IOCTL_DISK_PERFORMANCE` on Windows, `/proc/stat`, `/proc/diskstats` and `/proc/meminfo` on Linux, Mach and IOKit on macOS. The percentage is capped at 100.
 
 Token counts are written as they are below 1000, then in `k`, `M` and `B`, rounded to the unit.
 
@@ -152,7 +152,7 @@ It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, 
 
 Names in `system.metrics` are written in lowercase, and unknown names are ignored. An empty or missing list falls back to the three metrics. The disk color is set under `dsk`, even though the metric is called `io`.
 
-`system.disk_path` is read differently on each system. On Windows only the first letter counts: `D:\Games` follows drive `D:`. On Linux it is the disk that holds that path, or else the first physical disk in `/proc/diskstats`. On macOS the setting is ignored and the bar adds up the activity of every disk.
+`system.disk_path` is read differently on each system. On Windows only the first letter counts: `D:\Games` follows drive `D:`. On Linux it is the device that holds that path. Some filesystems, btrfs for one, give no device number of their own: the bar then finds the mount point of the path in `/proc/self/mountinfo` and follows the device mounted there. When that leads to no device, as on ZFS, on `/mnt/c` under WSL or at the root of a container, the bar falls back to the only physical disk of the machine, and shows `--%` when there are several. Under WSL, `/` is the virtual disk of the distribution, not a Windows drive. On macOS the setting is ignored and the bar adds up the activity of every disk.
 
 ## Command line
 
@@ -192,7 +192,7 @@ The counters, the quotas and the detected theme live in a single file, shared by
 - macOS: `~/Library/Application Support/claude-statusline/state`;
 - Linux: `$XDG_STATE_HOME/claude-statusline/state`, or else `~/.local/state/claude-statusline/state`.
 
-It is a text file with one `key value` line per entry. It holds the quotas of each account (`q_at@<account>`, `q5_at@<account>`, `q5_pct@<account>`, `q7_at@<account>`, `q7_pct@<account>`), the theme (`bg_host`, `bg_stamp`), the auto-compact threshold (`compact_window`, `compact_key`, `compact_stamp`, `compact_at`), the last disk and CPU readings (`io_clock`, `io_value`, `cpu_clock`, `cpu_value`) and the time of the last update check (`update_at`). Unknown keys are kept. The version 1 keys (`bg_at`, and the quotas without an account suffix) are removed on the first run.
+It is a text file with one `key value` line per entry. It holds the quotas of each account (`q_at@<account>`, `q5_at@<account>`, `q5_pct@<account>`, `q7_at@<account>`, `q7_pct@<account>`), the theme (`bg_host`, `bg_stamp`), the auto-compact threshold (`compact_window`, `compact_key`, `compact_stamp`, `compact_at`), the last disk and CPU readings (`io_source`, `io_clock`, `io_value`, `cpu_source`, `cpu_clock`, `cpu_value`) and the time of the last update check (`update_at`). Unknown keys are kept. The version 1 keys (`bg_at`, and the quotas without an account suffix) are removed on the first run.
 
 The file is written again only when its content changes, through a temporary file that is then renamed, so a reader never finds it half written. With no known home folder (`HOME`, or `USERPROFILE` on Windows), nothing is written. `--bench` writes a `state.bench` file next to it and deletes it at the end.
 
