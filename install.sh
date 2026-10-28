@@ -23,7 +23,7 @@ else
       ;;
   esac
   echo "telechargement de $asset"
-  curl -fsSL "$repo/releases/latest/download/$asset" -o "$bin_dir/statusline.new"
+  curl -q -fsSL --proto =https --proto-redir =https "$repo/releases/latest/download/$asset" -o "$bin_dir/statusline.new"
 fi
 # Copie puis renommage : une barre en cours d'execution garde l'ancien fichier jusqu'a la fin
 chmod 755 "$bin_dir/statusline.new"

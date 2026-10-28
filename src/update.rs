@@ -10,6 +10,7 @@ const SHOWN_AFTER_SWAP_MS: u32 = 5000;
 const HTTP_OK: u16 = 200;
 const NO_RELEASE: &str = "derniere version introuvable\n";
 const RATE_LIMIT_STATUSES: [u16; 2] = [403, 429];
+const HTTPS_ONLY: &str = "=https";
 const RATE_LIMITED: &str = "limite de requetes GitHub atteinte, reessayez plus tard\n";
 
 type Fetch<'a> = &'a dyn Fn(&str, &str, u32) -> Option<u16>;
@@ -38,14 +39,28 @@ fn last_status(headers: &str) -> Option<u16> {
     line.split_whitespace().nth(1)?.parse().ok()
 }
 
+fn curl_args<'a>(limit: &'a str, headers: &'a str, to: &'a str, url: &'a str) -> [&'a str; 13] {
+    [
+        "-q",
+        "-sSL",
+        "--proto",
+        HTTPS_ONLY,
+        "--proto-redir",
+        HTTPS_ONLY,
+        "--max-time",
+        limit,
+        "-D",
+        headers,
+        "-o",
+        to,
+        url,
+    ]
+}
+
 fn download(url: &str, to: &str, secs: u32) -> Option<u16> {
     let headers = format!("{}.headers", to);
     let limit = format!("{}", secs);
-    let finished = os::call(
-        &curl(),
-        &["-sSL", "--max-time", &limit, "-D", &headers, "-o", to, url],
-        secs + 15,
-    ) == Some(0);
+    let finished = os::call(&curl(), &curl_args(&limit, &headers, to, url), secs + 15) == Some(0);
     let status = os::read_text(&headers).and_then(|h| last_status(&h));
     os::remove(&headers);
     status.filter(|_| finished)
@@ -349,6 +364,31 @@ mod tests {
             assert_eq!(run.asked, 1);
             assert_eq!(run.files, [EXE_NAME]);
         }
+    }
+
+    #[test]
+    fn curl_skips_the_user_config_and_speaks_only_https() {
+        const UNSUPPORTED_PROTOCOL: i32 = 1;
+        let sandbox = Sandbox::new("curlrc");
+        let [source, trace, copy, headers] =
+            ["source.txt", "trace.txt", "copy.txt", "headers.txt"].map(|name| sandbox.path(name));
+        std::fs::write(&source, b"x").unwrap();
+        let config = format!("trace-ascii = \"{}\"\n", trace.replace('\\', "/"));
+        for name in [".curlrc", "_curlrc"] {
+            std::fs::write(sandbox.path(name), &config).unwrap();
+        }
+        let url = format!(
+            "file:///{}",
+            source.replace('\\', "/").trim_start_matches('/')
+        );
+        let output = std::process::Command::new(curl())
+            .args(curl_args("5", &headers, &copy, &url))
+            .env("CURL_HOME", sandbox.dir())
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(UNSUPPORTED_PROTOCOL));
+        assert!(!os::exists(&trace));
+        assert!(!os::exists(&copy));
     }
 
     #[test]
