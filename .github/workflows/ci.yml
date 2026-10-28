@@ -99,16 +99,36 @@ jobs:
           "$b" --inconnu 2>/dev/null
           [ $? -eq 2 ]
 
-      - name: installeur
-        if: runner.os != 'Windows'
+      - name: installer
         run: |
           # rustup cherche sa chaine dans le HOME d'origine
           export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
-          export HOME="$RUNNER_TEMP/i"
-          mkdir -p "$HOME/.claude-compte2"
-          sh install.sh
-          grep -q '"~/.claude/bin/statusline"' "$HOME/.claude/settings.json"
-          grep -q '"~/.claude/bin/statusline"' "$HOME/.claude-compte2/settings.json"
+          root="$RUNNER_TEMP/i"
+          mkdir -p "$root/.claude" "$root/.claude-compte2"
+          printf '{"model": "opus", "env": {"B": "1", "A": "2"}}' > "$root/.claude/settings.json"
+          export HOME="$root"
+          ext=""
+          if [ "$RUNNER_OS" = Windows ]; then
+            ext=.exe
+            cp "dist/${{ matrix.asset }}" bin/statusline.exe
+            export USERPROFILE="$(cygpath -w "$root")" LOCALAPPDATA="$(cygpath -w "$root/local")"
+            run_installer() { powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1; }
+          else
+            export XDG_STATE_HOME="$root/state"
+            run_installer() { sh install.sh; }
+          fi
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          line='  "statusLine": {\n    "type": "command",\n    "command": "~/.claude/bin/statusline'$ext'",\n    "refreshInterval": 3\n  }\n'
+          printf '{\n  "model": "opus",\n  "env": {\n    "B": "1",\n    "A": "2"\n  },\n'"$line"'}\n' > "$RUNNER_TEMP/main.json"
+          printf '{\n'"$line"'}\n' > "$RUNNER_TEMP/account.json"
+          for run in first second; do
+            echo "installer, $run run"
+            run_installer
+            test "$("$root/.claude/bin/statusline$ext" --version)" = "statusline $version"
+            diff "$RUNNER_TEMP/main.json" "$root/.claude/settings.json"
+            diff "$RUNNER_TEMP/account.json" "$root/.claude-compte2/settings.json"
+            cmp statusline.json "$root/.claude/statusline.json"
+          done
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
