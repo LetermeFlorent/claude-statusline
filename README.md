@@ -1,17 +1,17 @@
 # claude-statusline
 
-Barre d'état pour Claude Code, sous Windows, Linux et macOS. Elle tient sur deux lignes : la première suit la session (contexte, quotas 5 h et 7 j, modèle et effort), la seconde suit le poste (RAM, activité du disque, processeur).
+A status line for Claude Code on Windows, Linux and macOS. It takes two lines: the first follows the session (context, 5-hour and 7-day quotas, model and effort), the second follows the machine (RAM, disk activity, CPU).
 
 ```
 ctx ■■▪■■■■■ 340k/1M | 5h ■■▪■■■■■ 36% 3h29m | 7d ■■■■▪■■■ 61% 3d16h | Opus 5:max
 ram ■■■■■▪■■ 11.3/15.3G | C: ▪■■■■■■■ 2% | cpu ▪■■■■■■■ 8%
 ```
 
-C'est un petit programme Rust sans dépendance. Claude Code le lance toutes les 3 secondes par le réglage `statusLine` : il lit le JSON de la session sur son entrée standard, écrit la barre sur sa sortie standard et rend la main en un peu plus d'une milliseconde de travail. Sous Windows, le binaire se passe de la bibliothèque C et pèse environ 220 Ko. Il se met à jour seul depuis les versions publiées sur GitHub.
+It is a small Rust program with no dependencies. Claude Code runs it every 3 seconds through the `statusLine` setting: it reads the session JSON on standard input, writes the bar on standard output and exits after a little over a millisecond of work. On Windows the binary does without the C runtime and weighs about 220 KB. It can update itself from the GitHub releases, an option that is off by default.
 
-## Installation
+## Install
 
-Le guide complet, avec la vérification, la mise à jour et la désinstallation, est dans [INSTALL.md](INSTALL.md).
+The full guide, with checking, updating and uninstalling, is in [INSTALL.md](INSTALL.md).
 
 ```powershell
 # Windows
@@ -27,228 +27,228 @@ cd claude-statusline
 sh install.sh
 ```
 
-Les deux scripts posent la barre dans `.claude`, dans chaque dossier `.claude-compte*` et dans chaque compte listé par le menu multi-comptes ([claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)). `install.ps1` télécharge le binaire de la dernière version publiée et vérifie son empreinte SHA-256, ou compile les sources avec `-Build`. `install.sh` compile quand `cargo` est présent, et télécharge le binaire de la dernière version publiée, vérifié de la même façon, quand `cargo` manque ou que la compilation échoue.
+Both scripts set up the bar in `.claude`, in every `.claude-compte*` folder and in every account listed by the multi-account menu ([claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)). `install.ps1` downloads the binary of the latest release and checks its SHA-256 hash, or compiles the sources with `-Build`. `install.sh` compiles when `cargo` is available, and downloads the binary of the latest release, checked the same way, when `cargo` is missing or the build fails.
 
-## Ce que montre la barre
+## What the bar shows
 
-La première ligne enchaîne quatre segments séparés par `|`, toujours dans cet ordre :
+The first line chains four segments separated by `|`, always in this order:
 
-- `ctx` : remplissage du contexte. Le texte donne les jetons utilisés sur la taille de la fenêtre (`340k/1M`), ou le seul pourcentage quand Claude Code ne transmet pas les deux, ou `--%` sans aucune donnée. La barre va du bleu clair au bleu soutenu.
-- `5h` : quota de la fenêtre de 5 heures, en pourcentage, puis le temps avant sa remise à zéro (`3h29m`, ou `45m` sous une heure). Sans heure de remise à zéro connue, il affiche `--` à la place.
-- `7d` : quota de la semaine, avec le temps avant remise à zéro en jours et heures au-delà d'un jour (`3d16h`).
-- le modèle, souligné, suivi de `:` et du niveau d'effort. Les lettres de l'effort sont en dégradé, avec une teinte propre à `low`, `medium`, `high`, `xhigh` et `max`, et une teinte commune aux autres valeurs. `auto` prend la teinte de `low`, et `ultracode` s'affiche `ultracode(+workflows)`. Le nom du modèle est coupé avant sa première parenthèse : `Opus 4 (1M context)` devient `Opus 4`.
+- `ctx`: how full the context is. The text gives the tokens used over the window size (`340k/1M`), the percentage alone when Claude Code does not send both, or `--%` with no data at all. The bar runs from light blue to deep blue.
+- `5h`: the 5-hour quota as a percentage, then the time left before it resets (`3h29m`, or `45m` under an hour). With no known reset time it shows `--` in that place.
+- `7d`: the weekly quota, with the time before the reset in days and hours past one day (`3d16h`).
+- the model, underlined, followed by `:` and the effort level. The effort letters are drawn in a gradient, with a hue of their own for `low`, `medium`, `high`, `xhigh` and `max`, and one shared hue for any other value. `auto` takes the hue of `low`, and `ultracode` shows as `ultracode(+workflows)`. The model name is cut before its first parenthesis: `Opus 4 (1M context)` becomes `Opus 4`.
 
-La seconde ligne montre trois métriques du poste :
+The second line shows three machine metrics:
 
-- `ram` : mémoire utilisée sur mémoire totale, en Gio avec une décimale. La mémoire utilisée est le total moins la mémoire disponible.
-- le disque, étiqueté par sa lettre sous Windows (`C:`) et `dsk` ailleurs : part du temps passée en lectures et écritures depuis le rafraîchissement précédent.
-- `cpu` : occupation du processeur depuis le rafraîchissement précédent. Sous Linux, l'attente des entrées-sorties ne compte pas comme occupation.
+- `ram`: memory used over total memory, in GiB with one decimal. Used memory is the total minus the available memory.
+- the disk, labelled with its drive letter on Windows (`C:`) and `dsk` elsewhere: the share of time spent reading and writing since the previous refresh.
+- `cpu`: processor load since the previous refresh. On Linux, time spent waiting on I/O does not count as load.
 
-Le disque et le processeur sont des écarts entre deux relevés : ils affichent `--%` au tout premier passage, puis dès que la source ne répond pas. Ils viennent des compteurs du système, `GetSystemTimes` et `IOCTL_DISK_PERFORMANCE` sous Windows, `/proc/stat`, `/proc/diskstats` et `/proc/meminfo` sous Linux, Mach et IOKit sous macOS. Le pourcentage est plafonné à 100.
+Disk and CPU are differences between two readings, so they show `--%` on the very first run, and again whenever their source does not answer. They come from the system counters: `GetSystemTimes` and `IOCTL_DISK_PERFORMANCE` on Windows, `/proc/stat`, `/proc/diskstats` and `/proc/meminfo` on Linux, Mach and IOKit on macOS. The percentage is capped at 100.
 
-Les jetons s'écrivent tels quels sous 1000, puis en `k`, `M` et `B` arrondis à l'unité.
+Token counts are written as they are below 1000, then in `k`, `M` and `B`, rounded to the unit.
 
-### Couleurs des barres
+### Bar colors
 
-Une barre de quota prend sa teinte selon son niveau : la teinte normale sous 30 %, la teinte d'alerte à partir de 30 %, la teinte critique à partir de 70 %. Pour le 5 h, c'est violet, puis mauve, puis rouge framboise. Pour le 7 j, vert, puis ocre, puis rouge. Les métriques du poste gardent leur teinte propre (bleu-vert pour la RAM, kaki pour le disque, bleu pour le processeur) jusqu'à 70 %, passent à l'orange au-delà, puis au rouge au-delà de 85 %.
+A quota bar takes its hue from its level: the normal hue under 30%, the warning hue from 30%, the critical hue from 70%. For the 5-hour quota that is violet, then mauve, then raspberry red; for the 7-day quota, green, then ochre, then red. The machine metrics keep their own hue (teal for RAM, khaki for the disk, blue for the CPU) up to 70%, turn orange above it, then red above 85%.
 
-Dans une barre, les carrés s'éclaircissent légèrement de gauche à droite sur fond sombre, et foncent sur fond clair. Le dernier carré rempli est plus petit (`▪`) pour marquer la fin. Le remplissage se calcule au demi-carré près, et toute valeur non nulle remplit au moins un carré. Quand la valeur atteint 100 %, le chiffre prend la couleur de la barre au lieu de celle du texte. Étiquettes et chiffres sont en gras.
+Within a bar, the squares get slightly lighter from left to right on a dark background, and darker on a light one. The last filled square is smaller (`▪`) to mark the end. Filling is computed to the half square, and any value above zero fills at least one square. When the value reaches 100%, the number is drawn in the color of its bar. Labels and numbers are bold.
 
-### Quand un élément disparaît
+### When parts are hidden
 
-Les segments `5h` et `7d` restent masqués tant qu'aucun quota n'est connu pour le compte : ni dans le JSON de la session, ni dans le fichier d'état depuis moins de 10 minutes. La seconde ligne disparaît quand `system.enabled` vaut `false`, ou quand la liste `system.metrics` ne contient aucun nom reconnu. Chaque segment peut aussi être masqué par le réglage `segments`. Si les quatre le sont, la première ligne reste vide. Pendant une mise à jour, `update` s'affiche au bout de la seconde ligne, et sur une ligne à lui quand la seconde ligne est coupée.
+The `5h` and `7d` segments stay hidden as long as no quota is known for the account, neither in the session JSON nor in the state file from the last 10 minutes. The second line disappears when `system.enabled` is `false`, or when the `system.metrics` list holds no known name. Each segment can also be hidden through the `segments` setting; with all four hidden, the first line stays empty. During an update, `update` shows at the end of the second line, or on a line of its own when the second line is turned off.
 
-## Quotas 5 h et 7 j
+## 5-hour and 7-day quotas
 
-Claude Code transmet les quotas dans le JSON de la session (`rate_limits.five_hour` et `rate_limits.seven_day`, avec `used_percentage` et `resets_at`), à partir de la première réponse de l'API. La barre les affiche et les range dans le fichier d'état sous les clés du compte.
+Claude Code sends the quotas in the session JSON (`rate_limits.five_hour` and `rate_limits.seven_day`, with `used_percentage` and `resets_at`), starting with the first API response. The bar shows them and stores them in the state file under the account's keys.
 
-Avant cette première réponse, elle reprend les valeurs gardées pour le même compte si elles ont moins de 10 minutes. Une fenêtre dont l'heure de remise à zéro est passée garde une heure, avancée à l'échéance suivante, mais perd son pourcentage, qui s'affiche `--%`. Le 5 h reste à `--%` tant que le compte n'a pas de fenêtre de 5 heures ouverte, c'est-à-dire avant son premier message.
+Before that first response, it reuses the values stored for the same account when they are less than 10 minutes old. A window whose reset time has passed keeps a time, moved on to the next reset, but loses its percentage, which shows as `--%`. The 5-hour quota stays at `--%` while the account has no 5-hour window open, that is before its first message.
 
-Le compte est reconnu au nom de son dossier de configuration : `CLAUDE_CONFIG_DIR` s'il est défini et non vide, sinon `~/.claude`. Le nom perd son point initial, passe en minuscules, et tout caractère hors `a-z`, `0-9`, `.`, `_` et `-` devient `_`. `.claude-compte2` donne `claude-compte2`, et un nom vide donne `claude`. Plusieurs comptes ouverts en même temps partagent le fichier d'état sans se mélanger.
+The account is recognized by the name of its configuration folder: `CLAUDE_CONFIG_DIR` when it is set and not empty, `~/.claude` otherwise. The name loses its leading dot and goes to lowercase, and any character outside `a-z`, `0-9`, `.`, `_` and `-` becomes `_`. `.claude-compte2` gives `claude-compte2`, and an empty name gives `claude`. Several accounts open at the same time share the state file without mixing their values.
 
-Le hook `SessionStart` de [claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu) écrit les mêmes clés au démarrage de chaque session, d'après l'API de suivi d'Anthropic : les quotas s'affichent alors dès l'ouverture.
+The `SessionStart` hook of [claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu) writes the same keys when each session starts, from Anthropic's usage API, so the quotas show as soon as Claude Code opens.
 
-## Seuil d'auto-compactage
+## Auto-compact threshold
 
-Quand un seuil d'auto-compactage plus petit que la fenêtre de contexte est réglé, la barre `ctx` se mesure par rapport à ce seuil, le texte devient `utilisés/seuil`, et un `ª` discret apparaît devant `ctx`. Le seuil se cherche dans cet ordre :
+When an auto-compact threshold smaller than the context window is set, the `ctx` bar is measured against that threshold, the text becomes `used/threshold`, and a faint `ª` appears before `ctx`. The threshold is looked up in this order:
 
-1. la variable d'environnement `CLAUDE_CODE_AUTO_COMPACT_WINDOW` du processus, si c'est un entier positif ;
-2. sinon trois fichiers, lus l'un après l'autre : le `settings.json` du dossier de configuration du compte, puis `.claude/settings.json` et `.claude/settings.local.json` du projet. Le dernier qui donne un seuil l'emporte.
+1. the `CLAUDE_CODE_AUTO_COMPACT_WINDOW` environment variable of the process, if it is a positive integer;
+2. otherwise three files, read one after the other: the `settings.json` of the account's configuration folder, then the project's `.claude/settings.json` and `.claude/settings.local.json`. The last one that gives a threshold wins.
 
-Dans chaque fichier, `env.CLAUDE_CODE_AUTO_COMPACT_WINDOW` (un entier écrit en texte) passe avant `autoCompactWindow` (un nombre entier), et `"autoCompactEnabled": false` annule le seuil trouvé dans un fichier précédent. Le projet est le dossier `cwd` transmis par Claude Code, à défaut le dossier courant du programme.
+In each file, `env.CLAUDE_CODE_AUTO_COMPACT_WINDOW` (an integer written as a string) comes before `autoCompactWindow` (an integer), and `"autoCompactEnabled": false` cancels a threshold found in an earlier file. The project is the `cwd` folder sent by Claude Code, or the program's current folder when there is none.
 
-Les fichiers sont relus au plus toutes les 30 secondes, et seulement si leur taille ou leur date a changé : un nouveau réglage peut mettre 30 secondes à se voir. Le seuil n'est pas cherché quand le segment `ctx` est masqué.
+The files are read again at most every 30 seconds, and only when their size or date has changed, so a new setting can take 30 seconds to show. The threshold is not looked up while the `ctx` segment is hidden.
 
-## Thème clair ou sombre
+## Light or dark theme
 
-La barre choisit seule ses couleurs selon le fond du terminal. Elle prend la première réponse dans cet ordre :
+The bar picks its colors from the terminal background. It takes the first answer in this order:
 
-1. la variable `STATUSLINE_BG` ;
-2. le réglage `terminal_background` de `statusline.json` ;
-3. la variable `COLORFGBG` posée par certains terminaux : le nombre après le dernier `;` est la couleur du fond, et 7 ou 9 et plus veulent dire fond clair ;
-4. les réglages du terminal hôte, s'il est reconnu ;
-5. le thème du système.
+1. the `STATUSLINE_BG` variable;
+2. the `terminal_background` setting in `statusline.json`;
+3. the `COLORFGBG` variable that some terminals set: the number after the last `;` is the background color, and 7 or 9 and above mean a light background;
+4. the settings of the host terminal, when it is recognized;
+5. the system theme.
 
-`STATUSLINE_BG` et `terminal_background` acceptent `light` ou `clair`, `dark` ou `sombre`, sans tenir compte des majuscules. Sans réponse, la barre part sur un fond sombre.
+`STATUSLINE_BG` and `terminal_background` accept `light` or `clair`, `dark` or `sombre`, in any case. With no answer, the bar assumes a dark background.
 
-### Terminaux hôtes reconnus
+### Recognized host terminals
 
-Le terminal est reconnu par ses variables d'environnement, puis ses réglages sont lus :
+The terminal is recognized by its environment variables, then its settings are read:
 
-- VS Code et ses dérivés (`TERM_PROGRAM=vscode`, ou `VSCODE_INJECTION`, ou `VSCODE_PID`). Le fichier est `User/settings.json` de Code, Code - Insiders, VSCodium, Cursor ou Windsurf, dans `%APPDATA%` sous Windows, `~/Library/Application Support` sous macOS, `$XDG_CONFIG_HOME` ou `~/.config` sous Linux. Le produit qui a lancé le terminal, repéré par `VSCODE_GIT_ASKPASS_NODE`, `VSCODE_GIT_ASKPASS_MAIN` ou `VSCODE_CWD`, est lu en premier. `"window.autoDetectColorScheme": true` renvoie au thème du système. Sinon, un `workbench.colorTheme` dont le nom contient `light` donne un fond clair, tout autre nom ou son absence un fond sombre.
-- Windows Terminal (`WT_SESSION`). Le fichier est le `settings.json` du paquet Microsoft Store (version stable d'abord, puis Preview et Canary), ou celui de l'installation hors Store. Le profil retenu est celui de `WT_PROFILE_ID`, sinon le profil par défaut. Sa couleur `background`, ou celle de `profiles.defaults`, décide par sa luminance. À défaut, son jeu de couleurs décide : un jeu à deux variantes `{ "light", "dark" }` suit la clé `theme` du fichier, puis le système ; un jeu personnalisé de `schemes` décide par la luminance de son fond ; parmi les jeux fournis, `One Half Light`, `Solarized Light` et `Tango Light` sont clairs, les autres sombres. Sans jeu indiqué, c'est `Campbell`, sombre.
-- Zed (`TERM_PROGRAM=zed`), dans `%APPDATA%\Zed\settings.json` sous Windows et `~/.config/zed/settings.json` ailleurs. Un `theme` texte dont le nom contient `light` donne un fond clair. Un `theme` objet suit son `mode` (`light`, `dark`), et `system` ou l'absence de réglage renvoient au système.
-- Ghostty (`TERM_PROGRAM=ghostty`), dans `~/.config/ghostty/config` et, sous macOS, `~/Library/Application Support/com.mitchellh.ghostty/config`, lu en dernier. Une couleur `background` décide par sa luminance. Sinon `theme` : une valeur `light:...,dark:...` suit le système, un nom qui contient `light` est clair, le reste sombre.
+- VS Code and its forks (`TERM_PROGRAM=vscode`, `VSCODE_INJECTION` or `VSCODE_PID`). The file is `User/settings.json` of Code, Code - Insiders, VSCodium, Cursor or Windsurf, in `%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` or `~/.config` on Linux. The product that started the terminal, found through `VSCODE_GIT_ASKPASS_NODE`, `VSCODE_GIT_ASKPASS_MAIN` or `VSCODE_CWD`, is read first. `"window.autoDetectColorScheme": true` defers to the system theme. Otherwise a `workbench.colorTheme` whose name contains `light` gives a light background, and any other name, or none, a dark one.
+- Windows Terminal (`WT_SESSION`). The file is the `settings.json` of the Microsoft Store package (stable first, then Preview and Canary), or the one of the unpackaged install. The profile used is the one named by `WT_PROFILE_ID`, or else the default profile. Its `background` color, or the one in `profiles.defaults`, decides through its luminance. Failing that, its color scheme decides: a scheme with two variants `{ "light", "dark" }` follows the `theme` key of the file, then the system; a custom scheme from `schemes` decides through the luminance of its background; among the built-in schemes, `One Half Light`, `Solarized Light` and `Tango Light` are light and the others dark. With no scheme set, it is `Campbell`, which is dark.
+- Zed (`TERM_PROGRAM=zed`), in `%APPDATA%\Zed\settings.json` on Windows and `~/.config/zed/settings.json` elsewhere. A string `theme` whose name contains `light` gives a light background. An object `theme` follows its `mode` (`light`, `dark`), and `system`, or no setting, defers to the system.
+- Ghostty (`TERM_PROGRAM=ghostty`), in `~/.config/ghostty/config` and, on macOS, `~/Library/Application Support/com.mitchellh.ghostty/config`, read last. A `background` color decides through its luminance. Otherwise `theme` decides: a `light:...,dark:...` value follows the system, a name containing `light` is light, and anything else is dark.
 
-Les autres terminaux passent directement au thème du système.
+Other terminals go straight to the system theme.
 
-### Thème du système
+### System theme
 
-Chaque système a sa propre source :
+Each system has its own source:
 
-- Windows : la valeur `AppsUseLightTheme` du registre de l'utilisateur (applications en mode clair). Une valeur jamais posée veut dire mode clair, comme dans Windows.
-- macOS : la clé `AppleInterfaceStyle` de `~/Library/Preferences/.GlobalPreferences.plist`. `Dark` donne un fond sombre, son absence un fond clair.
-- Linux : `GTK_THEME` (sombre s'il contient `dark`), puis sous KDE la couleur `BackgroundNormal` de la section `[Colors:Window]` de `kdeglobals`, puis `gsettings` : `color-scheme` (`prefer-dark` ou `prefer-light`), et à défaut le nom de `gtk-theme`.
+- Windows: the `AppsUseLightTheme` value in the user's registry (apps in light mode). A value that was never set means light mode, as it does for Windows itself.
+- macOS: the `AppleInterfaceStyle` key of `~/Library/Preferences/.GlobalPreferences.plist`. `Dark` gives a dark background, and a missing key a light one.
+- Linux: `GTK_THEME` (dark if it contains `dark`), then on KDE the `BackgroundNormal` color in the `[Colors:Window]` section of `kdeglobals`, then `gsettings`: `color-scheme` (`prefer-dark` or `prefer-light`), and failing that the name in `gtk-theme`.
 
-Quand le terminal suit le système (VS Code avec `window.autoDetectColorScheme`, un jeu de couleurs Windows Terminal à deux variantes, Zed en `system`), c'est donc le thème du système qui tranche.
+When the terminal follows the system (VS Code with `window.autoDetectColorScheme`, a two-variant Windows Terminal scheme, Zed set to `system`), the system theme settles the question.
 
-Le résultat des étapes 4 et 5 est gardé dans le fichier d'état. Il est recalculé dès qu'un fichier de réglages du terminal change de taille ou de date, ou que le thème du système change : un passage en mode clair se voit au rafraîchissement suivant. Les étapes 1 à 3 sont relues à chaque passage. `statusline --theme` affiche le fond retenu.
+The result of steps 4 and 5 is kept in the state file. It is worked out again as soon as a terminal settings file changes size or date, or the system theme changes, so a switch to light mode shows at the next refresh. Steps 1 to 3 are read on every run. `statusline --theme` prints the background in use.
 
-## Réglages
+## Settings
 
-Le programme cherche son fichier de réglages dans cet ordre :
+The program looks for its settings file in this order:
 
-1. le fichier désigné par `STATUSLINE_CONFIG`, même s'il n'existe pas ;
-2. `statusline.json` dans le dossier `CLAUDE_CONFIG_DIR`, s'il existe ;
+1. the file named by `STATUSLINE_CONFIG`, even if it does not exist;
+2. `statusline.json` in the `CLAUDE_CONFIG_DIR` folder, if it exists;
 3. `~/.claude/statusline.json`.
 
-Il est relu à chaque rafraîchissement. Le JSON y tolère les commentaires `//` et `/* */`, les virgules en trop et un BOM. Un fichier absent ou illisible laisse toutes les valeurs par défaut, sans message. Les couleurs s'écrivent `#RRGGBB` ou `#RGB`, le `#` est facultatif, et une couleur invalide reprend sa valeur par défaut. Le `statusline.json` du dépôt reprend une partie des valeurs par défaut, et toutes les clés du tableau peuvent y être ajoutées.
+It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, trailing commas and a BOM. A missing or unreadable file leaves every value at its default, with no message. Colors are written `#RRGGBB` or `#RGB`, the `#` is optional, and an invalid color falls back to its default. The `statusline.json` in the repository repeats part of the defaults, and any key of the table can be added to it.
 
-| Clé | Par défaut | Effet |
+| Key | Default | Effect |
 |---|---|---|
-| `terminal_background` | absente | `light`, `clair`, `dark` ou `sombre` force le fond |
-| `bar_width` | `8` | nombre de carrés par barre, de 1 à 40 |
-| `bold` | `true` | `false` retire le gras des étiquettes et des chiffres |
-| `glyphs.filled`, `glyphs.empty`, `glyphs.half` | `■`, `■`, `▪` | carré plein, carré vide, dernier carré rempli |
-| `auto_compact_marker` | `ª` | marqueur du seuil d'auto-compactage |
-| `effort_style` | `gradient` | `flat` colore l'effort d'une seule teinte |
-| `segments.ctx`, `segments.5h`, `segments.7d`, `segments.model` | `true` | `false` masque le segment |
-| `gradient.5h`, `gradient.7d` | `0.55`, `0.3` | force de l'éclaircissement dans la barre, de 0 à 1 |
-| `thresholds.quota_warn`, `thresholds.quota_hot` | `30`, `70` | pourcentages à partir desquels un quota passe en alerte, puis en critique |
-| `thresholds.system_warn`, `thresholds.system_hot` | `70`, `85` | pourcentages au-delà desquels une métrique du poste passe en alerte, puis en critique |
-| `palettes.5h.ok`, `.warn`, `.hot` | `#786EC8`, `#AA5AAF`, `#C83C5F` | teintes du quota 5 h |
-| `palettes.7d.ok`, `.warn`, `.hot` | `#538977`, `#B88143`, `#B95555` | teintes du quota 7 j |
-| `colors.ink_light`, `colors.ink_dark` | `#000000`, `#E8EAED` | texte, sur fond clair et sur fond sombre |
-| `colors.empty_light`, `colors.empty_dark` | `#BEB4A5`, `#E2E5EA` | carrés vides |
-| `colors.ctx_from_light`, `colors.ctx_to_light` | `#7DB9FF`, `#285AB4` | dégradé du contexte sur fond clair |
-| `colors.ctx_from_dark`, `colors.ctx_to_dark` | `#96CDFF`, `#4682DC` | dégradé du contexte sur fond sombre |
-| `system.enabled` | `true` | `false` supprime la seconde ligne |
-| `system.metrics` | `["ram", "io", "cpu"]` | métriques affichées, dans l'ordre de la liste |
-| `system.gradient` | `0.45` | force de l'éclaircissement pour la seconde ligne |
-| `system.disk_path` | `C:\` sous Windows, `/` ailleurs | disque suivi |
-| `system.colors.ram.ok`, `.dsk.ok`, `.cpu.ok` | `#1E787D`, `#697855`, `#375A8C` | teinte normale de chaque métrique |
-| `system.colors.<métrique>.warn`, `.hot` | `#BE823C`, `#C83C3C` | teintes d'alerte et critique |
-| `auto_update` | `false` | `true` active la recherche automatique de mises à jour |
+| `terminal_background` | not set | `light`, `clair`, `dark` or `sombre` forces the background |
+| `bar_width` | `8` | squares per bar, from 1 to 40 |
+| `bold` | `true` | `false` drops the bold from labels and numbers |
+| `glyphs.filled`, `glyphs.empty`, `glyphs.half` | `■`, `■`, `▪` | full square, empty square, last filled square |
+| `auto_compact_marker` | `ª` | auto-compact threshold marker |
+| `effort_style` | `gradient` | `flat` draws the effort in a single hue |
+| `segments.ctx`, `segments.5h`, `segments.7d`, `segments.model` | `true` | `false` hides the segment |
+| `gradient.5h`, `gradient.7d` | `0.55`, `0.3` | how strongly the bar lightens, from 0 to 1 |
+| `thresholds.quota_warn`, `thresholds.quota_hot` | `30`, `70` | percentages from which a quota turns to warning, then critical |
+| `thresholds.system_warn`, `thresholds.system_hot` | `70`, `85` | percentages above which a machine metric turns to warning, then critical |
+| `palettes.5h.ok`, `.warn`, `.hot` | `#786EC8`, `#AA5AAF`, `#C83C5F` | hues of the 5-hour quota |
+| `palettes.7d.ok`, `.warn`, `.hot` | `#538977`, `#B88143`, `#B95555` | hues of the 7-day quota |
+| `colors.ink_light`, `colors.ink_dark` | `#000000`, `#E8EAED` | text, on a light and on a dark background |
+| `colors.empty_light`, `colors.empty_dark` | `#BEB4A5`, `#E2E5EA` | empty squares |
+| `colors.ctx_from_light`, `colors.ctx_to_light` | `#7DB9FF`, `#285AB4` | context gradient on a light background |
+| `colors.ctx_from_dark`, `colors.ctx_to_dark` | `#96CDFF`, `#4682DC` | context gradient on a dark background |
+| `system.enabled` | `true` | `false` removes the second line |
+| `system.metrics` | `["ram", "io", "cpu"]` | metrics shown, in the order of the list |
+| `system.gradient` | `0.45` | how strongly the bars of the second line lighten |
+| `system.disk_path` | `C:\` on Windows, `/` elsewhere | disk to watch |
+| `system.colors.ram.ok`, `.dsk.ok`, `.cpu.ok` | `#1E787D`, `#697855`, `#375A8C` | normal hue of each metric |
+| `system.colors.<metric>.warn`, `.hot` | `#BE823C`, `#C83C3C` | warning and critical hues |
+| `auto_update` | `false` | `true` turns on the automatic update check |
 
-Les noms de `system.metrics` s'écrivent en minuscules, et les noms inconnus sont ignorés. Une liste vide, ou absente, revient aux trois métriques. La couleur du disque se règle sous `dsk`, même si la métrique s'appelle `io`.
+Names in `system.metrics` are written in lowercase, and unknown names are ignored. An empty or missing list falls back to the three metrics. The disk color is set under `dsk`, even though the metric is called `io`.
 
-`system.disk_path` ne se lit pas de la même façon partout. Sous Windows, seule la première lettre compte : `D:\Jeux` suit le lecteur `D:`. Sous Linux, c'est le disque qui porte ce chemin, et à défaut le premier disque physique de `/proc/diskstats`. Sous macOS, le réglage est ignoré : la barre additionne l'activité de tous les disques.
+`system.disk_path` is read differently on each system. On Windows only the first letter counts: `D:\Games` follows drive `D:`. On Linux it is the disk that holds that path, or else the first physical disk in `/proc/diskstats`. On macOS the setting is ignored and the bar adds up the activity of every disk.
 
-## Ligne de commande
+## Command line
 
-Le programme s'installe dans `~/.claude/bin`, sous le nom `statusline.exe` sous Windows et `statusline` ailleurs. Ce dossier n'est pas dans le PATH, il faut donc l'appeler par son chemin complet, par exemple `~/.claude/bin/statusline --theme`. C'est sous cette forme, avec `~`, que `--install` l'inscrit dans `settings.json` : la même commande vaut sur tous les PC, quel que soit le nom d'utilisateur.
+The program is installed in `~/.claude/bin`, as `statusline.exe` on Windows and `statusline` elsewhere. That folder is not on the PATH, so call the program by its full path, for example `~/.claude/bin/statusline --theme`. `--install` writes it into `settings.json` in that same form, with `~`, so the command works on every PC whatever the user name.
 
-| Commande | Effet |
+| Command | Effect |
 |---|---|
-| sans argument | lit le JSON de Claude Code sur l'entrée standard, écrit la barre et met à jour le fichier d'état. Lancé à la main dans un terminal, il n'attend rien et dessine une barre sans données. |
-| `--demo` | rendu d'exemple sans Claude Code (Opus 5, effort `max`, contexte 340k sur 1M, 5 h à 36 %, 7 j à 61 %), avec les vrais réglages, le vrai thème et les vraies métriques du poste. Le fichier d'état n'est pas modifié. |
-| `--bench [n]` | rend `n` fois l'exemple (200 par défaut) et affiche le temps moyen par rendu, puis son détail : état, config, session, rendu, écriture. Le lancement du processus n'est pas compté. |
-| `--theme` | affiche le fond retenu, `light` ou `dark` |
-| `--install` | pose le bloc `statusLine` dans le `settings.json` du compte courant (voir [INSTALL.md](INSTALL.md)) |
-| `--uninstall` | retire ce bloc |
-| `--update` | installe la dernière version publiée si elle est plus récente (voir plus bas) |
-| `--version`, `-V` | affiche `statusline` suivi du numéro de version |
-| `--help`, `-h` | affiche l'aide |
+| no argument | reads the Claude Code JSON on standard input, writes the bar and updates the state file. Run by hand in a terminal, it does not wait for input and draws a bar with no data. |
+| `--demo` | sample rendering without Claude Code (Opus 5, effort `max`, context 340k of 1M, 5h at 36%, 7d at 61%), with the real settings, theme and machine metrics. The state file is left alone. |
+| `--bench [n]` | renders the sample `n` times (200 by default) and prints the average time per rendering, then its breakdown: state, config, session, render, write. Process startup is not counted. |
+| `--theme` | prints the background in use, `light` or `dark` |
+| `--install` | writes the `statusLine` block into the `settings.json` of the current account (see [INSTALL.md](INSTALL.md)) |
+| `--uninstall` | removes that block |
+| `--update` | installs the latest release when it is newer (see below) |
+| `--version`, `-V` | prints `statusline` followed by the version number |
+| `--help`, `-h` | prints the help |
 
-Seul le premier argument est lu. Le code de sortie vaut 0 en cas de succès, 1 quand `--install`, `--uninstall` ou `--update` échoue, 2 pour un argument inconnu, qui est rappelé avec l'aide.
+Only the first argument is read. The exit code is 0 on success, 1 when `--install`, `--uninstall` or `--update` fails, and 2 for an unknown argument, which is printed back with the help.
 
-## Mise à jour automatique
+## Automatic updates
 
-Avec `"auto_update": true` dans `statusline.json`, un rendu de la barre lance `statusline --update` au plus toutes les 6 heures, en arrière-plan, sans fenêtre et en priorité basse, puis rend la main sans l'attendre. Ce lancement n'a lieu que si le programme tourne depuis `~/.claude/bin` et qu'un binaire est publié pour le système. L'heure de la dernière recherche est gardée dans le fichier d'état, sous la clé `update_at`.
+With `"auto_update": true` in `statusline.json`, rendering the bar starts `statusline --update` at most every 6 hours, in the background, with no window and at low priority, and returns without waiting for it. This only happens when the program runs from `~/.claude/bin` and a binary is published for the system. The time of the last check is kept in the state file, under the `update_at` key.
 
-`--update` demande la dernière version publiée à l'API GitHub, avec `curl` (sous Windows, le `curl.exe` du dossier système). Si elle est plus récente, il télécharge le binaire du système à côté du programme (`statusline.new.exe`, ou `statusline.new`), vérifie qu'il répond à `--version`, puis le met à la place de l'ancien. Sous Windows, le programme en cours d'exécution ne peut pas être écrasé : il est renommé `statusline.exe.old-<horodatage>`, et ce fichier est supprimé à la recherche suivante.
+`--update` asks the GitHub API for the latest release, through `curl` (on Windows, the `curl.exe` of the system folder). When that release is newer, it downloads the binary for the system next to the program (`statusline.new.exe`, or `statusline.new`), checks that it answers `--version`, then puts it in place of the old one. On Windows the running program cannot be overwritten, so it is renamed `statusline.exe.old-<timestamp>`, and that file is deleted at the next check.
 
-Pendant le téléchargement, puis 5 secondes après le remplacement, la barre affiche `update`. Le rafraîchissement suivant lance le nouveau programme, sans redémarrer Claude Code. Un échec (réseau coupé, binaire absent, remplacement refusé) laisse l'ancien programme en place jusqu'à la recherche suivante.
+During the download, then for 5 seconds after the swap, the bar shows `update`. The next refresh starts the new program, with no need to restart Claude Code. A failure (network down, missing binary, swap refused) leaves the old program in place until the next check.
 
-Un verrou `update.lock`, dans le dossier du fichier d'état, empêche deux mises à jour en même temps. Il est ignoré au bout de 15 minutes, tout comme le marqueur `updating` qui fait afficher `update`. La recherche automatique est coupée par défaut, car aucune signature ne garantit encore le binaire téléchargé. `statusline --update` reste utilisable à la main.
+A lock file, `update.lock` in the folder of the state file, keeps two updates from running at once. It is ignored after 15 minutes, like the `updating` marker that makes the bar show `update`. The automatic check is off by default because nothing signs the downloaded binary yet. `statusline --update` still works by hand.
 
-## Fichier d'état
+## State file
 
-Les compteurs, les quotas et le thème détecté sont rangés dans un seul fichier, partagé par tous les comptes :
+The counters, the quotas and the detected theme live in a single file, shared by every account:
 
-- Windows : `%LOCALAPPDATA%\claude-statusline\state` ;
-- macOS : `~/Library/Application Support/claude-statusline/state` ;
-- Linux : `$XDG_STATE_HOME/claude-statusline/state`, à défaut `~/.local/state/claude-statusline/state`.
+- Windows: `%LOCALAPPDATA%\claude-statusline\state`;
+- macOS: `~/Library/Application Support/claude-statusline/state`;
+- Linux: `$XDG_STATE_HOME/claude-statusline/state`, or else `~/.local/state/claude-statusline/state`.
 
-C'est un fichier texte, une ligne `clé valeur` par entrée. On y trouve les quotas de chaque compte (`q_at@<compte>`, `q5_at@<compte>`, `q5_pct@<compte>`, `q7_at@<compte>`, `q7_pct@<compte>`), le thème (`bg_host`, `bg_stamp`), le seuil d'auto-compactage (`compact_window`, `compact_key`, `compact_stamp`, `compact_at`) les derniers relevés du disque et du processeur (`io_clock`, `io_value`, `cpu_clock`, `cpu_value`) et l'heure de la dernière recherche de mise à jour (`update_at`). Les clés inconnues sont conservées. Les clés de la version 1 (`bg_at`, et les quotas sans suffixe de compte) sont retirées au premier passage.
+It is a text file with one `key value` line per entry. It holds the quotas of each account (`q_at@<account>`, `q5_at@<account>`, `q5_pct@<account>`, `q7_at@<account>`, `q7_pct@<account>`), the theme (`bg_host`, `bg_stamp`), the auto-compact threshold (`compact_window`, `compact_key`, `compact_stamp`, `compact_at`), the last disk and CPU readings (`io_clock`, `io_value`, `cpu_clock`, `cpu_value`) and the time of the last update check (`update_at`). Unknown keys are kept. The version 1 keys (`bg_at`, and the quotas without an account suffix) are removed on the first run.
 
-Le fichier n'est réécrit que si son contenu change, par un fichier temporaire ensuite renommé, de sorte qu'aucune lecture ne tombe sur un fichier à moitié écrit. Sans dossier personnel connu (`HOME`, ou `USERPROFILE` sous Windows), rien n'est écrit. `--bench` écrit à côté un fichier `state.bench` et le supprime à la fin.
+The file is written again only when its content changes, through a temporary file that is then renamed, so a reader never finds it half written. With no known home folder (`HOME`, or `USERPROFILE` on Windows), nothing is written. `--bench` writes a `state.bench` file next to it and deletes it at the end.
 
-## Variables d'environnement
+## Environment variables
 
-Le programme lit les variables suivantes, toutes facultatives :
+The program reads the following variables, all of them optional:
 
-| Variable | Rôle |
+| Variable | Use |
 |---|---|
-| `STATUSLINE_BG` | force le fond : `light`, `clair`, `dark` ou `sombre` |
-| `STATUSLINE_CONFIG` | chemin du fichier de réglages |
-| `CLAUDE_CONFIG_DIR` | dossier du compte : réglages, seuil d'auto-compactage, clés de quotas, cible de `--install` |
-| `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | seuil d'auto-compactage |
-| `COLORFGBG` | couleurs du terminal, pour le fond |
-| `TERM_PROGRAM`, `VSCODE_INJECTION`, `VSCODE_PID`, `WT_SESSION` | reconnaissance du terminal hôte |
-| `VSCODE_GIT_ASKPASS_NODE`, `VSCODE_GIT_ASKPASS_MAIN`, `VSCODE_CWD` | choix entre VS Code et ses dérivés |
-| `WT_PROFILE_ID` | profil Windows Terminal en cours |
-| `GTK_THEME`, `XDG_CURRENT_DESKTOP` | thème du système sous Linux |
-| `HOME`, `USERPROFILE`, `LOCALAPPDATA`, `APPDATA`, `XDG_STATE_HOME`, `XDG_CONFIG_HOME` | emplacement des fichiers |
+| `STATUSLINE_BG` | forces the background: `light`, `clair`, `dark` or `sombre` |
+| `STATUSLINE_CONFIG` | path of the settings file |
+| `CLAUDE_CONFIG_DIR` | account folder: settings, auto-compact threshold, quota keys, target of `--install` |
+| `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | auto-compact threshold |
+| `COLORFGBG` | terminal colors, for the background |
+| `TERM_PROGRAM`, `VSCODE_INJECTION`, `VSCODE_PID`, `WT_SESSION` | host terminal detection |
+| `VSCODE_GIT_ASKPASS_NODE`, `VSCODE_GIT_ASKPASS_MAIN`, `VSCODE_CWD` | which of VS Code and its forks started the terminal |
+| `WT_PROFILE_ID` | current Windows Terminal profile |
+| `GTK_THEME`, `XDG_CURRENT_DESKTOP` | system theme on Linux |
+| `HOME`, `USERPROFILE`, `LOCALAPPDATA`, `APPDATA`, `XDG_STATE_HOME`, `XDG_CONFIG_HOME` | where files are |
 
-Une variable vide compte comme absente.
+An empty variable counts as unset.
 
-## Compiler
+## Building
 
 ```sh
 cargo build --release
 ```
 
-Le binaire sort dans `target/release`. Sous Windows, `.cargo/config.toml` lie le programme avec `rust-lld` sans la bibliothèque C, et rien d'autre que Rust n'est nécessaire. Seule la cible `x86_64-pc-windows-msvc` y est prévue. Le même fichier active la protection CET (`/CETCOMPAT`), remplace l'horodatage du binaire par une empreinte de son contenu (`/Brepro`) et ne produit pas de `.pdb` : deux compilations du même code donnent le même fichier, quel que soit le dossier. Sous macOS, il passe `-S` à l'éditeur de liens, qui n'inscrit alors aucun chemin de fichier objet : l'identifiant UUID du binaire, calculé sur son contenu, ne dépend plus du dossier de compilation. Le profil de publication active `lto`, `panic = "abort"` et retire les symboles.
+The binary lands in `target/release`. On Windows, `.cargo/config.toml` links the program with `rust-lld` and without the C runtime, so nothing but Rust is needed. Only the `x86_64-pc-windows-msvc` target is supported there. The same file turns on CET protection (`/CETCOMPAT`), replaces the timestamp of the binary with a hash of its content (`/Brepro`) and produces no `.pdb`: two builds of the same code give the same file, whatever the folder. On macOS it passes `-S` to the linker, which then writes no object file path: the UUID of the binary, computed over its content, no longer depends on the build folder. The release profile turns on `lto` and `panic = "abort"`, and strips the symbols.
 
-Les tests (`cargo test`) tournent tels quels sous Linux et macOS. Sous Windows, ils ont besoin de la bibliothèque C de Visual Studio et d'une variable `RUSTFLAGS` qui remplace les options de liaison du fichier de configuration, comme le fait la CI (`RUSTFLAGS=-Cdebuginfo=0`).
+The tests (`cargo test`) run as they are on Linux and macOS. On Windows they need the Visual Studio C runtime and a `RUSTFLAGS` variable that replaces the link options of the config file, as CI does (`RUSTFLAGS=-Cdebuginfo=0`).
 
-## CI et versions publiées
+## CI and releases
 
-La CI tourne à chaque envoi sur `main`, à chaque étiquette `v*` et sur chaque pull request. Pour chacune des cinq cibles, elle compile en mode publication puis essaie le binaire : version, thème, rendu d'exemple, lecture d'un JSON de session, mesure, installation puis désinstallation, installation depuis `~/.claude/bin` avec sa commande en `~`, et refus d'un argument inconnu. Elle lance aussi les tests unitaires (sauf pour macOS Intel), `clippy` sous Linux, et un essai complet de `install.sh` sous Linux et macOS.
+CI runs on every push to `main`, on every `v*` tag and on every pull request. On each of the five targets it checks the formatting, runs `clippy` and the unit tests, builds in release mode, then tries the binary: version, theme, sample rendering, reading a session JSON, benchmark, install then uninstall, install from `~/.claude/bin` with its `~` command, and refusal of an unknown argument. It then runs the installer twice in an empty home folder, `install.sh` on Linux and macOS and `install.ps1 -Build` on Windows, and compares each `settings.json` with the expected text. It also checks the ASLR, NX and CET flags of the Windows binary, and that the Linux x86_64 binary is position-independent.
 
-Une étiquette `v*` publie une version avec les binaires ci-dessous. Elle doit reprendre la version de `Cargo.toml` (`v2.1.0` pour `2.1.0`), sinon la CI échoue avant de compiler. C'est cette version que la mise à jour automatique compare à la sienne.
+A `v*` tag publishes a release with the binaries below. The tag must match the version in `Cargo.toml` (`v2.1.0` for `2.1.0`), or CI fails before building. The automatic update compares that version with its own.
 
-| Fichier | Système |
+| File | System |
 |---|---|
-| `statusline-linux-x86_64` | Linux x86_64, binaire statique (musl) |
-| `statusline-linux-arm64` | Linux arm64, binaire statique (musl) |
-| `statusline-macos-arm64` | macOS sur puce Apple |
-| `statusline-macos-x86_64` | macOS Intel |
-| `statusline-windows-x86_64.exe` | Windows 64 bits |
+| `statusline-linux-x86_64` | Linux x86_64, static binary (musl) |
+| `statusline-linux-arm64` | Linux arm64, static binary (musl) |
+| `statusline-macos-arm64` | macOS on Apple silicon |
+| `statusline-macos-x86_64` | macOS on Intel |
+| `statusline-windows-x86_64.exe` | Windows, 64-bit |
 
-La CI compile avec Rust 1.99.1, fixé par la variable `RUSTUP_TOOLCHAIN` du workflow. Elle recompile chaque binaire depuis une copie des sources placée dans un autre dossier, et échoue si le résultat diffère d'un seul octet. Chaque version publie aussi `SHA256SUMS`, qui donne l'empreinte SHA-256 de chaque binaire, et une attestation de provenance qui relie chaque fichier au workflow qui l'a compilé. Pour vérifier un binaire téléchargé avec GitHub CLI :
+CI builds with Rust 1.99.1, pinned by the `RUSTUP_TOOLCHAIN` variable of the workflow. It rebuilds every binary from a copy of the sources in another folder, and fails if the result differs by a single byte. Each release also publishes `SHA256SUMS`, which gives the SHA-256 hash of each binary, and a build provenance attestation that ties each file to the workflow that built it. To check a downloaded binary with GitHub CLI:
 
 ```sh
 gh attestation verify statusline-linux-x86_64 --repo LetermeFlorent/claude-statusline
 ```
 
-Sous Linux, `sha256sum -c SHA256SUMS --ignore-missing` compare aussi les binaires présents dans le dossier à la liste.
+On Linux, `sha256sum -c SHA256SUMS --ignore-missing` also compares the binaries in the folder with the list.
 
-`install.ps1` et `install.sh` téléchargent le fichier de leur système dans la dernière version publiée, avec `SHA256SUMS`, et refusent un binaire dont l'empreinte manque à la liste ou en diffère.
+`install.ps1` and `install.sh` download the file for their system from the latest release, along with `SHA256SUMS`, and refuse a binary whose hash is missing from the list or differs from it.
 
-## Limites
+## Limits
 
-Le binaire macOS Intel est compilé par la CI sans y être lancé. Il n'y a pas de binaire Windows ARM64 natif. Le binaire Linux arm64 se charge toujours à la même adresse : Rust ne sait pas encore produire d'exécutable statique indépendant de la position pour la cible `aarch64-unknown-linux-musl`. Sur les autres Unix (BSD par exemple), la barre fonctionne sans métriques du poste, sans thème du système et sans mise à jour automatique : `--%` partout sur la seconde ligne et fond sombre, sauf réglage. La mise à jour automatique demande `curl`, livré avec Windows 10 depuis la version 1803 et avec macOS, à installer sur certains Linux.
+There is no native Windows ARM64 binary. The Linux arm64 binary always loads at the same address, because Rust cannot yet build a static position-independent executable for the `aarch64-unknown-linux-musl` target. On other Unix systems (BSD, for example) the bar works without machine metrics, system theme or automatic updates: `--%` everywhere on the second line, and a dark background unless one is set. Automatic updates need `curl`, which ships with macOS and with Windows 10 since version 1803, and has to be installed on some Linux systems.
 
-Les couleurs sont envoyées en 24 bits, sans repli sur 256 couleurs, et la variable `NO_COLOR` n'est pas prise en compte. La détection du fond par le terminal hôte couvre VS Code et ses dérivés, Windows Terminal, Zed et Ghostty. Les autres terminaux passent par `COLORFGBG` ou le thème du système, et `STATUSLINE_BG` permet de forcer le choix.
+Colors are sent as 24-bit, with no fallback to 256 colors, and the `NO_COLOR` variable is ignored. Background detection through the host terminal covers VS Code and its forks, Windows Terminal, Zed and Ghostty. Other terminals go through `COLORFGBG` or the system theme, and `STATUSLINE_BG` can force the choice.
