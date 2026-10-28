@@ -172,6 +172,8 @@ The program is installed in `~/.claude/bin`, as `statusline.exe` on Windows and 
 
 Only the first argument is read. The exit code is 0 on success, 1 when `--install`, `--uninstall` or `--update` fails, and 2 for an unknown argument, which is printed back with the help.
 
+The help and the messages follow the system language: French on a system set to French, English on any other. On Windows that is the display language of the user account. On Linux and macOS the first of `LC_ALL`, `LC_MESSAGES` and `LANG` that holds a value decides, and French means a language code of `fr`, as in `fr_FR.UTF-8` or `fr_CA`. The two install scripts follow the same rule.
+
 ## Automatic updates
 
 With `"auto_update": true` in `statusline.json`, rendering the bar starts `statusline --update` at most every 6 hours, in the background, with no window and at low priority, and returns without waiting for it. This only happens when the program runs from `~/.claude/bin` and a binary is published for the system. The time of the last check is kept in the state file, under the `update_at` key.
