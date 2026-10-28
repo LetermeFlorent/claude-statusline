@@ -1,5 +1,3 @@
-// Couche systeme Linux et macOS, sur la bibliotheque standard
-
 use std::io::{IsTerminal, Read, Write};
 use std::string::String;
 use std::vec::Vec;
@@ -51,7 +49,6 @@ fn resolved(path: &str) -> String {
         .unwrap_or_else(|| String::from(path))
 }
 
-// Ecrit a cote puis renomme, pour qu'un lecteur concurrent ne voie jamais un fichier tronque
 pub fn write_atomic(path: &str, data: &[u8]) -> bool {
     let target = resolved(path);
     let tmp = format!("{}.{}.tmp", target, std::process::id());
@@ -89,7 +86,6 @@ pub fn make_executable(path: &str) -> bool {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).is_ok()
 }
 
-// (taille, date de modification en secondes Unix)
 pub fn stamp(path: &str) -> Option<(u64, i64)> {
     use std::os::unix::fs::MetadataExt;
     let m = std::fs::metadata(path).ok()?;
@@ -114,7 +110,6 @@ pub fn list(dir: &str, prefix: &str) -> Vec<String> {
         .collect()
 }
 
-// Rien a lire quand l'entree est un terminal : on ne bloque pas
 pub fn stdin() -> Option<String> {
     let mut input = std::io::stdin();
     if input.is_terminal() {
@@ -196,7 +191,10 @@ mod sys {
         std::fs::read_to_string(p).ok()
     }
 
-    // Jiffies : (total hors invite, total moins repos et attente disque)
+    const FIELDS_BEFORE_GUEST: usize = 8;
+    const IDLE: usize = 3;
+    const IOWAIT: usize = 4;
+
     pub fn cpu() -> Option<(i64, i64)> {
         let s = read_str("/proc/stat")?;
         let line = s.lines().next()?;
@@ -204,12 +202,15 @@ mod sys {
         if it.next()? != "cpu" {
             return None;
         }
-        let jiffies: Vec<i64> = it.take(8).filter_map(|x| x.parse().ok()).collect();
-        if jiffies.len() < 5 {
+        let jiffies: Vec<i64> = it
+            .take(FIELDS_BEFORE_GUEST)
+            .filter_map(|x| x.parse().ok())
+            .collect();
+        if jiffies.len() <= IOWAIT {
             return None;
         }
         let clock: i64 = jiffies.iter().sum();
-        Some((clock, clock - jiffies[3] - jiffies[4]))
+        Some((clock, clock - jiffies[IDLE] - jiffies[IOWAIT]))
     }
 
     fn dev_numbers(path: &str) -> Option<(u64, u64)> {
@@ -220,19 +221,21 @@ mod sys {
         Some((major, minor))
     }
 
-    // Millisecondes : (temps ecoule, temps passe a faire des entrees-sorties)
+    const IO_MS_COLUMN: usize = 12;
+
     pub fn disk(path: &str) -> Option<(i64, i64)> {
         let up = read_str("/proc/uptime")?;
-        let secs: f64 = up.split_whitespace().next()?.parse().ok()?;
+        let uptime_secs: f64 = up.split_whitespace().next()?.parse().ok()?;
+        let uptime_ms = (uptime_secs * 1000.0) as i64;
         let stats = read_str("/proc/diskstats")?;
         let want = dev_numbers(path);
         let mut fallback: Option<i64> = None;
         for line in stats.lines() {
             let columns: Vec<&str> = line.split_whitespace().collect();
-            if columns.len() < 13 {
+            if columns.len() <= IO_MS_COLUMN {
                 continue;
             }
-            let ticks: i64 = match columns[12].parse() {
+            let io_ms: i64 = match columns[IO_MS_COLUMN].parse() {
                 Ok(t) => t,
                 Err(_) => continue,
             };
@@ -242,7 +245,7 @@ mod sys {
             );
             if let (Some((a, b)), (Some(x), Some(y))) = (want, num) {
                 if a == x && b == y {
-                    return Some(((secs * 1000.0) as i64, ticks));
+                    return Some((uptime_ms, io_ms));
                 }
             }
             let name = columns[2];
@@ -253,10 +256,10 @@ mod sys {
                 && !virt
                 && std::path::Path::new(&format!("/sys/block/{}", name)).exists()
             {
-                fallback = Some(ticks);
+                fallback = Some(io_ms);
             }
         }
-        fallback.map(|t| ((secs * 1000.0) as i64, t))
+        fallback.map(|io_ms| (uptime_ms, io_ms))
     }
 
     pub fn memory() -> Option<(f64, f64)> {
@@ -406,16 +409,17 @@ mod sys {
         fn CFRelease(cf: *const c_void);
     }
 
-    // Ticks : (total, total moins repos)
+    const CPU_STATE_IDLE: usize = 2;
+
     pub fn cpu() -> Option<(i64, i64)> {
-        let mut t = [0i32; 4];
+        let mut ticks = [0i32; 4];
         let mut n = 4u32;
-        if unsafe { host_statistics(mach_host_self(), 3, t.as_mut_ptr(), &mut n) } != 0 {
+        if unsafe { host_statistics(mach_host_self(), 3, ticks.as_mut_ptr(), &mut n) } != 0 {
             return None;
         }
-        let v: Vec<i64> = t.iter().map(|x| *x as u32 as i64).collect();
-        let clock: i64 = v.iter().sum();
-        Some((clock, clock - v[2]))
+        let ticks: Vec<i64> = ticks.iter().map(|x| *x as u32 as i64).collect();
+        let clock: i64 = ticks.iter().sum();
+        Some((clock, clock - ticks[CPU_STATE_IDLE]))
     }
 
     fn cfstr(s: &[u8]) -> *const c_void {
@@ -431,7 +435,8 @@ mod sys {
         out
     }
 
-    // Nanosecondes : (temps ecoule, temps de lecture et d'ecriture de tous les disques)
+    const CLOCK_UPTIME_RAW: u32 = 8;
+
     pub fn disk(_path: &str) -> Option<(i64, i64)> {
         let mut iter = 0u32;
         let matching = unsafe { IOServiceMatching(c"IOBlockStorageDriver".as_ptr().cast()) };
@@ -443,7 +448,7 @@ mod sys {
         let k_stats = cfstr(b"Statistics\0");
         let k_read = cfstr(b"Total Time (Read)\0");
         let k_write = cfstr(b"Total Time (Write)\0");
-        let mut busy = 0i64;
+        let mut busy_ns = 0i64;
         let mut seen = false;
         loop {
             let entry = unsafe { IOIteratorNext(iter) };
@@ -454,7 +459,7 @@ mod sys {
                 unsafe { IORegistryEntryCreateCFProperty(entry, k_stats, std::ptr::null(), 0) };
             if !stats.is_null() {
                 if unsafe { CFGetTypeID(stats) == CFDictionaryGetTypeID() } {
-                    busy = busy
+                    busy_ns = busy_ns
                         .wrapping_add(number(stats, k_read))
                         .wrapping_add(number(stats, k_write));
                     seen = true;
@@ -472,10 +477,15 @@ mod sys {
         if !seen {
             return None;
         }
-        Some((unsafe { clock_gettime_nsec_np(8) } as i64, busy))
+        let uptime_ns = unsafe { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) } as i64;
+        Some((uptime_ns, busy_ns))
     }
 
-    // Memoire utilisee comme le Moniteur d'activite : applications, fixee et compressee
+    const WIRE_COUNT_OFFSET: usize = 12;
+    const PURGEABLE_COUNT_OFFSET: usize = 88;
+    const COMPRESSOR_PAGE_COUNT_OFFSET: usize = 128;
+    const INTERNAL_PAGE_COUNT_OFFSET: usize = 140;
+
     pub fn memory() -> Option<(f64, f64)> {
         let mut total = 0u64;
         let mut len = 8usize;
@@ -502,7 +512,8 @@ mod sys {
             return None;
         }
         let at = |off: usize| vm_stats[off / 4] as u32 as f64;
-        let pages = at(140) - at(88) + at(12) + at(128);
+        let app_pages = at(INTERNAL_PAGE_COUNT_OFFSET) - at(PURGEABLE_COUNT_OFFSET);
+        let pages = app_pages + at(WIRE_COUNT_OFFSET) + at(COMPRESSOR_PAGE_COUNT_OFFSET);
         let used = pages * page as f64;
         let used = if used > total as f64 {
             total as f64

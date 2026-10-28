@@ -62,7 +62,6 @@ pub fn file_name(path: &str) -> &str {
     path.rfind([SEP, '/']).map_or(path, |i| &path[i + 1..])
 }
 
-// Dossier de configuration du compte Claude Code en cours
 pub fn claude_dir() -> Option<String> {
     match env("CLAUDE_CONFIG_DIR") {
         Some(d) if !d.trim().is_empty() => Some(d),

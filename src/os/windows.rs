@@ -1,6 +1,3 @@
-// Couche systeme Windows sans bibliotheque standard : appels Win32 directs,
-// lies sans CRT pour un binaire de quelques dizaines de Ko qui demarre vite.
-
 use alloc::format;
 use alloc::string::String;
 use alloc::vec;
@@ -227,8 +224,7 @@ unsafe fn from_ptr(text: *const u16) -> String {
     String::from_utf16_lossy(core::slice::from_raw_parts(text, len))
 }
 
-// Remplit un tampon de taille croissante tant que l'appel demande plus de place
-fn grow(call: &dyn Fn(*mut u16, u32) -> u32) -> Option<String> {
+fn with_growing_buffer(call: &dyn Fn(*mut u16, u32) -> u32) -> Option<String> {
     let mut size = MAX_PATH;
     loop {
         let mut buf: Vec<u16> = vec![0; size as usize];
@@ -264,7 +260,7 @@ pub fn args() -> Vec<String> {
 
 pub fn env(name: &str) -> Option<String> {
     let wide_name = wide(name);
-    grow(&|b, n| unsafe { GetEnvironmentVariableW(wide_name.as_ptr(), b, n) })
+    with_growing_buffer(&|b, n| unsafe { GetEnvironmentVariableW(wide_name.as_ptr(), b, n) })
 }
 
 fn open_read(path: &str) -> Handle {
@@ -365,12 +361,13 @@ fn resolved(path: &str) -> String {
     if file == INVALID {
         return String::from(path);
     }
-    let target = grow(&|b, n| unsafe { GetFinalPathNameByHandleW(file, b, n, VOLUME_NAME_DOS) });
+    let target = with_growing_buffer(&|b, n| unsafe {
+        GetFinalPathNameByHandleW(file, b, n, VOLUME_NAME_DOS)
+    });
     unsafe { CloseHandle(file) };
     target.unwrap_or_else(|| String::from(path))
 }
 
-// Ecrit a cote puis renomme, pour qu'un lecteur concurrent ne voie jamais un fichier tronque
 pub fn write_atomic(path: &str, data: &[u8]) -> bool {
     let target = resolved(path);
     let tmp = format!("{}.{}.tmp", target, unsafe { GetCurrentProcessId() });
@@ -402,7 +399,6 @@ pub fn make_executable(path: &str) -> bool {
     exists(path)
 }
 
-// (taille, date de modification en secondes Unix)
 pub fn stamp(path: &str) -> Option<(u64, i64)> {
     let wide_path = wide(path);
     let mut data = FileAttributeData::default();
@@ -432,7 +428,6 @@ pub fn mkdirs(path: &str) -> bool {
     exists(path)
 }
 
-// Noms des entrees de dir qui commencent par prefix
 pub fn list(dir: &str, prefix: &str) -> Vec<String> {
     let mut out = Vec::new();
     let pattern = wide(&format!("{}\\{}*", dir, prefix));
@@ -454,7 +449,6 @@ pub fn list(dir: &str, prefix: &str) -> Vec<String> {
     out
 }
 
-// Rien a lire quand l'entree est une console : on ne bloque pas
 pub fn stdin() -> Option<String> {
     let input = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
     if input == 0 || input == INVALID || unsafe { GetFileType(input) } == FILE_TYPE_CHAR {
@@ -503,15 +497,15 @@ pub fn err(s: &str) {
 }
 
 pub fn exe() -> Option<String> {
-    grow(&|b, n| unsafe { GetModuleFileNameW(0, b, n) })
+    with_growing_buffer(&|b, n| unsafe { GetModuleFileNameW(0, b, n) })
 }
 
 pub fn system_dir() -> Option<String> {
-    grow(&|b, n| unsafe { GetSystemDirectoryW(b, n) })
+    with_growing_buffer(&|b, n| unsafe { GetSystemDirectoryW(b, n) })
 }
 
 pub fn cwd() -> Option<String> {
-    grow(&|b, n| unsafe { GetCurrentDirectoryW(n, b) })
+    with_growing_buffer(&|b, n| unsafe { GetCurrentDirectoryW(n, b) })
 }
 
 pub fn now() -> f64 {
@@ -533,7 +527,6 @@ pub fn ticks() -> f64 {
     }
 }
 
-// (horloge, temps occupe) en centaines de nanosecondes
 pub fn cpu() -> Option<(i64, i64)> {
     let (mut idle, mut kernel, mut user) = (0u64, 0u64, 0u64);
     if unsafe { GetSystemTimes(&mut idle, &mut kernel, &mut user) } == 0 {
@@ -543,7 +536,6 @@ pub fn cpu() -> Option<(i64, i64)> {
     Some((clock as i64, clock.wrapping_sub(idle) as i64))
 }
 
-// IOCTL_DISK_PERFORMANCE sur le volume : (QueryTime, ReadTime + WriteTime)
 pub fn disk(path: &str) -> Option<(i64, i64)> {
     let letter: String = path
         .chars()
@@ -592,7 +584,6 @@ pub fn disk(path: &str) -> Option<(i64, i64)> {
     ))
 }
 
-// (total, disponible) en octets
 pub fn memory() -> Option<(f64, f64)> {
     let mut status = MemoryStatus {
         length: size_of::<MemoryStatus>() as u32,
@@ -603,6 +594,8 @@ pub fn memory() -> Option<(f64, f64)> {
     }
     Some((status.total as f64, status.available as f64))
 }
+
+const LIGHT_THEME_BY_DEFAULT: bool = true;
 
 pub fn os_theme() -> Option<bool> {
     let key = wide("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
@@ -622,8 +615,7 @@ pub fn os_theme() -> Option<bool> {
     };
     match status {
         ERROR_SUCCESS => Some(light != 0),
-        // Valeur jamais posee : Windows est en mode clair par defaut
-        ERROR_FILE_NOT_FOUND => Some(true),
+        ERROR_FILE_NOT_FOUND => Some(LIGHT_THEME_BY_DEFAULT),
         _ => None,
     }
 }
@@ -649,7 +641,6 @@ pub fn state_dir() -> Option<String> {
     Some(super::join(&base, &["claude-statusline"]))
 }
 
-// Tout ce que la CRT fournirait : allocateur, panique, fonctions memoire, point d'entree
 #[cfg(not(test))]
 mod rt {
     use super::*;
@@ -792,7 +783,6 @@ mod rt {
         "jmp wcslen_loop",
         "wcslen_end:",
         "ret",
-        // Sonde de pile pour les cadres de plus d'une page
         ".globl __chkstk",
         "__chkstk:",
         "push rcx",
