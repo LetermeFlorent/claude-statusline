@@ -10,6 +10,7 @@ mod compact;
 mod config;
 mod global_config;
 mod json;
+mod messages;
 mod num;
 mod os;
 mod portable;

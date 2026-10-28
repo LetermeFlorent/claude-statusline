@@ -2,6 +2,7 @@ use crate::backup;
 use crate::compact;
 use crate::config::{Config, Metric};
 use crate::global_config::{self, Repair};
+use crate::messages;
 use crate::os::{self, Contents};
 use crate::portable;
 use crate::render::{self, Data, SysValue};
@@ -12,25 +13,8 @@ use crate::theme;
 use crate::update;
 use crate::update_watch;
 use alloc::format;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-
-const HELP: &str = "statusline - ligne de statut pour Claude Code
-
-Sans argument, lit le JSON de Claude Code sur l'entree standard et ecrit la
-barre sur la sortie standard.
-
-  --install     pose l'entree statusLine dans ~/.claude/settings.json
-  --uninstall   la retire
-  --demo        affiche un rendu d'exemple, sans Claude Code
-  --bench [n]   cout du travail seul, lancement du processus exclu
-  --theme       fond detecte pour le terminal : light ou dark
-  --update      installe la derniere version publiee sur GitHub
-  --version     numero de version
-  --help        cette aide
-
-Reglages : ~/.claude/statusline.json
-";
 
 const TEMPLATE: &str = "{
   \"bar_width\": 8,
@@ -263,21 +247,21 @@ fn bench(runs: usize) {
     if let Some(path) = &target {
         os::remove(path);
     }
-    let per_run_ms = |seconds: f64| seconds * MS_PER_SECOND / runs as f64;
-    let mut report = format!(
-        "{} rendus, {:.3} ms par rendu ({} octets produits)\n",
-        runs,
-        per_run_ms(total),
-        bytes
-    );
+    let per_run_ms = |seconds: f64| format!("{:.3}", seconds * MS_PER_SECOND / runs as f64);
+    let mut report =
+        messages::BENCH_SUMMARY.with(&[&runs.to_string(), &per_run_ms(total), &bytes.to_string()]);
     for (label, seconds) in [
-        ("etat", laps.spent(Stage::State)),
-        ("config", laps.spent(Stage::Config)),
-        ("session", laps.spent(Stage::Session)),
-        ("rendu", laps.spent(Stage::Render)),
-        ("ecriture", write),
+        (messages::BENCH_STATE, laps.spent(Stage::State)),
+        (messages::BENCH_CONFIG, laps.spent(Stage::Config)),
+        (messages::BENCH_SESSION, laps.spent(Stage::Session)),
+        (messages::BENCH_RENDER, laps.spent(Stage::Render)),
+        (messages::BENCH_WRITE, write),
     ] {
-        report.push_str(&format!("  {:<10}{:.3} ms\n", label, per_run_ms(seconds)));
+        report.push_str(&format!(
+            "  {:<10}{} ms\n",
+            label.text(),
+            per_run_ms(seconds)
+        ));
     }
     os::out(&report);
 }
@@ -291,22 +275,18 @@ fn fail(msg: &str) -> i32 {
     1
 }
 
-fn unreadable_settings(path: &str) -> String {
-    format!("reglages illisibles, rien n'est modifie : {}\n", path)
-}
-
 fn store(path: &str, text: &str) -> Result<(), String> {
     if os::write_atomic(path, text.as_bytes()) {
         Ok(())
     } else {
-        Err(format!("ecriture impossible : {}\n", path))
+        Err(messages::CANNOT_WRITE.with(&[path]))
     }
 }
 
 fn replace(path: &str, raw: &[u8], text: &str) -> Result<(), String> {
     let saved = backup::save(path, raw, os::now())
-        .ok_or_else(|| format!("ecriture impossible : {}.bak\n", path))?;
-    os::out(&format!("sauvegarde : {}\n", saved));
+        .ok_or_else(|| messages::CANNOT_WRITE.with(&[&format!("{}.bak", path)]))?;
+    os::out(&messages::BACKUP.with(&[&saved]));
     store(path, text)
 }
 
@@ -330,34 +310,31 @@ fn repair_globals(command: &str) {
     let Some(dir) = os::claude_dir() else { return };
     for path in global_config::candidates(&dir, os::home().as_deref()) {
         match repair_global(&path, command) {
-            Ok(Some(was)) => os::out(&format!(
-                "statusLine global repare dans {} (etait : {})\n",
-                path, was
-            )),
+            Ok(Some(was)) => os::out(&messages::GLOBAL_REPAIRED.with(&[&path, &was])),
             Ok(None) => {}
-            Err(()) => os::err(&format!("fichier global laisse tel quel : {}\n", path)),
+            Err(()) => os::err(&messages::GLOBAL_KEPT.with(&[&path])),
         }
     }
 }
 
 fn install() -> i32 {
     let Some(path) = settings_path() else {
-        return fail("dossier personnel introuvable\n");
+        return fail(messages::NO_HOME.text());
     };
     let Some(exe) = os::exe() else {
-        return fail("chemin du binaire introuvable\n");
+        return fail(messages::NO_EXE.text());
     };
     let command = portable::command(&exe);
     let raw = match os::read_checked(&path, os::MAX_READ_BYTES) {
         Contents::Missing => None,
         Contents::Bytes(raw) => Some(raw),
-        Contents::Unreadable => return fail(&unreadable_settings(&path)),
+        Contents::Unreadable => return fail(&messages::SETTINGS_UNREADABLE.with(&[&path])),
     };
     let current = raw
         .as_ref()
         .map(|r| String::from_utf8_lossy(r).into_owned());
     let Some(next) = settings::with_status_line(current.as_deref(), &command) else {
-        return fail(&unreadable_settings(&path));
+        return fail(&messages::SETTINGS_UNREADABLE.with(&[&path]));
     };
     let written = match raw {
         Some(raw) => replace(&path, &raw, &next),
@@ -371,7 +348,7 @@ fn install() -> i32 {
     if let Err(message) = written {
         return fail(&message);
     }
-    os::out(&format!("statusLine posee dans {}\n", path));
+    os::out(&messages::INSTALLED.with(&[&path]));
     repair_globals(&command);
     let conf = config_path();
     if let Some(c) = conf.filter(|c| !os::exists(c)) {
@@ -379,29 +356,29 @@ fn install() -> i32 {
             .map(|d| os::join(&d, &["statusline.json"]))
             .unwrap_or(c);
         if os::write(&target, TEMPLATE.as_bytes()) {
-            os::out(&format!("configuration : {}\n", target));
+            os::out(&messages::CONFIG_WRITTEN.with(&[&target]));
         }
     }
-    os::out("relancez Claude Code pour voir la barre\n");
+    os::out(messages::RESTART.text());
     0
 }
 
 fn uninstall() -> i32 {
     let Some(path) = settings_path() else {
-        return fail("dossier personnel introuvable\n");
+        return fail(messages::NO_HOME.text());
     };
     let raw = os::read(&path);
     let next = raw
         .as_ref()
         .and_then(|r| settings::without_status_line(&String::from_utf8_lossy(r)));
     let (Some(raw), Some(next)) = (raw, next) else {
-        os::out("aucune statusLine a retirer\n");
+        os::out(messages::NOTHING_TO_REMOVE.text());
         return 0;
     };
     if let Err(message) = replace(&path, &raw, &next) {
         return fail(&message);
     }
-    os::out(&format!("statusLine retiree de {}\n", path));
+    os::out(&messages::REMOVED.with(&[&path]));
     0
 }
 
@@ -449,11 +426,11 @@ pub fn main(args: Vec<String>) -> i32 {
             0
         }
         Some("--help") | Some("-h") => {
-            os::out(HELP);
+            os::out(messages::HELP.text());
             0
         }
         Some(other) => {
-            os::err(&format!("argument inconnu : {}\n{}", other, HELP));
+            os::err(&messages::UNKNOWN_ARGUMENT.with(&[other, messages::HELP.text()]));
             2
         }
     }

@@ -62,6 +62,7 @@ extern "system" {
     fn GetEnvironmentVariableW(name: *const u16, buf: *mut u16, size: u32) -> u32;
     fn GetModuleFileNameW(module: Handle, buf: *mut u16, size: u32) -> u32;
     fn GetSystemDirectoryW(buf: *mut u16, size: u32) -> u32;
+    fn GetUserDefaultUILanguage() -> u16;
     fn GetCurrentDirectoryW(size: u32, buf: *mut u16) -> u32;
     fn GetCurrentProcessId() -> u32;
     fn GetSystemTimePreciseAsFileTime(time: *mut u64);
@@ -502,6 +503,10 @@ pub fn exe() -> Option<String> {
 
 pub fn system_dir() -> Option<String> {
     with_growing_buffer(&|b, n| unsafe { GetSystemDirectoryW(b, n) })
+}
+
+pub fn ui_language() -> u16 {
+    unsafe { GetUserDefaultUILanguage() }
 }
 
 pub fn cwd() -> Option<String> {
