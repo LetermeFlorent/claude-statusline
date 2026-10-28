@@ -138,6 +138,12 @@ jobs:
           "$b" --bench abc 2>/dev/null
           [ $? -eq 2 ]
 
+      - name: memory limit
+        if: runner.os == 'Linux'
+        run: |
+          out=$(sudo systemd-run --quiet --scope -p MemoryMax=512M "dist/${{ matrix.asset }}" --demo)
+          echo "$out" | grep -q '/0\.5G'
+
       - name: installer
         run: |
           export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"

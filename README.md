@@ -40,7 +40,7 @@ The first line chains four segments separated by `|`, always in this order:
 
 The second line shows three machine metrics:
 
-- `ram`: memory used over total memory, in GiB with one decimal. Used memory is the total minus the available memory.
+- `ram`: memory used over total memory, in GiB with one decimal. Used memory is the total minus the available memory. On Linux, a cgroup v2 memory limit below the memory of the machine, as in a container, becomes the total, and the used memory is then what the group uses minus its inactive file cache.
 - the disk, labelled with its drive letter on Windows (`C:`) and `dsk` elsewhere: the share of time spent reading and writing since the previous refresh.
 - `cpu`: processor load since the previous refresh. On Linux, time spent waiting on I/O does not count as load.
 

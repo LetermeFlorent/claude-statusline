@@ -274,7 +274,8 @@ mod sys {
                 .ok()?;
             Some(kb * 1024.0)
         };
-        Some((get("MemTotal:")?, get("MemAvailable:")?))
+        let host = (get("MemTotal:")?, get("MemAvailable:")?);
+        Some(crate::os::cgroup::narrow(host, &read_str))
     }
 
     fn gsettings(key: &str) -> Option<String> {
