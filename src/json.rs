@@ -318,7 +318,7 @@ impl Parser<'_> {
             self.digits();
         }
         let raw = core::str::from_utf8(&self.b[start..self.i]).ok()?;
-        let n: f64 = raw.parse().ok()?;
+        let n: f64 = raw.parse().ok().filter(|n: &f64| n.is_finite())?;
         Some(Value::Num(n, String::from(raw)))
     }
 
@@ -464,5 +464,13 @@ mod tests {
             pretty(&v),
             "{\n  \"a\": true,\n  \"b\": 2,\n  \"c\": null\n}\n"
         );
+    }
+
+    #[test]
+    fn out_of_range_numbers_are_refused() {
+        assert!(parse("{\"a\": 1e999}", false).is_none());
+        assert!(parse("[-1e999]", false).is_none());
+        let tiny = parse("[1e-999]", false).unwrap();
+        assert_eq!(tiny.arr().unwrap()[0].num(), Some(0.0));
     }
 }

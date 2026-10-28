@@ -36,6 +36,8 @@ pub struct Data {
 }
 
 const RESET: &str = "\x1b[0m";
+const MAX_TOKENS: u64 = 999_000_000_000;
+const MAX_RESET_SECS: f64 = 99.0 * 86400.0;
 
 type Pair = (Rgb, Rgb);
 
@@ -335,6 +337,7 @@ pub fn pct_text(p: Option<f64>) -> String {
 }
 
 pub fn tokens(n: u64) -> String {
+    let n = n.min(MAX_TOKENS);
     let f = n as f64;
     if n < 1000 {
         format!("{}", n)
@@ -348,7 +351,7 @@ pub fn tokens(n: u64) -> String {
 }
 
 pub fn reset_text(secs: f64, long: bool) -> String {
-    let s = num::floor(secs) as i64;
+    let s = num::floor(num::clamp(secs, 0.0, MAX_RESET_SECS)) as i64;
     if s <= 0 {
         return String::from("0m");
     }
@@ -412,7 +415,6 @@ mod tests {
         assert_eq!(tokens(2500), "2k");
         assert_eq!(tokens(3500), "4k");
         assert_eq!(tokens(999), "999");
-        assert_eq!(tokens(u64::MAX), "18446744074B");
         assert_eq!(reset_text(59.9, false), "0m");
         assert_eq!(reset_text(5000.0, false), "1h23m");
         assert_eq!(reset_text(200000.0, true), "2d07h");
@@ -420,6 +422,14 @@ mod tests {
         assert_eq!(cell_count(50.0, 8), 4);
         assert_eq!(cell_count(0.5, 8), 1);
         assert_eq!(cell_count(150.0, 8), 8);
+    }
+
+    #[test]
+    fn huge_values_are_clamped() {
+        assert_eq!(tokens(u64::MAX), "999B");
+        assert_eq!(reset_text(1e300, true), "99d00h");
+        assert_eq!(reset_text(f64::INFINITY, false), "2376h00m");
+        assert_eq!(reset_text(f64::NAN, true), "0m");
     }
 
     const NOW: f64 = 1_000_000.0;
