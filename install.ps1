@@ -1,7 +1,39 @@
 param([switch]$Build)
 $ErrorActionPreference = "Stop"
 
-$src = Join-Path $PSScriptRoot "bin\statusline.exe"
+$main = Join-Path $env:USERPROFILE ".claude"
+$binDir = Join-Path $main "bin"
+New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+$exe = Join-Path $binDir "statusline.exe"
+$releaseUrl = "https://github.com/LetermeFlorent/claude-statusline/releases/latest/download/"
+$asset = "statusline-windows-x86_64.exe"
+function Remove-OldCopies { Get-ChildItem -LiteralPath $binDir -Filter "statusline.exe.old*" | Remove-Item -Force -ErrorAction SilentlyContinue }
+function Get-StatusCommand([string]$file) {
+  if (-not (Test-Path -LiteralPath $file)) { return $null }
+  try { return (Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).statusLine.command } catch { return $null }
+}
+function Save-ReleaseBinary([string]$destination) {
+  $sums = $destination + ".sums"
+  [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+  $ProgressPreference = "SilentlyContinue"
+  Write-Host ("telechargement de " + $asset)
+  try {
+    Invoke-WebRequest -UseBasicParsing -Uri ($releaseUrl + "SHA256SUMS") -OutFile $sums
+    Invoke-WebRequest -UseBasicParsing -Uri ($releaseUrl + $asset) -OutFile $destination
+    $expected = @(foreach ($line in Get-Content -LiteralPath $sums) {
+      $fields = -split $line
+      if ($fields.Count -eq 2 -and $fields[1].TrimStart("*") -eq $asset) { $fields[0] }
+    })
+    $actual = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
+    if ($expected.Count -ne 1 -or $actual -ne $expected[0]) { throw "empreinte SHA-256 absente de SHA256SUMS ou differente." }
+  } catch {
+    Remove-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue
+    throw ("binaire publie refuse : " + $_.Exception.Message + " Relancer avec -Build pour compiler les sources (Rust requis).")
+  } finally {
+    Remove-Item -LiteralPath $sums -Force -ErrorAction SilentlyContinue
+  }
+}
+
 if ($Build) {
   Push-Location $PSScriptRoot
   try {
@@ -9,23 +41,16 @@ if ($Build) {
     if ($LASTEXITCODE -ne 0) { throw "echec de la compilation" }
   } finally { Pop-Location }
   $src = Join-Path $PSScriptRoot "target\release\statusline.exe"
-}
-
-$main = Join-Path $env:USERPROFILE ".claude"
-$binDir = Join-Path $main "bin"
-New-Item -ItemType Directory -Force -Path $binDir | Out-Null
-$exe = Join-Path $binDir "statusline.exe"
-function Remove-OldCopies { Get-ChildItem -LiteralPath $binDir -Filter "statusline.exe.old*" | Remove-Item -Force -ErrorAction SilentlyContinue }
-function Get-StatusCommand([string]$file) {
-  if (-not (Test-Path -LiteralPath $file)) { return $null }
-  try { return (Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).statusLine.command } catch { return $null }
+} else {
+  $src = $exe + ".download"
+  Save-ReleaseBinary $src
 }
 
 if (Test-Path -LiteralPath $exe) {
   Remove-OldCopies
   Move-Item -LiteralPath $exe -Destination ($exe + ".old-" + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
 }
-Copy-Item -LiteralPath $src -Destination $exe
+if ($Build) { Copy-Item -LiteralPath $src -Destination $exe } else { Move-Item -LiteralPath $src -Destination $exe }
 Unblock-File -LiteralPath $exe -ErrorAction SilentlyContinue
 Remove-OldCopies
 Write-Host ("programme copie dans " + $exe)

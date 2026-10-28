@@ -6,7 +6,7 @@ Ce guide installe la barre d'état dans Claude Code et explique comment la véri
 
 Il faut Claude Code installé. Le reste dépend du système :
 
-- Windows : rien d'autre. Le dépôt contient un binaire prêt, `bin/statusline.exe`, pour Windows 10 ou plus récent en 64 bits (x86_64). Rust n'est utile que pour compiler soi-même avec `-Build`.
+- Windows : rien d'autre. Le script télécharge le binaire publié pour Windows 10 ou plus récent en 64 bits (x86_64). Rust n'est utile que pour compiler soi-même avec `-Build`.
 - Linux et macOS : `install.sh` compile les sources si Rust est présent (https://rustup.rs). Sans Rust, il télécharge le binaire publié avec `curl`, pour Linux x86_64 ou arm64 et macOS sur puce Apple ou Intel.
 
 La barre envoie ses couleurs en 24 bits et dessine ses carrés avec des caractères Unicode (`■`, `▪`). Windows Terminal, le terminal de VS Code, iTerm2, GNOME Terminal, Konsole, Ghostty et Zed les affichent sans réglage. Un terminal limité à 256 couleurs montre des teintes approchées ou fausses.
@@ -21,12 +21,12 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 Le script fait quatre choses :
 
-1. Il copie le programme dans `%USERPROFILE%\.claude\bin\statusline.exe`. Un ancien programme en cours d'utilisation est d'abord renommé en `statusline.exe.old-<horodatage>`, ce qui permet le remplacement même pendant une session Claude Code, puis supprimé quand c'est possible, avec les copies `.old` laissées par une mise à jour automatique. La copie est débloquée (`Unblock-File`).
+1. Il télécharge `statusline-windows-x86_64.exe` et `SHA256SUMS` dans la dernière version publiée, et s'arrête si l'empreinte SHA-256 du binaire manque à la liste ou en diffère. Il place ensuite le programme dans `%USERPROFILE%\.claude\bin\statusline.exe`. Un ancien programme en cours d'utilisation est d'abord renommé en `statusline.exe.old-<horodatage>`, ce qui permet le remplacement même pendant une session Claude Code, puis supprimé quand c'est possible, avec les copies `.old` laissées par une mise à jour automatique. La copie est débloquée (`Unblock-File`).
 2. Il installe `statusline.json` dans `%USERPROFILE%\.claude`, seulement s'il n'existe pas. Les autres comptes lisent ce même fichier, sauf s'ils ont le leur dans leur dossier.
 3. Il dresse la liste des comptes : `.claude`, chaque dossier `.claude-compte*` du dossier personnel, et chaque `Dir` de `.claude-accounts.json` (le registre de [claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)), sans doublon et sans les dossiers absents. Un registre illisible donne un avertissement.
 4. Pour chaque compte, il lance `statusline.exe --install` avec `CLAUDE_CONFIG_DIR` pointé sur son dossier. La commande est réécrite sous sa forme portable, `~/.claude/bin/statusline.exe` : une autre commande, comme le chemin d'un ancien PC ou d'un ancien nom d'utilisateur, est remplacée et signalée par "commande remplacee pour". Le programme répare aussi le `statusLine` du fichier global du compte, `.claude.json` dans son dossier (et `%USERPROFILE%\.claude.json` pour `.claude`), quand il désigne un programme statusline absent : une autre commande, comme `npx ccusage statusline`, n'y est jamais touchée. Un échec est signalé par "compte laisse tel quel" et n'arrête pas les autres comptes.
 
-Avec `-Build`, le script compile les sources (`cargo build --release`, Rust requis) au lieu de prendre le binaire du dépôt.
+Avec `-Build`, le script compile les sources (`cargo build --release`, Rust requis) au lieu de télécharger le binaire publié. C'est aussi le recours quand le téléchargement échoue, ou quand la version publiée n'a pas de `SHA256SUMS`.
 
 ## Installer sous Linux ou macOS
 
@@ -36,7 +36,7 @@ cd claude-statusline
 sh install.sh
 ```
 
-Le programme va dans `~/.claude/bin/statusline`. Si `cargo` est présent, le script compile les sources dans le dossier `target` du dépôt. Si `cargo` manque, ou si la compilation échoue (le script affiche alors "compilation impossible, passage au binaire publie"), il télécharge le binaire de la dernière version publiée qui correspond à `uname`. Sur un autre système ou une autre architecture, il s'arrête avec un message qui renvoie vers Rust.
+Le programme va dans `~/.claude/bin/statusline`. Si `cargo` est présent, le script compile les sources dans le dossier `target` du dépôt. Si `cargo` manque, ou si la compilation échoue (le script affiche alors "compilation impossible, passage au binaire publie"), il télécharge le binaire de la dernière version publiée qui correspond à `uname`, avec la liste `SHA256SUMS` de la même version, et s'arrête si l'empreinte SHA-256 du binaire manque à la liste ou en diffère. Sur un autre système ou une autre architecture, il s'arrête avec un message qui renvoie vers Rust.
 
 Le binaire est d'abord écrit en `statusline.new`, puis renommé, pour qu'une barre en cours d'exécution garde l'ancien fichier jusqu'à la fin. La suite est la même que sous Windows : `statusline.json` installé s'il manque, puis `--install` pour `.claude`, chaque `.claude-compte*` et chaque `Dir` du registre (les chemins périmés y sont réparés de la même façon, `~/.claude.json` compris). Le registre est lu par `grep` et `sed`, sans analyseur JSON : il doit garder le format écrit par claude-account-menu.
 
@@ -109,7 +109,7 @@ Si la barre a disparu après une migration vers un autre PC ou un autre nom d'ut
 
 Si `update` reste affiché, la mise à jour est en cours ou s'est arrêtée en route : le marqueur est ignoré au bout de 15 minutes. `statusline --update` lancé à la main montre où elle échoue. Le réseau doit laisser passer `api.github.com` et `github.com`.
 
-Si Windows bloque le programme, lancer `Unblock-File "$env:USERPROFILE\.claude\bin\statusline.exe"`. L'installeur le fait déjà, mais le déblocage peut échouer, ou le dépôt peut avoir été récupéré en ZIP. Le programme n'est pas signé numériquement, ce qui peut déclencher un avertissement de SmartScreen ou de l'antivirus.
+Si Windows bloque le programme, lancer `Unblock-File "$env:USERPROFILE\.claude\bin\statusline.exe"`. L'installeur le fait déjà, mais le déblocage peut échouer. Le programme n'est pas signé numériquement, ce qui peut déclencher un avertissement de SmartScreen ou de l'antivirus.
 
 Si les segments `5h` et `7d` n'apparaissent pas, Claude Code n'a pas encore transmis les quotas pour cette session, et la barre n'a pas de valeur de moins de 10 minutes pour ce compte : ils apparaissent après la première réponse. Avec claude-account-menu, le hook `SessionStart` les remplit dès le lancement. Si le 5 h affiche `--%`, le compte n'a pas de fenêtre de 5 heures ouverte, c'est-à-dire pas encore de message depuis la dernière remise à zéro.
 
