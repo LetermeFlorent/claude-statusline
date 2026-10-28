@@ -16,8 +16,16 @@ mod windows;
 pub use windows::*;
 
 use alloc::string::String;
+use alloc::vec::Vec;
 
 pub const MAX_READ_BYTES: usize = 1 << 20;
+
+#[derive(Debug, PartialEq)]
+pub enum Contents {
+    Missing,
+    Unreadable,
+    Bytes(Vec<u8>),
+}
 
 pub fn join(base: &str, parts: &[&str]) -> String {
     let mut s = String::from(base);
@@ -28,6 +36,18 @@ pub fn join(base: &str, parts: &[&str]) -> String {
         s.push_str(p);
     }
     s
+}
+
+pub fn read(path: &str) -> Option<Vec<u8>> {
+    read_limited(path, MAX_READ_BYTES)
+}
+
+pub fn read_checked(path: &str, limit: usize) -> Contents {
+    match read_limited(path, limit) {
+        Some(data) => Contents::Bytes(data),
+        None if exists(path) => Contents::Unreadable,
+        None => Contents::Missing,
+    }
 }
 
 pub fn read_text(path: &str) -> Option<String> {
@@ -69,6 +89,25 @@ mod tests {
         let over_limit = read(&path).map(|data| data.len());
         assert_eq!(at_limit, Some(MAX_READ_BYTES));
         assert_eq!(over_limit, None);
+    }
+
+    #[test]
+    fn a_larger_limit_reads_larger_files() {
+        let sandbox = Sandbox::new("larger");
+        let path = sandbox.path(".claude.json");
+        std::fs::write(&path, vec![b' '; MAX_READ_BYTES + 1]).unwrap();
+        let read_whole = read_limited(&path, 2 * MAX_READ_BYTES).map(|data| data.len());
+        assert_eq!(read_whole, Some(MAX_READ_BYTES + 1));
+    }
+
+    #[test]
+    fn a_file_too_large_to_read_is_not_a_missing_file() {
+        let sandbox = Sandbox::new("contents");
+        let path = sandbox.path("settings.json");
+        assert_eq!(read_checked(&path, MAX_READ_BYTES), Contents::Missing);
+        std::fs::write(&path, b"{}").unwrap();
+        assert_eq!(read_checked(&path, 1), Contents::Unreadable);
+        assert_eq!(read_checked(&path, 2), Contents::Bytes(b"{}".to_vec()));
     }
 
     #[test]

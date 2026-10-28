@@ -1,7 +1,7 @@
 use crate::backup;
 use crate::compact;
 use crate::config::{Config, Metric};
-use crate::os;
+use crate::os::{self, Contents};
 use crate::portable;
 use crate::render::{self, Data, SysValue};
 use crate::session::Session;
@@ -274,6 +274,10 @@ fn fail(msg: &str) -> i32 {
     1
 }
 
+fn unreadable_settings(path: &str) -> String {
+    format!("reglages illisibles, rien n'est modifie : {}\n", path)
+}
+
 fn install() -> i32 {
     let Some(path) = settings_path() else {
         return fail("dossier personnel introuvable\n");
@@ -282,15 +286,16 @@ fn install() -> i32 {
         return fail("chemin du binaire introuvable\n");
     };
     let command = portable::command(&exe);
-    let raw = os::read(&path);
+    let raw = match os::read_checked(&path, os::MAX_READ_BYTES) {
+        Contents::Missing => None,
+        Contents::Bytes(raw) => Some(raw),
+        Contents::Unreadable => return fail(&unreadable_settings(&path)),
+    };
     let current = raw
         .as_ref()
         .map(|r| String::from_utf8_lossy(r).into_owned());
     let Some(next) = settings::with_status_line(current.as_deref(), &command) else {
-        return fail(&format!(
-            "reglages illisibles, rien n'est modifie : {}\n",
-            path
-        ));
+        return fail(&unreadable_settings(&path));
     };
     if let Some(raw) = raw {
         match backup::save(&path, &raw, os::now()) {

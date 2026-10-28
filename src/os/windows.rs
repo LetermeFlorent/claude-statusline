@@ -184,7 +184,7 @@ fn read_all(h: Handle, hint: usize, limit: usize) -> Vec<u8> {
     out
 }
 
-pub fn read(path: &str) -> Option<Vec<u8>> {
+pub fn read_limited(path: &str, limit: usize) -> Option<Vec<u8>> {
     let h = open_read(path);
     if h == INVALID {
         return None;
@@ -192,10 +192,10 @@ pub fn read(path: &str) -> Option<Vec<u8>> {
     let mut size = 0i64;
     let on_disk = unsafe { GetFileType(h) } == FILE_TYPE_DISK
         && unsafe { GetFileSizeEx(h, &mut size) } != 0
-        && (0..=super::MAX_READ_BYTES as i64).contains(&size);
-    let data = on_disk.then(|| read_all(h, size as usize, super::MAX_READ_BYTES));
+        && (0..=limit as i64).contains(&size);
+    let data = on_disk.then(|| read_all(h, size as usize, limit));
     unsafe { CloseHandle(h) };
-    data.filter(|d| d.len() <= super::MAX_READ_BYTES)
+    data.filter(|d| d.len() <= limit)
 }
 
 fn write_handle(h: Handle, data: &[u8]) -> bool {

@@ -24,7 +24,7 @@ const O_NONBLOCK: i32 = 0o4000;
 #[cfg(not(any(target_os = "linux", target_os = "android")))]
 const O_NONBLOCK: i32 = 0x0004;
 
-pub fn read(path: &str) -> Option<Vec<u8>> {
+pub fn read_limited(path: &str, limit: usize) -> Option<Vec<u8>> {
     use std::os::unix::fs::OpenOptionsExt;
     let file = std::fs::OpenOptions::new()
         .read(true)
@@ -35,9 +35,8 @@ pub fn read(path: &str) -> Option<Vec<u8>> {
         return None;
     }
     let mut data = Vec::new();
-    let limit = super::MAX_READ_BYTES as u64 + 1;
-    file.take(limit).read_to_end(&mut data).ok()?;
-    (data.len() <= super::MAX_READ_BYTES).then_some(data)
+    file.take(limit as u64 + 1).read_to_end(&mut data).ok()?;
+    (data.len() <= limit).then_some(data)
 }
 
 pub fn write(path: &str, data: &[u8]) -> bool {
@@ -510,7 +509,7 @@ mod sys {
     }
 
     pub fn os_theme() -> Option<bool> {
-        let data = read(&prefs()?)?;
+        let data = super::super::read(&prefs()?)?;
         if data.starts_with(b"bplist") {
             let mut key = vec![0x5F, 0x10, 0x13];
             key.extend_from_slice(b"AppleInterfaceStyle");
