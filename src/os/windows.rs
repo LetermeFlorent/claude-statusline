@@ -22,7 +22,15 @@ extern "system" {
     fn WriteConsoleW(h: Handle, b: *const u16, n: u32, w: *mut u32, r: *mut c_void) -> i32;
     fn ReadFile(h: Handle, b: *mut u8, n: u32, r: *mut u32, o: *mut c_void) -> i32;
     fn WriteFile(h: Handle, b: *const u8, n: u32, w: *mut u32, o: *mut c_void) -> i32;
-    fn CreateFileW(name: *const u16, access: u32, share: u32, sa: *mut c_void, disp: u32, flags: u32, tmpl: Handle) -> Handle;
+    fn CreateFileW(
+        name: *const u16,
+        access: u32,
+        share: u32,
+        sa: *mut c_void,
+        disp: u32,
+        flags: u32,
+        tmpl: Handle,
+    ) -> Handle;
     fn CloseHandle(h: Handle) -> i32;
     fn GetFileSizeEx(h: Handle, size: *mut i64) -> i32;
     fn GetFileAttributesExW(name: *const u16, level: u32, data: *mut u32) -> i32;
@@ -44,7 +52,16 @@ extern "system" {
     fn QueryPerformanceFrequency(f: *mut i64) -> i32;
     fn GetSystemTimes(idle: *mut u64, kernel: *mut u64, user: *mut u64) -> i32;
     fn GlobalMemoryStatusEx(m: *mut u64) -> i32;
-    fn DeviceIoControl(h: Handle, code: u32, i: *mut c_void, il: u32, o: *mut c_void, ol: u32, r: *mut u32, ov: *mut c_void) -> i32;
+    fn DeviceIoControl(
+        h: Handle,
+        code: u32,
+        i: *mut c_void,
+        il: u32,
+        o: *mut c_void,
+        ol: u32,
+        r: *mut u32,
+        ov: *mut c_void,
+    ) -> i32;
     fn ExitProcess(code: u32) -> !;
     fn GetProcessHeap() -> Handle;
     fn HeapAlloc(h: Handle, flags: u32, n: usize) -> *mut u8;
@@ -59,7 +76,15 @@ extern "system" {
 
 #[link(name = "advapi32", kind = "raw-dylib")]
 extern "system" {
-    fn RegGetValueW(key: isize, sub: *const u16, value: *const u16, flags: u32, kind: *mut u32, data: *mut c_void, size: *mut u32) -> i32;
+    fn RegGetValueW(
+        key: isize,
+        sub: *const u16,
+        value: *const u16,
+        flags: u32,
+        kind: *mut u32,
+        data: *mut c_void,
+        size: *mut u32,
+    ) -> i32;
 }
 
 const GENERIC_READ: u32 = 0x8000_0000;
@@ -126,7 +151,17 @@ pub fn env(name: &str) -> Option<String> {
 
 fn open_read(path: &str) -> Handle {
     let w = wide(path);
-    unsafe { CreateFileW(w.as_ptr(), GENERIC_READ, SHARE_ALL, null_mut(), OPEN_EXISTING, 0x80, 0) }
+    unsafe {
+        CreateFileW(
+            w.as_ptr(),
+            GENERIC_READ,
+            SHARE_ALL,
+            null_mut(),
+            OPEN_EXISTING,
+            0x80,
+            0,
+        )
+    }
 }
 
 fn read_all(h: Handle, hint: usize) -> Vec<u8> {
@@ -134,7 +169,15 @@ fn read_all(h: Handle, hint: usize) -> Vec<u8> {
     let mut chunk = vec![0u8; 65536];
     loop {
         let mut got = 0u32;
-        let ok = unsafe { ReadFile(h, chunk.as_mut_ptr(), chunk.len() as u32, &mut got, null_mut()) };
+        let ok = unsafe {
+            ReadFile(
+                h,
+                chunk.as_mut_ptr(),
+                chunk.len() as u32,
+                &mut got,
+                null_mut(),
+            )
+        };
         if ok == 0 || got == 0 {
             break;
         }
@@ -171,7 +214,17 @@ fn write_handle(h: Handle, data: &[u8]) -> bool {
 
 pub fn write(path: &str, data: &[u8]) -> bool {
     let w = wide(path);
-    let h = unsafe { CreateFileW(w.as_ptr(), GENERIC_WRITE, 1, null_mut(), CREATE_ALWAYS, 0x80, 0) };
+    let h = unsafe {
+        CreateFileW(
+            w.as_ptr(),
+            GENERIC_WRITE,
+            1,
+            null_mut(),
+            CREATE_ALWAYS,
+            0x80,
+            0,
+        )
+    };
     if h == INVALID {
         return false;
     }
@@ -206,7 +259,17 @@ pub fn rename(from: &str, to: &str) -> bool {
 
 pub fn create_new(path: &str) -> bool {
     let w = wide(path);
-    let h = unsafe { CreateFileW(w.as_ptr(), GENERIC_WRITE, 0, null_mut(), CREATE_NEW, 0x80, 0) };
+    let h = unsafe {
+        CreateFileW(
+            w.as_ptr(),
+            GENERIC_WRITE,
+            0,
+            null_mut(),
+            CREATE_NEW,
+            0x80,
+            0,
+        )
+    };
     if h == INVALID {
         return false;
     }
@@ -292,7 +355,9 @@ fn put(n: i32, s: &str) {
         while done < w.len() {
             let mut n = 0u32;
             let len = core::cmp::min(w.len() - done, 8192) as u32;
-            if unsafe { WriteConsoleW(h, w.as_ptr().add(done), len, &mut n, null_mut()) } == 0 || n == 0 {
+            if unsafe { WriteConsoleW(h, w.as_ptr().add(done), len, &mut n, null_mut()) } == 0
+                || n == 0
+            {
                 return;
             }
             done += n as usize;
@@ -349,7 +414,11 @@ pub fn cpu() -> Option<(i64, i64)> {
 
 // IOCTL_DISK_PERFORMANCE sur le volume : (QueryTime, ReadTime + WriteTime)
 pub fn disk(path: &str) -> Option<(i64, i64)> {
-    let letter: String = path.chars().take(1).flat_map(|c| c.to_uppercase()).collect();
+    let letter: String = path
+        .chars()
+        .take(1)
+        .flat_map(|c| c.to_uppercase())
+        .collect();
     let w = wide(&format!("\\\\.\\{}:", letter));
     let h = unsafe { CreateFileW(w.as_ptr(), 0, 3, null_mut(), OPEN_EXISTING, 0, 0) };
     if h == INVALID {
@@ -357,7 +426,18 @@ pub fn disk(path: &str) -> Option<(i64, i64)> {
     }
     let mut p = [0i64; 11];
     let mut got = 0u32;
-    let ok = unsafe { DeviceIoControl(h, 0x70020, null_mut(), 0, p.as_mut_ptr() as *mut c_void, 88, &mut got, null_mut()) };
+    let ok = unsafe {
+        DeviceIoControl(
+            h,
+            0x70020,
+            null_mut(),
+            0,
+            p.as_mut_ptr() as *mut c_void,
+            88,
+            &mut got,
+            null_mut(),
+        )
+    };
     unsafe { CloseHandle(h) };
     if ok == 0 || got < 64 {
         return None;
@@ -381,7 +461,17 @@ pub fn os_theme() -> Option<bool> {
     let mut v = 0u32;
     let mut size = 4u32;
     let hkcu = 0x8000_0001u32 as i32 as isize;
-    let r = unsafe { RegGetValueW(hkcu, key.as_ptr(), name.as_ptr(), 0x10, null_mut(), &mut v as *mut u32 as *mut c_void, &mut size) };
+    let r = unsafe {
+        RegGetValueW(
+            hkcu,
+            key.as_ptr(),
+            name.as_ptr(),
+            0x10,
+            null_mut(),
+            &mut v as *mut u32 as *mut c_void,
+            &mut size,
+        )
+    };
     match r {
         0 => Some(v != 0),
         // Valeur jamais posee : Windows est en mode clair par defaut
@@ -399,7 +489,9 @@ pub fn os_stamp() -> String {
 }
 
 pub fn home() -> Option<String> {
-    env("USERPROFILE").filter(|s| !s.is_empty()).or_else(|| env("HOME").filter(|s| !s.is_empty()))
+    env("USERPROFILE")
+        .filter(|s| !s.is_empty())
+        .or_else(|| env("HOME").filter(|s| !s.is_empty()))
 }
 
 pub fn state_dir() -> Option<String> {
@@ -566,4 +658,3 @@ mod rt {
         unsafe { ExitProcess(code as u32) }
     }
 }
-

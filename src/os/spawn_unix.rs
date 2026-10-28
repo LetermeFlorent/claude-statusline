@@ -4,7 +4,10 @@ use std::time::{Duration, Instant};
 
 fn silent(exe: &str, args: &[&str]) -> Command {
     let mut c = Command::new(exe);
-    c.args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    c.args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
     c
 }
 

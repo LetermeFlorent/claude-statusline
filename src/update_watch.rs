@@ -45,16 +45,23 @@ pub fn marker() -> Option<String> {
 }
 
 pub fn busy(now: f64) -> bool {
-    marker().and_then(|m| os::stamp(&m)).is_some_and(|(_, at)| now - (at as f64) < STALE_AFTER)
+    marker()
+        .and_then(|m| os::stamp(&m))
+        .is_some_and(|(_, at)| now - (at as f64) < STALE_AFTER)
 }
 
 fn installed(exe: &str) -> bool {
     let rest = portable::home_rest(exe);
-    rest.as_deref().and_then(|r| r.rsplit_once('/')).is_some_and(|(dir, _)| portable::same(dir, ".claude/bin"))
+    rest.as_deref()
+        .and_then(|r| r.rsplit_once('/'))
+        .is_some_and(|(dir, _)| portable::same(dir, ".claude/bin"))
 }
 
 pub fn due(state: &mut State, now: f64) -> bool {
-    if state.num(CHECKED_KEY).is_some_and(|at| now >= at && now - at < CHECK_EVERY) {
+    if state
+        .num(CHECKED_KEY)
+        .is_some_and(|at| now >= at && now - at < CHECK_EVERY)
+    {
         return false;
     }
     state.set(CHECKED_KEY, &format!("{}", now as i64));

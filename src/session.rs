@@ -21,7 +21,10 @@ pub struct Live {
 
 impl Live {
     pub fn quota(&self) -> Quota {
-        Quota { pct: self.pct, at: self.at }
+        Quota {
+            pct: self.pct,
+            at: self.at,
+        }
     }
 }
 
@@ -32,7 +35,11 @@ fn model_name(m: Option<&Value>) -> String {
             let cut = s.find('(').map(|i| &s[..i]).unwrap_or(s);
             String::from(cut.trim())
         }
-        _ => String::from(m.and_then(|m| m.get("id")).and_then(|v| v.str()).unwrap_or("claude")),
+        _ => String::from(
+            m.and_then(|m| m.get("id"))
+                .and_then(|v| v.str())
+                .unwrap_or("claude"),
+        ),
     }
 }
 
@@ -43,7 +50,11 @@ fn usage_tokens(cu: Option<&Value>) -> Option<u64> {
         return None;
     }
     let mut sum = 0u64;
-    for k in ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"] {
+    for k in [
+        "input_tokens",
+        "cache_creation_input_tokens",
+        "cache_read_input_tokens",
+    ] {
         if let Some(v) = cu.get(k) {
             let n = v.num()?;
             if n < 0.0 || !num::is_integral(n) {
@@ -78,11 +89,19 @@ impl Session {
                 .map(|s| String::from(s.trim()))
                 .filter(|s| !s.is_empty()),
             ctx: Ctx {
-                size: cw.and_then(|c| c.get("context_window_size")).and_then(|x| x.num()),
-                pct: cw.and_then(|c| c.get("used_percentage")).and_then(|x| x.num()),
+                size: cw
+                    .and_then(|c| c.get("context_window_size"))
+                    .and_then(|x| x.num()),
+                pct: cw
+                    .and_then(|c| c.get("used_percentage"))
+                    .and_then(|x| x.num()),
                 tokens: usage_tokens(cw.and_then(|c| c.get("current_usage"))),
             },
-            live: if five.is_some() || seven.is_some() { Some((live(five), live(seven))) } else { None },
+            live: if five.is_some() || seven.is_some() {
+                Some((live(five), live(seven)))
+            } else {
+                None
+            },
             cwd: v.get("cwd").and_then(|x| x.str()).map(String::from),
         }
     }
@@ -97,16 +116,34 @@ mod tests {
         let s = Session::parse("{\"model\":{\"display_name\":\"Opus 4 (1M context)\"},\"effort\":{\"level\":\" high \"}}");
         assert_eq!(s.model, "Opus 4");
         assert_eq!(s.effort.as_deref(), Some("high"));
-        assert_eq!(Session::parse("{\"model\":{\"display_name\":\"(x)\",\"id\":\"i\"}}").model, "");
-        assert_eq!(Session::parse("{\"model\":{\"display_name\":\"Unknown\",\"id\":\"i\"}}").model, "i");
+        assert_eq!(
+            Session::parse("{\"model\":{\"display_name\":\"(x)\",\"id\":\"i\"}}").model,
+            ""
+        );
+        assert_eq!(
+            Session::parse("{\"model\":{\"display_name\":\"Unknown\",\"id\":\"i\"}}").model,
+            "i"
+        );
         assert_eq!(Session::parse("{\"model\":\"Opus\"}").model, "claude");
-        let t = |cu: &str| Session::parse(&alloc::format!("{{\"context_window\":{{\"current_usage\":{}}}}}", cu)).ctx.tokens;
-        assert_eq!(t("{\"input_tokens\":1000.0,\"cache_read_input_tokens\":1.5e3}"), Some(2500));
+        let t = |cu: &str| {
+            Session::parse(&alloc::format!(
+                "{{\"context_window\":{{\"current_usage\":{}}}}}",
+                cu
+            ))
+            .ctx
+            .tokens
+        };
+        assert_eq!(
+            t("{\"input_tokens\":1000.0,\"cache_read_input_tokens\":1.5e3}"),
+            Some(2500)
+        );
         assert_eq!(t("{\"input_tokens\":1000.7}"), None);
         assert_eq!(t("{\"input_tokens\":null}"), None);
         assert_eq!(t("[1]"), Some(0));
         assert_eq!(t("null"), None);
         assert!(Session::parse("{\"rate_limits\":{}}").live.is_none());
-        assert!(Session::parse("{\"rate_limits\":{\"five_hour\":null}}").live.is_some());
+        assert!(Session::parse("{\"rate_limits\":{\"five_hour\":null}}")
+            .live
+            .is_some());
     }
 }

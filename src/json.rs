@@ -82,7 +82,12 @@ impl Value {
 // Le texte qui suit la premiere valeur est ignore.
 pub fn parse(text: &str, lenient: bool) -> Option<Value> {
     let b = text.as_bytes();
-    let mut p = Parser { b, i: 0, lenient, depth: 0 };
+    let mut p = Parser {
+        b,
+        i: 0,
+        lenient,
+        depth: 0,
+    };
     if b.starts_with(&[0xEF, 0xBB, 0xBF]) {
         p.i = 3;
     }
@@ -418,14 +423,32 @@ mod tests {
         assert!(parse("{\"a\" 1}", false).is_none());
         assert!(parse("{\"a\":1, // x\n}", true).is_some());
         assert!(parse("\u{feff}{\"a\":1}", false).is_some());
-        assert_eq!(parse("{\"s\":\"a\\ud83db\"}", false).unwrap().get("s").unwrap().str(), Some("ab"));
+        assert_eq!(
+            parse("{\"s\":\"a\\ud83db\"}", false)
+                .unwrap()
+                .get("s")
+                .unwrap()
+                .str(),
+            Some("ab")
+        );
         assert!(parse("[1.]", false).is_none());
-        assert_eq!(parse("{\"x\":1} reste", false).unwrap().get("x").unwrap().num(), Some(1.0));
+        assert_eq!(
+            parse("{\"x\":1} reste", false)
+                .unwrap()
+                .get("x")
+                .unwrap()
+                .num(),
+            Some(1.0)
+        );
     }
 
     #[test]
     fn ecriture() {
-        let v = parse("{\"b\":[1,2.50],\"a\":{},\"c\":\"x\\u0001\\\"\",\"d\":[]}", false).unwrap();
+        let v = parse(
+            "{\"b\":[1,2.50],\"a\":{},\"c\":\"x\\u0001\\\"\",\"d\":[]}",
+            false,
+        )
+        .unwrap();
         assert_eq!(pretty(&v), "{\n  \"a\": {},\n  \"b\": [\n    1,\n    2.50\n  ],\n  \"c\": \"x\\u0001\\\"\",\n  \"d\": []\n}\n");
     }
 }

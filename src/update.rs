@@ -11,7 +11,9 @@ const SHOWN_AFTER_SWAP_MS: u32 = 5000;
 #[cfg(windows)]
 fn curl() -> String {
     let system = os::env("SystemRoot").map(|r| os::join(&r, &["System32", "curl.exe"]));
-    system.filter(|p| os::exists(p)).unwrap_or_else(|| String::from("curl.exe"))
+    system
+        .filter(|p| os::exists(p))
+        .unwrap_or_else(|| String::from("curl.exe"))
 }
 
 #[cfg(not(windows))]
@@ -21,12 +23,20 @@ fn curl() -> String {
 
 fn fetch(url: &str, to: &str, secs: u32) -> bool {
     let limit = format!("{}", secs);
-    os::call(&curl(), &["-fsSL", "--max-time", &limit, "-o", to, url], secs + 15) == Some(0)
+    os::call(
+        &curl(),
+        &["-fsSL", "--max-time", &limit, "-o", to, url],
+        secs + 15,
+    ) == Some(0)
 }
 
 fn latest(dir: &str) -> Option<String> {
     let file = os::join(dir, &["release.json"]);
-    let ok = fetch(&format!("https://api.github.com/repos/{}/releases/latest", REPO), &file, 30);
+    let ok = fetch(
+        &format!("https://api.github.com/repos/{}/releases/latest", REPO),
+        &file,
+        30,
+    );
     let text = os::read_text(&file);
     os::remove(&file);
     let release = json::parse(&text.filter(|_| ok)?, false)?;
@@ -69,7 +79,9 @@ fn swap(exe: &str, fresh: &str) -> bool {
 }
 
 fn clean(exe: &str) {
-    let (Some(dir), Some(name)) = (os::parent(exe), exe.rsplit(['\\', '/']).next()) else { return };
+    let (Some(dir), Some(name)) = (os::parent(exe), exe.rsplit(['\\', '/']).next()) else {
+        return;
+    };
     for f in os::list(dir, &format!("{}.old", name)) {
         os::remove(&os::join(dir, &[&f]));
     }
@@ -81,10 +93,17 @@ fn fail(msg: &str) -> i32 {
 }
 
 fn install(exe: &str, tag: &str) -> i32 {
-    let Some(name) = asset() else { return fail("aucun binaire publie pour ce systeme\n") };
+    let Some(name) = asset() else {
+        return fail("aucun binaire publie pour ce systeme\n");
+    };
     let fresh = staging(exe);
-    let url = format!("https://github.com/{}/releases/download/{}/{}", REPO, tag, name);
-    let ready = fetch(&url, &fresh, 300) && os::make_executable(&fresh) && os::call(&fresh, &["--version"], 30) == Some(0);
+    let url = format!(
+        "https://github.com/{}/releases/download/{}/{}",
+        REPO, tag, name
+    );
+    let ready = fetch(&url, &fresh, 300)
+        && os::make_executable(&fresh)
+        && os::call(&fresh, &["--version"], 30) == Some(0);
     if !ready || !swap(exe, &fresh) {
         os::remove(&fresh);
         return fail(&format!("mise a jour vers {} impossible\n", tag));
@@ -95,9 +114,13 @@ fn install(exe: &str, tag: &str) -> i32 {
 }
 
 fn attempt(dir: &str) -> i32 {
-    let Some(exe) = os::exe() else { return fail("chemin du binaire introuvable\n") };
+    let Some(exe) = os::exe() else {
+        return fail("chemin du binaire introuvable\n");
+    };
     clean(&exe);
-    let Some(tag) = latest(dir) else { return fail("derniere version introuvable\n") };
+    let Some(tag) = latest(dir) else {
+        return fail("derniere version introuvable\n");
+    };
     if !newer(&tag, VERSION) {
         os::out(&format!("deja a jour : {}\n", VERSION));
         return 0;
@@ -117,7 +140,9 @@ fn acquire(lock: &str) -> bool {
 }
 
 pub fn run() -> i32 {
-    let Some(dir) = os::state_dir() else { return fail("dossier d'etat introuvable\n") };
+    let Some(dir) = os::state_dir() else {
+        return fail("dossier d'etat introuvable\n");
+    };
     os::mkdirs(&dir);
     let lock = os::join(&dir, &["update.lock"]);
     if !acquire(&lock) {
@@ -138,8 +163,14 @@ mod tests {
 
     #[test]
     fn noms() {
-        assert_eq!(staging("C:\\a\\statusline.exe"), "C:\\a\\statusline.new.exe");
-        assert_eq!(staging("C:\\a\\STATUSLINE.EXE"), "C:\\a\\STATUSLINE.new.exe");
+        assert_eq!(
+            staging("C:\\a\\statusline.exe"),
+            "C:\\a\\statusline.new.exe"
+        );
+        assert_eq!(
+            staging("C:\\a\\STATUSLINE.EXE"),
+            "C:\\a\\STATUSLINE.new.exe"
+        );
         assert_eq!(staging("/a/statusline"), "/a/statusline.new");
     }
 }
