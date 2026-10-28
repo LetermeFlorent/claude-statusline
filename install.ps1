@@ -25,7 +25,7 @@ $binDir = Join-Path $main "bin"
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 $exe = Join-Path $binDir "statusline.exe"
 $releaseUrl = "https://github.com/LetermeFlorent/claude-statusline/releases/latest/download/"
-$asset = "statusline-windows-x86_64.exe"
+$asset = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "statusline-windows-arm64.exe" } else { "statusline-windows-x86_64.exe" }
 function Remove-OldCopies { Get-ChildItem -LiteralPath $binDir -Filter "statusline.exe.old*" | Remove-Item -Force -ErrorAction SilentlyContinue }
 function Get-StatusCommand([string]$file) {
   if (-not (Test-Path -LiteralPath $file)) { return $null }

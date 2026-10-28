@@ -222,13 +222,13 @@ An empty variable counts as unset.
 cargo build --release
 ```
 
-The binary lands in `target/release`. On Windows, `.cargo/config.toml` links the program with `rust-lld` and without the C runtime, so nothing but Rust is needed. Only the `x86_64-pc-windows-msvc` target is supported there. The same file turns on CET protection (`/CETCOMPAT`), replaces the timestamp of the binary with a hash of its content (`/Brepro`) and produces no `.pdb`: two builds of the same code give the same file, whatever the folder. On macOS it passes `-S` to the linker, which then writes no object file path: the UUID of the binary, computed over its content, no longer depends on the build folder. The release profile turns on `lto` and `panic = "abort"`, and strips the symbols.
+The binary lands in `target/release`. On Windows, `.cargo/config.toml` links the program with `rust-lld` and without the C runtime, so nothing but Rust is needed. The `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc` targets are supported there, and the few C runtime functions the compiler still calls (`memcpy`, `memset`, `__chkstk` and some others) are written in assembly, one file per target in `src/os`. The same file turns on CET protection (`/CETCOMPAT`) on x86_64, replaces the timestamp of the binary with a hash of its content (`/Brepro`) and produces no `.pdb`: two builds of the same code give the same file, whatever the folder. On macOS it passes `-S` to the linker, which then writes no object file path: the UUID of the binary, computed over its content, no longer depends on the build folder. The release profile turns on `lto` and `panic = "abort"`, and strips the symbols.
 
 The tests (`cargo test`) run as they are on Linux and macOS. On Windows they need the Visual Studio C runtime and a `RUSTFLAGS` variable that replaces the link options of the config file, as CI does (`RUSTFLAGS=-Cdebuginfo=0`).
 
 ## CI and releases
 
-CI runs on every push to `main`, on every `v*` tag and on every pull request. On each of the five targets it checks the formatting, runs `clippy` and the unit tests, builds in release mode, then tries the binary: version, theme, sample rendering, reading a session JSON, benchmark, install then uninstall, install from `~/.claude/bin` with its `~` command, plain text under `NO_COLOR` and `TERM=dumb`, and refusal of an unknown argument or of a bad `--bench` count. On Linux it also reads the memory shown inside a systemd scope capped at 512 MB. It then runs the installer twice in an empty home folder, `install.sh` on Linux and macOS and `install.ps1 -Build` on Windows, and compares each `settings.json` with the expected text. It also checks the ASLR, NX and CET flags of the Windows binary, and that the Linux x86_64 binary is position-independent.
+CI runs on every push to `main`, on every `v*` tag and on every pull request. On each of the six targets it checks the formatting, runs `clippy` and the unit tests, builds in release mode, then tries the binary: version, theme, sample rendering, reading a session JSON, benchmark, install then uninstall, install from `~/.claude/bin` with its `~` command, plain text under `NO_COLOR` and `TERM=dumb`, and refusal of an unknown argument or of a bad `--bench` count. On Linux it also reads the memory shown inside a systemd scope capped at 512 MB. It then runs the installer twice in an empty home folder, `install.sh` on Linux and macOS and `install.ps1 -Build` on Windows, and compares each `settings.json` with the expected text. It also checks the ASLR and NX flags of both Windows binaries and the CET flag of the x86_64 one, and that the Linux x86_64 binary is position-independent.
 
 A `v*` tag publishes a release with the binaries below. The tag must match the version in `Cargo.toml` (`v2.1.0` for `2.1.0`), or CI fails before building. The automatic update compares that version with its own.
 
@@ -238,7 +238,8 @@ A `v*` tag publishes a release with the binaries below. The tag must match the v
 | `statusline-linux-arm64` | Linux arm64, static binary (musl) |
 | `statusline-macos-arm64` | macOS on Apple silicon |
 | `statusline-macos-x86_64` | macOS on Intel |
-| `statusline-windows-x86_64.exe` | Windows, 64-bit |
+| `statusline-windows-x86_64.exe` | Windows x86_64 |
+| `statusline-windows-arm64.exe` | Windows arm64 |
 
 CI builds with Rust 1.99.1, pinned by the `RUSTUP_TOOLCHAIN` variable of the workflow. It rebuilds every binary from a copy of the sources in another folder, and fails if the result differs by a single byte. Each release also publishes `SHA256SUMS`, which gives the SHA-256 hash of each binary, and a build provenance attestation that ties each file to the workflow that built it. To check a downloaded binary with GitHub CLI:
 
@@ -252,6 +253,6 @@ On Linux, `sha256sum -c SHA256SUMS --ignore-missing` also compares the binaries 
 
 ## Limits
 
-There is no native Windows ARM64 binary. The Linux arm64 binary always loads at the same address, because Rust cannot yet build a static position-independent executable for the `aarch64-unknown-linux-musl` target. On other Unix systems (BSD, for example) the bar works without machine metrics, system theme or automatic updates: `--%` everywhere on the second line, and a dark background unless one is set. Automatic updates need `curl`, which ships with macOS and with Windows 10 since version 1803, and has to be installed on some Linux systems.
+The Linux arm64 binary always loads at the same address, because Rust cannot yet build a static position-independent executable for the `aarch64-unknown-linux-musl` target. On other Unix systems (BSD, for example) the bar works without machine metrics, system theme or automatic updates: `--%` everywhere on the second line, and a dark background unless one is set. Automatic updates need `curl`, which ships with macOS and with Windows 10 since version 1803, and has to be installed on some Linux systems.
 
 Colors are sent as 24-bit, with no fallback to 256 colors. When `NO_COLOR` is set or `TERM` is `dumb`, the bar comes out with no escape sequence at all, so without colors or text styles, and with the same glyphs and values. Background detection through the host terminal covers VS Code and its forks, Windows Terminal, Zed and Ghostty. Other terminals go through `COLORFGBG` or the system theme, and `STATUSLINE_BG` can force the choice.

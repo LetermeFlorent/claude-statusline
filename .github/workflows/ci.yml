@@ -34,6 +34,10 @@ jobs:
             target: x86_64-pc-windows-msvc
             asset: statusline-windows-x86_64.exe
             test_rustflags: -Cdebuginfo=0
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            asset: statusline-windows-arm64.exe
+            test_rustflags: -Cdebuginfo=0
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -78,9 +82,12 @@ jobs:
           b="dist/${{ matrix.asset }}"
           if [ "$RUNNER_OS" = Windows ]; then
             rustup component add llvm-tools
-            readobj="$(cygpath -u "$(rustc --print sysroot)")/lib/rustlib/${{ matrix.target }}/bin/llvm-readobj"
+            host=$(rustc -vV | sed -n 's/^host: //p')
+            readobj="$(cygpath -u "$(rustc --print sysroot)")/lib/rustlib/$host/bin/llvm-readobj"
             headers=$("$readobj" --file-headers --coff-debug-directory "$b")
-            for flag in DYNAMIC_BASE HIGH_ENTROPY_VA NX_COMPAT EX_CET_COMPAT; do
+            flags="DYNAMIC_BASE HIGH_ENTROPY_VA NX_COMPAT"
+            [ "${{ matrix.target }}" = x86_64-pc-windows-msvc ] && flags="$flags EX_CET_COMPAT"
+            for flag in $flags; do
               grep -q "IMAGE_DLL_CHARACTERISTICS_$flag" <<< "$headers" || { echo "missing $flag"; exit 1; }
             done
           else

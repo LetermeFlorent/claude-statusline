@@ -6,7 +6,7 @@ This guide installs the status line in Claude Code, then shows how to check it, 
 
 You need Claude Code installed. The rest depends on the system:
 
-- Windows: nothing else. The script downloads the released binary for 64-bit (x86_64) Windows 10 or later. Rust is only needed to build it yourself with `-Build`.
+- Windows: nothing else. The script downloads the released binary for Windows 10 or later, x86_64 or arm64 depending on the processor. Rust is only needed to build it yourself with `-Build`.
 - Linux and macOS: `install.sh` compiles the sources when Rust is installed (https://rustup.rs). Without Rust, it downloads the released binary with `curl`, for Linux x86_64 or arm64 and for macOS on Apple silicon or Intel.
 
 The bar sends 24-bit colors and draws its squares with Unicode characters (`■`, `▪`). Windows Terminal, the VS Code terminal, iTerm2, GNOME Terminal, Konsole, Ghostty and Zed show them with no setup. A terminal limited to 256 colors shows approximate or wrong hues.
@@ -21,7 +21,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 The script does four things:
 
-1. It downloads `statusline-windows-x86_64.exe` and `SHA256SUMS` from the latest release, and stops if the SHA-256 hash of the binary is missing from the list or differs from it. It then puts the program in `%USERPROFILE%\.claude\bin\statusline.exe`. A previous program still in use is first renamed `statusline.exe.old-<timestamp>`, which allows the swap even during a Claude Code session, then deleted when possible, along with the `.old` copies left by an automatic update. The copy is unblocked (`Unblock-File`).
+1. It downloads `statusline-windows-x86_64.exe`, or `statusline-windows-arm64.exe` on an Arm processor, and `SHA256SUMS` from the latest release, and stops if the SHA-256 hash of the binary is missing from the list or differs from it. It then puts the program in `%USERPROFILE%\.claude\bin\statusline.exe`. A previous program still in use is first renamed `statusline.exe.old-<timestamp>`, which allows the swap even during a Claude Code session, then deleted when possible, along with the `.old` copies left by an automatic update. The copy is unblocked (`Unblock-File`).
 2. It installs `statusline.json` in `%USERPROFILE%\.claude`, only when that file does not exist yet. The other accounts read this same file, unless they have their own in their folder.
 3. It lists the accounts: `.claude`, every `.claude-compte*` folder in the home folder, and every `Dir` in `.claude-accounts.json` (the registry of [claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)), without duplicates or missing folders. An unreadable registry gives a warning.
 4. For each account, it runs `statusline.exe --install` with `CLAUDE_CONFIG_DIR` set to the account folder. The command is rewritten in its portable form, `~/.claude/bin/statusline.exe`: any other command, such as a path from an old PC or an old user name, is replaced, and the script says so. The program also repairs the `statusLine` of the account's global file, `.claude.json` in its folder (and `%USERPROFILE%\.claude.json` for `.claude`), when it points to a statusline program that no longer exists; any other command there, such as `npx ccusage statusline`, is left alone. A failure is reported for that account and does not stop the others.
