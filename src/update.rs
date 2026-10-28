@@ -1,4 +1,4 @@
-use crate::json;
+use crate::json::{self, Syntax};
 use crate::os;
 use crate::update_watch::{asset, newer, parts, MARKER, STALE_AFTER};
 use alloc::format;
@@ -62,7 +62,7 @@ fn latest(dir: &str, fetch: Fetch) -> Result<String, String> {
     }
     let tag = text
         .filter(|_| status == Some(HTTP_OK))
-        .and_then(|t| json::parse(&t, false))
+        .and_then(|t| json::parse(&t, Syntax::Tolerant))
         .and_then(|release| release.get("tag_name")?.str().map(String::from))
         .filter(|tag| parts(tag).is_some());
     tag.ok_or_else(|| String::from(NO_RELEASE))

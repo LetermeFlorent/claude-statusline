@@ -1,4 +1,4 @@
-use crate::json;
+use crate::json::{self, Syntax};
 use crate::num;
 use crate::state::{fingerprint, State};
 use alloc::format;
@@ -50,7 +50,7 @@ pub fn window(
     let mut w: Option<u64> = None;
     for f in files {
         let Some(v) = read(f)
-            .and_then(|t| json::parse(&t, true))
+            .and_then(|t| json::parse(&t, Syntax::Commented))
             .filter(|v| v.is_obj())
         else {
             continue;

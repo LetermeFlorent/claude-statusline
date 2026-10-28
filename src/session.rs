@@ -1,4 +1,4 @@
-use crate::json::{self, Value};
+use crate::json::{self, Syntax, Value};
 use crate::num;
 use crate::render::{label_text, Ctx, Quota};
 use alloc::string::String;
@@ -76,7 +76,7 @@ fn live(v: Option<&Value>) -> Option<Live> {
 
 impl Session {
     pub fn parse(text: &str) -> Session {
-        let v = json::parse(text, false).unwrap_or(Value::Null);
+        let v = json::parse(text, Syntax::Tolerant).unwrap_or(Value::Null);
         let cw = v.get("context_window");
         let rl = v.get("rate_limits");
         let five = rl.and_then(|r| r.get("five_hour"));

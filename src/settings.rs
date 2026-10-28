@@ -1,4 +1,4 @@
-use crate::json::{self, Value};
+use crate::json::{self, Syntax, Value};
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -6,7 +6,7 @@ const STATUS_LINE: &str = "statusLine";
 const REFRESH_SECONDS: &str = "3";
 
 fn object(text: &str) -> Option<Value> {
-    json::parse(text, false).filter(|v| v.is_obj())
+    json::parse(text, Syntax::Strict).filter(|v| v.is_obj())
 }
 
 pub fn with_status_line(current: Option<&str>, command: &str) -> Option<String> {
@@ -99,6 +99,35 @@ mod tests {
         assert_eq!(with_status_line(Some(""), COMMAND), None);
         assert_eq!(without_status_line("{\"statusLine\": {} /* x */}"), None);
         assert_eq!(without_status_line("[{\"statusLine\": {}}]"), None);
+    }
+
+    #[test]
+    fn concatenated_objects_are_refused() {
+        let current = "{\"permissions\":{}}{\"model\":\"opus\"}";
+        assert_eq!(with_status_line(Some(current), COMMAND), None);
+        assert_eq!(
+            without_status_line("{\"statusLine\":{}}{\"model\":\"opus\"}"),
+            None
+        );
+    }
+
+    #[test]
+    fn trailing_text_and_comma_mistakes_are_refused() {
+        for current in [
+            "{\"model\": \"opus\"} x",
+            "{\"model\": \"opus\" \"env\": {}}",
+            "{\"env\": {\"A\": [1 2]}}",
+            "{\"model\": \"opus\",}",
+            "{,\"model\": \"opus\"}",
+            "{\"env\": [1,,2]}",
+        ] {
+            assert_eq!(
+                with_status_line(Some(current), COMMAND),
+                None,
+                "{}",
+                current
+            );
+        }
     }
 
     #[test]

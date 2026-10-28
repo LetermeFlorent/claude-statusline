@@ -1,4 +1,4 @@
-use crate::json::{self, Value};
+use crate::json::{self, Syntax, Value};
 use crate::num;
 use crate::render::printable;
 use alloc::string::String;
@@ -125,7 +125,7 @@ fn palette(raw: &Value, path: &[&str], ok: Rgb, warn: Rgb, hot: Rgb) -> Palette 
 impl Config {
     pub fn parse(text: Option<&str>) -> Config {
         let raw = text
-            .and_then(|t| json::parse(t, true))
+            .and_then(|t| json::parse(t, Syntax::Commented))
             .filter(|v| v.is_obj())
             .unwrap_or(Value::Obj(Vec::new()));
         let background = raw

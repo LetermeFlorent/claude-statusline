@@ -1,5 +1,5 @@
 use crate::config::{background_word, hex};
-use crate::json::{self, Value};
+use crate::json::{self, Syntax, Value};
 use crate::os;
 use crate::state::{fingerprint, State};
 use alloc::format;
@@ -299,7 +299,7 @@ fn ghostty_files() -> Vec<String> {
 
 fn read_json(path: &str) -> Option<Value> {
     let t = os::read_text(path)?;
-    json::parse(&t, true).filter(|v| v.is_obj())
+    json::parse(&t, Syntax::Commented).filter(|v| v.is_obj())
 }
 
 fn host_mode(h: Host, files: &[String]) -> Mode {
@@ -398,7 +398,7 @@ mod tests {
     use super::*;
 
     fn j(s: &str) -> Value {
-        json::parse(s, true).unwrap()
+        json::parse(s, Syntax::Commented).unwrap()
     }
 
     #[test]

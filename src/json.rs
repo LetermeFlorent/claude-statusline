@@ -87,28 +87,38 @@ impl Value {
     }
 }
 
-// lenient : commentaires // et /* */ (fichiers de reglages).
-// Le texte qui suit la premiere valeur est ignore.
-pub fn parse(text: &str, lenient: bool) -> Option<Value> {
+#[derive(Clone, Copy, PartialEq)]
+pub enum Syntax {
+    Tolerant,
+    Commented,
+    Strict,
+}
+
+pub fn parse(text: &str, syntax: Syntax) -> Option<Value> {
     let b = text.as_bytes();
     let mut p = Parser {
         b,
         i: 0,
-        lenient,
+        syntax,
         depth: 0,
+        dropped_surrogate: false,
     };
     if b.starts_with(&[0xEF, 0xBB, 0xBF]) {
         p.i = 3;
     }
     p.ws();
-    p.value()
+    let value = p.value()?;
+    p.ws();
+    let complete = p.i == b.len() && !p.dropped_surrogate;
+    (syntax != Syntax::Strict || complete).then_some(value)
 }
 
 struct Parser<'a> {
     b: &'a [u8],
     i: usize,
-    lenient: bool,
+    syntax: Syntax,
     depth: u32,
+    dropped_surrogate: bool,
 }
 
 impl Parser<'_> {
@@ -120,7 +130,7 @@ impl Parser<'_> {
         loop {
             match self.peek() {
                 Some(b' ' | b'\t' | b'\n' | b'\r') => self.i += 1,
-                Some(b'/') if self.lenient => match self.b.get(self.i + 1) {
+                Some(b'/') if self.syntax == Syntax::Commented => match self.b.get(self.i + 1) {
                     Some(b'/') => {
                         while let Some(c) = self.peek() {
                             if c == b'\n' {
@@ -186,16 +196,35 @@ impl Parser<'_> {
         }
     }
 
+    fn item_follows(&mut self, close: u8, first: bool) -> Option<bool> {
+        if self.syntax != Syntax::Strict {
+            self.seps();
+            return Some(self.peek()? != close);
+        }
+        self.ws();
+        if self.peek()? == close {
+            return Some(false);
+        }
+        if !first {
+            if self.peek()? != b',' {
+                return None;
+            }
+            self.i += 1;
+            self.ws();
+        }
+        (self.peek()? != close).then_some(true)
+    }
+
     fn object(&mut self) -> Option<Value> {
         self.enter()?;
         self.i += 1;
         let mut m = Vec::new();
         loop {
-            self.seps();
-            match self.peek()? {
-                b'}' => break,
-                b'"' => {}
-                _ => return None,
+            if !self.item_follows(b'}', m.is_empty())? {
+                break;
+            }
+            if self.peek()? != b'"' {
+                return None;
             }
             let k = self.string()?;
             self.ws();
@@ -217,8 +246,7 @@ impl Parser<'_> {
         self.i += 1;
         let mut a = Vec::new();
         loop {
-            self.seps();
-            if self.peek()? == b']' {
+            if !self.item_follows(b']', a.is_empty())? {
                 break;
             }
             a.push(self.value()?);
@@ -269,9 +297,11 @@ impl Parser<'_> {
                                         cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
                                     } else {
                                         self.i = save;
+                                        self.dropped_surrogate = true;
                                         continue;
                                     }
                                 } else {
+                                    self.dropped_surrogate = true;
                                     continue;
                                 }
                             }
@@ -279,6 +309,8 @@ impl Parser<'_> {
                             if let Some(ch) = char::from_u32(cp) {
                                 let mut buf = [0u8; 4];
                                 out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+                            } else {
+                                self.dropped_surrogate = true;
                             }
                         }
                         _ => return None,
@@ -422,25 +454,36 @@ mod tests {
 
     #[test]
     fn lecture() {
-        let v = parse("{\"a\":1,\"a\":2,\"s\":\"\\u00e9\\ud83d\\ude00\"}", false).unwrap();
+        let v = parse(
+            "{\"a\":1,\"a\":2,\"s\":\"\\u00e9\\ud83d\\ude00\"}",
+            Syntax::Tolerant,
+        )
+        .unwrap();
         assert_eq!(v.get("a").unwrap().num(), Some(2.0));
         assert_eq!(v.get("s").unwrap().str(), Some("\u{e9}\u{1f600}"));
-        assert!(parse("{,\"a\":1,,}", false).is_some());
-        assert!(parse("[1,,2,]", false).unwrap().arr().unwrap().len() == 2);
-        assert!(parse("{\"a\" 1}", false).is_none());
-        assert!(parse("{\"a\":1, // x\n}", true).is_some());
-        assert!(parse("\u{feff}{\"a\":1}", false).is_some());
+        assert!(parse("{,\"a\":1,,}", Syntax::Tolerant).is_some());
+        assert!(
+            parse("[1,,2,]", Syntax::Tolerant)
+                .unwrap()
+                .arr()
+                .unwrap()
+                .len()
+                == 2
+        );
+        assert!(parse("{\"a\" 1}", Syntax::Tolerant).is_none());
+        assert!(parse("{\"a\":1, // x\n}", Syntax::Commented).is_some());
+        assert!(parse("\u{feff}{\"a\":1}", Syntax::Tolerant).is_some());
         assert_eq!(
-            parse("{\"s\":\"a\\ud83db\"}", false)
+            parse("{\"s\":\"a\\ud83db\"}", Syntax::Tolerant)
                 .unwrap()
                 .get("s")
                 .unwrap()
                 .str(),
             Some("ab")
         );
-        assert!(parse("[1.]", false).is_none());
+        assert!(parse("[1.]", Syntax::Tolerant).is_none());
         assert_eq!(
-            parse("{\"x\":1} reste", false)
+            parse("{\"x\":1} reste", Syntax::Tolerant)
                 .unwrap()
                 .get("x")
                 .unwrap()
@@ -453,11 +496,11 @@ mod tests {
     fn ecriture() {
         let v = parse(
             "{\"b\":[1,2.50],\"a\":{},\"c\":\"x\\u0001\\\"\",\"d\":[]}",
-            false,
+            Syntax::Tolerant,
         )
         .unwrap();
         assert_eq!(pretty(&v), "{\n  \"b\": [\n    1,\n    2.50\n  ],\n  \"a\": {},\n  \"c\": \"x\\u0001\\\"\",\n  \"d\": []\n}\n");
-        let mut v = parse("{\"a\":1,\"b\":2,\"a\":3}", false).unwrap();
+        let mut v = parse("{\"a\":1,\"b\":2,\"a\":3}", Syntax::Tolerant).unwrap();
         v.set("a", Value::Bool(true));
         v.set("c", Value::Null);
         assert_eq!(
@@ -467,10 +510,33 @@ mod tests {
     }
 
     #[test]
+    fn strict_syntax_needs_single_commas_and_nothing_after() {
+        for text in [
+            "{\"a\":1}{\"b\":2}",
+            "{\"a\":1} x",
+            "{\"a\":1 \"b\":2}",
+            "[1 2]",
+            "[1,,2]",
+            "{,\"a\":1}",
+            "[1,]",
+            "{\"a\":1,}",
+            "[,]",
+            "{\"a\":1} // x",
+            "[\"a\\ud83db\"]",
+            "[\"\\ude00\"]",
+        ] {
+            assert!(parse(text, Syntax::Strict).is_none(), "{}", text);
+        }
+        let ok = parse(" {\"a\": [1, 2], \"b\": {}, \"c\": []} \n", Syntax::Strict).unwrap();
+        assert_eq!(ok.get("a").and_then(Value::arr).map(|a| a.len()), Some(2));
+        assert!(parse("\u{feff}[\"\\ud83d\\ude00\"]", Syntax::Strict).is_some());
+    }
+
+    #[test]
     fn out_of_range_numbers_are_refused() {
-        assert!(parse("{\"a\": 1e999}", false).is_none());
-        assert!(parse("[-1e999]", false).is_none());
-        let tiny = parse("[1e-999]", false).unwrap();
+        assert!(parse("{\"a\": 1e999}", Syntax::Tolerant).is_none());
+        assert!(parse("[-1e999]", Syntax::Tolerant).is_none());
+        let tiny = parse("[1e-999]", Syntax::Tolerant).unwrap();
         assert_eq!(tiny.arr().unwrap()[0].num(), Some(0.0));
     }
 }
