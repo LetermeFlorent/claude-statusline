@@ -128,6 +128,8 @@ jobs:
           grep -q "\"~/.claude/bin/statusline$ext\"" "$HOME/.claude/settings.json"
           set +e
           "$b" --no-such-flag 2>/dev/null
+          [ $? -eq 2 ] || exit 1
+          "$b" --bench abc 2>/dev/null
           [ $? -eq 2 ]
 
       - name: installer

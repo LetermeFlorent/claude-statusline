@@ -170,7 +170,7 @@ The program is installed in `~/.claude/bin`, as `statusline.exe` on Windows and 
 | `--version`, `-V` | prints `statusline` followed by the version number |
 | `--help`, `-h` | prints the help |
 
-Only the first argument is read. The exit code is 0 on success, 1 when `--install`, `--uninstall` or `--update` fails, and 2 for an unknown argument, which is printed back with the help.
+Only the first argument is read, along with the count after `--bench`. The exit code is 0 on success, 1 when `--install`, `--uninstall` or `--update` fails, and 2 for a usage error: an unknown argument, printed back with the help, or a `--bench` count that is not a whole number above 0.
 
 The help and the messages follow the system language: French on a system set to French, English on any other. On Windows that is the display language of the user account. On Linux and macOS the first of `LC_ALL`, `LC_MESSAGES` and `LANG` that holds a value decides, and French means a language code of `fr`, as in `fr_FR.UTF-8` or `fr_CA`. The two install scripts follow the same rule.
 

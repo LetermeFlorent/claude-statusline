@@ -11,6 +11,10 @@ pub const BENCH_RENDER: Text = Text::new("render", "rendu");
 pub const BENCH_WRITE: Text = Text::new("write", "écriture");
 pub const UNKNOWN_ARGUMENT: Text =
     Text::new("unknown argument: {}\n{}", "argument inconnu : {}\n{}");
+pub const BAD_BENCH_COUNT: Text = Text::new(
+    "--bench expects a whole number above 0, got: {}\n",
+    "--bench attend un nombre entier supérieur à 0, reçu : {}\n",
+);
 pub const SETTINGS_UNREADABLE: Text = Text::new(
     "settings cannot be read, nothing changed: {}\n",
     "réglages illisibles, rien n'est modifié : {}\n",
@@ -71,7 +75,7 @@ pub const UPDATE_RUNNING: Text = Text::new(
 );
 
 #[cfg(test)]
-pub const ALL: [&Text; 29] = [
+pub const ALL: [&Text; 30] = [
     &BENCH_SUMMARY,
     &BENCH_STATE,
     &BENCH_CONFIG,
@@ -79,6 +83,7 @@ pub const ALL: [&Text; 29] = [
     &BENCH_RENDER,
     &BENCH_WRITE,
     &UNKNOWN_ARGUMENT,
+    &BAD_BENCH_COUNT,
     &SETTINGS_UNREADABLE,
     &CANNOT_WRITE,
     &BACKUP,

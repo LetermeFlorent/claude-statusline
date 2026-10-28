@@ -266,6 +266,13 @@ fn bench(runs: usize) {
     os::out(&report);
 }
 
+fn bench_runs(count: Option<&str>) -> Option<usize> {
+    match count {
+        None => Some(DEFAULT_BENCH_RUNS),
+        Some(text) => text.parse::<usize>().ok().filter(|runs| *runs > 0),
+    }
+}
+
 fn settings_path() -> Option<String> {
     os::claude_dir().map(|d| os::join(&d, &["settings.json"]))
 }
@@ -402,11 +409,11 @@ pub fn main(args: Vec<String>) -> i32 {
             0
         }
         Some("--bench") => {
-            let runs = args
-                .get(2)
-                .and_then(|s| s.parse::<usize>().ok())
-                .filter(|n| *n > 0)
-                .unwrap_or(DEFAULT_BENCH_RUNS);
+            let count = args.get(2).map(String::as_str);
+            let Some(runs) = bench_runs(count) else {
+                os::err(&messages::BAD_BENCH_COUNT.with(&[count.unwrap_or_default()]));
+                return 2;
+            };
             bench(runs);
             0
         }
@@ -432,6 +439,24 @@ pub fn main(args: Vec<String>) -> i32 {
         Some(other) => {
             os::err(&messages::UNKNOWN_ARGUMENT.with(&[other, messages::HELP.text()]));
             2
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bench_without_a_count_uses_the_default() {
+        assert_eq!(bench_runs(None), Some(DEFAULT_BENCH_RUNS));
+    }
+
+    #[test]
+    fn bench_takes_a_whole_number_above_zero() {
+        assert_eq!(bench_runs(Some("5")), Some(5));
+        for count in ["abc", "0", "-3", "1.5", "", "1e3"] {
+            assert_eq!(bench_runs(Some(count)), None, "{}", count);
         }
     }
 }
