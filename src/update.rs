@@ -11,6 +11,7 @@ const HTTP_OK: u16 = 200;
 const NO_RELEASE: &str = "derniere version introuvable\n";
 const RATE_LIMIT_STATUSES: [u16; 2] = [403, 429];
 const HTTPS_ONLY: &str = "=https";
+const CURL_MISSING: &str = "curl.exe introuvable dans le dossier systeme\n";
 const RATE_LIMITED: &str = "limite de requetes GitHub atteinte, reessayez plus tard\n";
 
 type Fetch<'a> = &'a dyn Fn(&str, &str, u32) -> Option<u16>;
@@ -22,16 +23,19 @@ enum Outcome {
 }
 
 #[cfg(windows)]
-fn curl() -> String {
-    let system = os::env("SystemRoot").map(|r| os::join(&r, &["System32", "curl.exe"]));
-    system
-        .filter(|p| os::exists(p))
-        .unwrap_or_else(|| String::from("curl.exe"))
+fn curl_in(system: &str) -> Option<String> {
+    let path = os::join(system, &["curl.exe"]);
+    os::exists(&path).then_some(path)
+}
+
+#[cfg(windows)]
+fn curl() -> Option<String> {
+    curl_in(&os::system_dir()?)
 }
 
 #[cfg(not(windows))]
-fn curl() -> String {
-    String::from("curl")
+fn curl() -> Option<String> {
+    Some(String::from("curl"))
 }
 
 fn last_status(headers: &str) -> Option<u16> {
@@ -57,13 +61,21 @@ fn curl_args<'a>(limit: &'a str, headers: &'a str, to: &'a str, url: &'a str) ->
     ]
 }
 
-fn download(url: &str, to: &str, secs: u32) -> Option<u16> {
-    let headers = format!("{}.headers", to);
-    let limit = format!("{}", secs);
-    let finished = os::call(&curl(), &curl_args(&limit, &headers, to, url), secs + 15) == Some(0);
-    let status = os::read_text(&headers).and_then(|h| last_status(&h));
-    os::remove(&headers);
-    status.filter(|_| finished)
+struct Curl<'a> {
+    program: String,
+    dir: &'a str,
+}
+
+impl Curl<'_> {
+    fn fetch(&self, url: &str, to: &str, secs: u32) -> Option<u16> {
+        let headers = format!("{}.headers", to);
+        let limit = format!("{}", secs);
+        let args = curl_args(&limit, &headers, to, url);
+        let finished = os::call(&self.program, &args, self.dir, secs + 15) == Some(0);
+        let status = os::read_text(&headers).and_then(|h| last_status(&h));
+        os::remove(&headers);
+        status.filter(|_| finished)
+    }
 }
 
 fn latest(dir: &str, fetch: Fetch) -> Result<String, String> {
@@ -131,7 +143,7 @@ fn fail(msg: &str) -> i32 {
     1
 }
 
-fn install(exe: &str, tag: &str, fetch: Fetch) -> Result<(), String> {
+fn install(dir: &str, exe: &str, tag: &str, fetch: Fetch) -> Result<(), String> {
     let Some(name) = asset() else {
         return Err(String::from("aucun binaire publie pour ce systeme\n"));
     };
@@ -142,7 +154,7 @@ fn install(exe: &str, tag: &str, fetch: Fetch) -> Result<(), String> {
     );
     let ready = fetch(&url, &fresh, 300) == Some(HTTP_OK)
         && os::make_executable(&fresh)
-        && os::call(&fresh, &["--version"], 30) == Some(0);
+        && os::call(&fresh, &["--version"], dir, 30) == Some(0);
     if !ready || !swap(exe, &fresh) {
         os::remove(&fresh);
         return Err(format!("mise a jour vers {} impossible\n", tag));
@@ -157,7 +169,7 @@ fn attempt(dir: &str, exe: &str, fetch: Fetch) -> Result<Outcome, String> {
         return Ok(Outcome::UpToDate);
     }
     os::write(&os::join(dir, &[MARKER]), tag.as_bytes());
-    install(exe, &tag, fetch)?;
+    install(dir, exe, &tag, fetch)?;
     Ok(Outcome::Updated(tag))
 }
 
@@ -196,6 +208,9 @@ pub fn run() -> i32 {
     let Some(dir) = os::state_dir() else {
         return fail("dossier d'etat introuvable\n");
     };
+    let Some(program) = curl() else {
+        return fail(CURL_MISSING);
+    };
     let lock = match take_lock(&dir) {
         Ok(Some(lock)) => lock,
         Ok(None) => {
@@ -204,8 +219,10 @@ pub fn run() -> i32 {
         }
         Err(msg) => return fail(&msg),
     };
+    let curl = Curl { program, dir: &dir };
+    let fetch = |url: &str, to: &str, secs: u32| curl.fetch(url, to, secs);
     let result = match os::exe() {
-        Some(exe) => attempt(&dir, &exe, &download),
+        Some(exe) => attempt(&dir, &exe, &fetch),
         None => Err(String::from("chemin du binaire introuvable\n")),
     };
     let code = report(result);
@@ -243,11 +260,10 @@ mod tests {
     };
 
     fn working_binary() -> Vec<u8> {
-        match std::env::var("SystemRoot") {
-            Ok(root) if cfg!(windows) => {
-                std::fs::read(format!("{}\\System32\\curl.exe", root)).unwrap()
-            }
-            _ => b"#!/bin/sh\nexit 0\n".to_vec(),
+        if cfg!(windows) {
+            std::fs::read(curl().unwrap()).unwrap()
+        } else {
+            b"#!/bin/sh\nexit 0\n".to_vec()
         }
     }
 
@@ -366,6 +382,16 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn curl_is_never_looked_up_by_bare_name() {
+        let sandbox = Sandbox::new("system");
+        assert_eq!(curl_in(&sandbox.dir()), None);
+        let installed = sandbox.path("curl.exe");
+        std::fs::write(&installed, b"").unwrap();
+        assert_eq!(curl_in(&sandbox.dir()), Some(installed));
+    }
+
     #[test]
     fn curl_skips_the_user_config_and_speaks_only_https() {
         const UNSUPPORTED_PROTOCOL: i32 = 1;
@@ -381,7 +407,7 @@ mod tests {
             "file:///{}",
             source.replace('\\', "/").trim_start_matches('/')
         );
-        let output = std::process::Command::new(curl())
+        let output = std::process::Command::new(curl().unwrap())
             .args(curl_args("5", &headers, &copy, &url))
             .env("CURL_HOME", sandbox.dir())
             .output()

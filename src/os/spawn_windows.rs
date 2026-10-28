@@ -2,7 +2,7 @@ use super::windows::wide;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::ffi::c_void;
-use core::ptr::{null, null_mut};
+use core::ptr::null_mut;
 
 type Handle = isize;
 
@@ -64,27 +64,23 @@ fn command_line(exe: &str, args: &[&str]) -> Vec<u16> {
     wide(&line)
 }
 
-fn start(exe: &str, args: &[&str], flags: u32) -> Option<[Handle; 3]> {
-    let app = if exe.contains(['\\', '/']) {
-        Some(wide(exe))
-    } else {
-        None
-    };
+fn start(exe: &str, args: &[&str], dir: &str, flags: u32) -> Option<[Handle; 3]> {
+    let app = wide(exe);
+    let folder = wide(dir);
     let mut cmd = command_line(exe, args);
     let mut si = [0u64; 13];
     si[0] = STARTUP_INFO_SIZE;
     let mut pi: [Handle; 3] = [0; 3];
-    let app_ptr = app.as_ref().map_or(null(), |a| a.as_ptr());
     let ok = unsafe {
         CreateProcessW(
-            app_ptr,
+            app.as_ptr(),
             cmd.as_mut_ptr(),
             null_mut(),
             null_mut(),
             0,
             flags,
             null_mut(),
-            null(),
+            folder.as_ptr(),
             si.as_mut_ptr(),
             pi.as_mut_ptr(),
         )
@@ -103,9 +99,10 @@ fn close(pi: [Handle; 3]) {
     }
 }
 
-pub fn spawn(exe: &str, args: &[&str]) -> bool {
+pub fn spawn(exe: &str, args: &[&str], dir: &str) -> bool {
     let flags = NO_WINDOW | BELOW_NORMAL_PRIORITY;
-    match start(exe, args, flags | BREAKAWAY_FROM_JOB).or_else(|| start(exe, args, flags)) {
+    let detached = start(exe, args, dir, flags | BREAKAWAY_FROM_JOB);
+    match detached.or_else(|| start(exe, args, dir, flags)) {
         Some(pi) => {
             close(pi);
             true
@@ -114,8 +111,8 @@ pub fn spawn(exe: &str, args: &[&str]) -> bool {
     }
 }
 
-pub fn call(exe: &str, args: &[&str], secs: u32) -> Option<i32> {
-    let pi = start(exe, args, NO_WINDOW)?;
+pub fn call(exe: &str, args: &[&str], dir: &str, secs: u32) -> Option<i32> {
+    let pi = start(exe, args, dir, NO_WINDOW)?;
     let mut code = 0u32;
     let done = unsafe { WaitForSingleObject(pi[0], secs.saturating_mul(1000)) } == SIGNALED;
     if done {

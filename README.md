@@ -176,7 +176,7 @@ Seul le premier argument est lu. Le code de sortie vaut 0 en cas de succès, 1 q
 
 Avec `"auto_update": true` dans `statusline.json`, un rendu de la barre lance `statusline --update` au plus toutes les 6 heures, en arrière-plan, sans fenêtre et en priorité basse, puis rend la main sans l'attendre. Ce lancement n'a lieu que si le programme tourne depuis `~/.claude/bin` et qu'un binaire est publié pour le système. L'heure de la dernière recherche est gardée dans le fichier d'état, sous la clé `update_at`.
 
-`--update` demande la dernière version publiée à l'API GitHub, avec `curl`. Si elle est plus récente, il télécharge le binaire du système à côté du programme (`statusline.new.exe`, ou `statusline.new`), vérifie qu'il répond à `--version`, puis le met à la place de l'ancien. Sous Windows, le programme en cours d'exécution ne peut pas être écrasé : il est renommé `statusline.exe.old-<horodatage>`, et ce fichier est supprimé à la recherche suivante.
+`--update` demande la dernière version publiée à l'API GitHub, avec `curl` (sous Windows, le `curl.exe` du dossier système). Si elle est plus récente, il télécharge le binaire du système à côté du programme (`statusline.new.exe`, ou `statusline.new`), vérifie qu'il répond à `--version`, puis le met à la place de l'ancien. Sous Windows, le programme en cours d'exécution ne peut pas être écrasé : il est renommé `statusline.exe.old-<horodatage>`, et ce fichier est supprimé à la recherche suivante.
 
 Pendant le téléchargement, puis 5 secondes après le remplacement, la barre affiche `update`. Le rafraîchissement suivant lance le nouveau programme, sans redémarrer Claude Code. Un échec (réseau coupé, binaire absent, remplacement refusé) laisse l'ancien programme en place jusqu'à la recherche suivante.
 
@@ -210,7 +210,6 @@ Le programme lit les variables suivantes, toutes facultatives :
 | `WT_PROFILE_ID` | profil Windows Terminal en cours |
 | `GTK_THEME`, `XDG_CURRENT_DESKTOP` | thème du système sous Linux |
 | `HOME`, `USERPROFILE`, `LOCALAPPDATA`, `APPDATA`, `XDG_STATE_HOME`, `XDG_CONFIG_HOME` | emplacement des fichiers |
-| `SystemRoot` | emplacement de `curl.exe` sous Windows, pour `--update` |
 
 Une variable vide compte comme absente.
 

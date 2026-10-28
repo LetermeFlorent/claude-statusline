@@ -70,8 +70,11 @@ pub fn due(state: &mut State, now: f64) -> bool {
 }
 
 pub fn launch() {
-    if let Some(exe) = os::exe() {
-        os::spawn(&exe, &["--update"]);
+    let (Some(exe), Some(dir)) = (os::exe(), os::state_dir()) else {
+        return;
+    };
+    if os::mkdirs(&dir) {
+        os::spawn(&exe, &["--update"], &dir);
     }
 }
 

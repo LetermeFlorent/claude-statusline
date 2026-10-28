@@ -111,6 +111,26 @@ mod tests {
     }
 
     #[test]
+    fn children_start_in_the_given_folder() {
+        let sandbox = Sandbox::new("cwd");
+        #[cfg(windows)]
+        let (shell, script) = (
+            join(&system_dir().unwrap(), &["cmd.exe"]),
+            ["/c", "cd>here.txt"],
+        );
+        #[cfg(not(windows))]
+        let (shell, script) = (String::from("/bin/sh"), ["-c", "pwd>here.txt"]);
+        assert_eq!(call(&shell, &script, &sandbox.dir(), 10), Some(0));
+        assert_eq!(sandbox.files(), ["here.txt"]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_system_folder_holds_cmd() {
+        assert!(exists(&join(&system_dir().unwrap(), &["cmd.exe"])));
+    }
+
+    #[test]
     fn devices_are_refused() {
         let device = if cfg!(windows) { "NUL" } else { "/dev/null" };
         assert_eq!(read(device), None);

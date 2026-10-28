@@ -46,6 +46,7 @@ extern "system" {
     fn LocalFree(p: *mut c_void) -> *mut c_void;
     fn GetEnvironmentVariableW(name: *const u16, buf: *mut u16, size: u32) -> u32;
     fn GetModuleFileNameW(m: Handle, buf: *mut u16, size: u32) -> u32;
+    fn GetSystemDirectoryW(buf: *mut u16, size: u32) -> u32;
     fn GetCurrentDirectoryW(size: u32, buf: *mut u16) -> u32;
     fn GetCurrentProcessId() -> u32;
     fn GetSystemTimePreciseAsFileTime(ft: *mut u64);
@@ -379,6 +380,10 @@ pub fn err(s: &str) {
 
 pub fn exe() -> Option<String> {
     grow(&|b, n| unsafe { GetModuleFileNameW(0, b, n) })
+}
+
+pub fn system_dir() -> Option<String> {
+    grow(&|b, n| unsafe { GetSystemDirectoryW(b, n) })
 }
 
 pub fn cwd() -> Option<String> {
