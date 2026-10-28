@@ -1,5 +1,3 @@
-# Installe la barre pour tous les comptes Claude Code du poste (Windows).
-# -Build compile les sources (Rust requis) au lieu de prendre bin\statusline.exe
 param([switch]$Build)
 $ErrorActionPreference = "Stop"
 
@@ -22,7 +20,7 @@ function Get-StatusCommand([string]$file) {
   if (-not (Test-Path -LiteralPath $file)) { return $null }
   try { return (Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).statusLine.command } catch { return $null }
 }
-# Claude Code peut etre en train de lancer la barre : un exe en cours ne se remplace pas, il se renomme
+
 if (Test-Path -LiteralPath $exe) {
   Remove-OldCopies
   Move-Item -LiteralPath $exe -Destination ($exe + ".old-" + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
@@ -36,7 +34,6 @@ $conf = Join-Path $main "statusline.json"
 if (Test-Path -LiteralPath $conf) { Write-Host "statusline.json existe deja, conserve" }
 else { Copy-Item -LiteralPath (Join-Path $PSScriptRoot "statusline.json") -Destination $conf; Write-Host "statusline.json installe" }
 
-# Comptes : .claude, chaque .claude-compte*, et ceux declares dans le menu multi-comptes
 $dirs = [ordered]@{}
 $found = @($main) + @(Get-ChildItem -LiteralPath $env:USERPROFILE -Directory -Filter ".claude-compte*" | ForEach-Object { $_.FullName })
 $reg = Join-Path $env:USERPROFILE ".claude-accounts.json"
@@ -52,7 +49,6 @@ foreach ($d in $found) {
   if (-not $dirs.Contains($key)) { $dirs[$key] = $d }
 }
 
-# Le binaire pose lui-meme l'entree statusLine, compte par compte.
 $prev = $env:CLAUDE_CONFIG_DIR
 try {
   foreach ($d in $dirs.Values) {

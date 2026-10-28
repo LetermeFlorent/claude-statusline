@@ -1,6 +1,4 @@
 #!/bin/sh
-# Installe la barre pour tous les comptes Claude Code du poste (Linux, macOS).
-# Compile les sources si cargo est present, sinon telecharge le binaire de la derniere version publiee.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 main="$HOME/.claude"
@@ -25,7 +23,7 @@ else
   echo "telechargement de $asset"
   curl -q -fsSL --proto =https --proto-redir =https "$repo/releases/latest/download/$asset" -o "$bin_dir/statusline.new"
 fi
-# Copie puis renommage : une barre en cours d'execution garde l'ancien fichier jusqu'a la fin
+
 chmod 755 "$bin_dir/statusline.new"
 mv -f "$bin_dir/statusline.new" "$bin_dir/statusline"
 echo "programme copie dans $bin_dir/statusline"
@@ -37,7 +35,6 @@ else
   echo "statusline.json installe"
 fi
 
-# Comptes : .claude, chaque .claude-compte*, et ceux declares dans le menu multi-comptes
 seen=""
 install_for() {
   d=${1%/}
