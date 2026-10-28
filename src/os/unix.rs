@@ -18,8 +18,25 @@ pub fn env(name: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+#[cfg(any(target_os = "linux", target_os = "android"))]
+const O_NONBLOCK: i32 = 0o4000;
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+const O_NONBLOCK: i32 = 0x0004;
+
 pub fn read(path: &str) -> Option<Vec<u8>> {
-    std::fs::read(path).ok()
+    use std::os::unix::fs::OpenOptionsExt;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(O_NONBLOCK)
+        .open(path)
+        .ok()?;
+    if !file.metadata().ok()?.is_file() {
+        return None;
+    }
+    let mut data = Vec::new();
+    let limit = super::MAX_READ_BYTES as u64 + 1;
+    file.take(limit).read_to_end(&mut data).ok()?;
+    (data.len() <= super::MAX_READ_BYTES).then_some(data)
 }
 
 pub fn write(path: &str, data: &[u8]) -> bool {

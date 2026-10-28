@@ -88,6 +88,7 @@ const SHARE_ALL: u32 = 7;
 const OPEN_EXISTING: u32 = 3;
 const CREATE_ALWAYS: u32 = 2;
 const CREATE_NEW: u32 = 1;
+const FILE_TYPE_DISK: u32 = 1;
 const EPOCH: u64 = 116_444_736_000_000_000;
 
 pub(super) fn wide(s: &str) -> Vec<u16> {
@@ -159,10 +160,10 @@ fn open_read(path: &str) -> Handle {
     }
 }
 
-fn read_all(h: Handle, hint: usize) -> Vec<u8> {
+fn read_all(h: Handle, hint: usize, limit: usize) -> Vec<u8> {
     let mut out: Vec<u8> = Vec::with_capacity(hint + 1);
     let mut chunk = vec![0u8; 65536];
-    loop {
+    while out.len() <= limit {
         let mut got = 0u32;
         let ok = unsafe {
             ReadFile(
@@ -187,10 +188,12 @@ pub fn read(path: &str) -> Option<Vec<u8>> {
         return None;
     }
     let mut size = 0i64;
-    unsafe { GetFileSizeEx(h, &mut size) };
-    let data = read_all(h, if size > 0 { size as usize } else { 0 });
+    let on_disk = unsafe { GetFileType(h) } == FILE_TYPE_DISK
+        && unsafe { GetFileSizeEx(h, &mut size) } != 0
+        && (0..=super::MAX_READ_BYTES as i64).contains(&size);
+    let data = on_disk.then(|| read_all(h, size as usize, super::MAX_READ_BYTES));
     unsafe { CloseHandle(h) };
-    Some(data)
+    data.filter(|d| d.len() <= super::MAX_READ_BYTES)
 }
 
 fn write_handle(h: Handle, data: &[u8]) -> bool {
@@ -333,7 +336,7 @@ pub fn stdin() -> Option<String> {
     if h == 0 || h == INVALID || unsafe { GetFileType(h) } == 2 {
         return None;
     }
-    let data = read_all(h, 4096);
+    let data = read_all(h, 4096, usize::MAX);
     Some(String::from_utf8_lossy(&data).into_owned())
 }
 
