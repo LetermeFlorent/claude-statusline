@@ -1,4 +1,5 @@
 use crate::backup;
+use crate::check;
 use crate::compact;
 use crate::config::{Config, Metric};
 use crate::global_config::{self, Repair};
@@ -431,6 +432,7 @@ pub fn main(args: Vec<String>) -> i32 {
             os::out(if light { "light\n" } else { "dark\n" });
             0
         }
+        Some("--check") => check::run(config_path()),
         Some("--install") => install(),
         Some("--uninstall") => uninstall(),
         Some("--update") => update::run(),
@@ -452,6 +454,11 @@ pub fn main(args: Vec<String>) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_written_template_passes_the_check() {
+        assert!(check::problems(TEMPLATE).is_empty());
+    }
 
     #[test]
     fn bench_without_a_count_uses_the_default() {

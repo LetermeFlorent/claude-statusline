@@ -68,12 +68,48 @@ pub const DEFAULT_DISK: &str = "C:\\";
 #[cfg(not(windows))]
 pub const DEFAULT_DISK: &str = "/";
 
+pub const BACKGROUND_NAMES: [(&str, bool); 4] = [
+    ("light", true),
+    ("clair", true),
+    ("dark", false),
+    ("sombre", false),
+];
+pub const EFFORT_NAMES: [(&str, bool); 2] = [("gradient", false), ("flat", true)];
+pub const METRIC_NAMES: [(&str, Metric); 4] = [
+    ("ram", Metric::Ram),
+    ("io", Metric::Io),
+    ("dsk", Metric::Io),
+    ("cpu", Metric::Cpu),
+];
+const DEFAULT_METRICS: [Metric; 3] = [Metric::Ram, Metric::Io, Metric::Cpu];
+
+pub fn by_name<T: Copy>(names: &[(&str, T)], text: &str) -> Option<T> {
+    let word = text.trim().to_lowercase();
+    names
+        .iter()
+        .find(|(name, _)| *name == word)
+        .map(|(_, value)| *value)
+}
+
 pub fn background_word(s: &str) -> Option<bool> {
-    let w = s.trim().to_lowercase();
-    match w.as_str() {
-        "light" | "clair" => Some(true),
-        "dark" | "sombre" => Some(false),
-        _ => None,
+    by_name(&BACKGROUND_NAMES, s)
+}
+
+fn listed_metrics(list: Option<&Value>) -> Vec<Metric> {
+    let named = list.and_then(Value::arr).unwrap_or_default();
+    let mut picked = Vec::new();
+    for metric in named
+        .iter()
+        .filter_map(|m| by_name(&METRIC_NAMES, m.str()?))
+    {
+        if !picked.contains(&metric) {
+            picked.push(metric);
+        }
+    }
+    if picked.is_empty() {
+        DEFAULT_METRICS.to_vec()
+    } else {
+        picked
     }
 }
 
@@ -140,18 +176,6 @@ impl Config {
         };
         let sys = raw.get("system").filter(|v| v.is_obj());
         let sysget = |k: &str| sys.and_then(|s| s.get(k));
-        let metrics = match sysget("metrics").and_then(|v| v.arr()) {
-            Some(a) if !a.is_empty() => a
-                .iter()
-                .filter_map(|m| match m.str() {
-                    Some("ram") => Some(Metric::Ram),
-                    Some("io") => Some(Metric::Io),
-                    Some("cpu") => Some(Metric::Cpu),
-                    _ => None,
-                })
-                .collect(),
-            _ => alloc::vec![Metric::Ram, Metric::Io, Metric::Cpu],
-        };
         let disk_path = match sysget("disk_path").and_then(|v| v.str()) {
             Some(s) if !s.is_empty() => String::from(s),
             _ => String::from(DEFAULT_DISK),
@@ -168,7 +192,11 @@ impl Config {
                     .and_then(|v| v.str())
                     .unwrap_or("\u{AA}"),
             ),
-            effort_flat: raw.get("effort_style").and_then(|v| v.str()) == Some("flat"),
+            effort_flat: raw
+                .get("effort_style")
+                .and_then(Value::str)
+                .and_then(|s| by_name(&EFFORT_NAMES, s))
+                == Some(true),
             seg_ctx: shown(&raw, "ctx"),
             seg_5h: shown(&raw, "5h"),
             seg_7d: shown(&raw, "7d"),
@@ -216,7 +244,7 @@ impl Config {
                 HOT_SYS,
             ),
             sys_enabled: sysget("enabled").and_then(|v| v.bool()) != Some(false),
-            metrics,
+            metrics: listed_metrics(sysget("metrics")),
             disk_path,
             auto_update: raw.get("auto_update").and_then(|v| v.bool()) == Some(true),
             raw,
@@ -274,7 +302,7 @@ mod tests {
         assert_eq!(c.width, 2);
         assert!(c.bold);
         assert_eq!(c.empty, "");
-        assert_eq!(c.metrics, [Metric::Io, Metric::Io]);
+        assert_eq!(c.metrics, [Metric::Io, Metric::Ram]);
         assert_eq!(Config::parse(Some("{\"bar_width\": 1000}")).width, 40);
         assert_eq!(Config::parse(Some("{\"bar_width\": -3}")).width, 1);
         assert_eq!(Config::parse(Some("[1]")).width, 8);
@@ -283,6 +311,44 @@ mod tests {
             Some([170.0, 187.0, 204.0])
         );
         assert_eq!(hex(Some(&Value::Str(String::from("#GG0000")))), None);
+    }
+
+    fn metrics_of(list: &str) -> Vec<Metric> {
+        let text = alloc::format!("{{\"system\": {{\"metrics\": {}}}}}", list);
+        Config::parse(Some(&text)).metrics
+    }
+
+    #[test]
+    fn metric_names_ignore_case_and_take_dsk_for_the_disk() {
+        assert_eq!(metrics_of("[\"Ram\"]"), [Metric::Ram]);
+        assert_eq!(
+            metrics_of("[\" CPU \", \"dsk\"]"),
+            [Metric::Cpu, Metric::Io]
+        );
+    }
+
+    #[test]
+    fn a_metric_listed_twice_shows_once() {
+        assert_eq!(metrics_of("[\"ram\", \"ram\"]"), [Metric::Ram]);
+        assert_eq!(
+            metrics_of("[\"io\", \"cpu\", \"dsk\"]"),
+            [Metric::Io, Metric::Cpu]
+        );
+    }
+
+    #[test]
+    fn a_list_with_no_known_name_shows_every_metric() {
+        let every = [Metric::Ram, Metric::Io, Metric::Cpu];
+        assert_eq!(metrics_of("[\"gpu\", \"net\"]"), every);
+        assert_eq!(metrics_of("[]"), every);
+        assert_eq!(metrics_of("\"ram\""), every);
+    }
+
+    #[test]
+    fn effort_style_ignores_case() {
+        let flat = |text: &str| Config::parse(Some(text)).effort_flat;
+        assert!(flat("{\"effort_style\": \"Flat\"}"));
+        assert!(!flat("{\"effort_style\": \"gradient\"}"));
     }
 
     #[test]

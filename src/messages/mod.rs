@@ -1,7 +1,9 @@
+mod check;
 mod help;
 mod language;
 mod table;
 
+pub use check::*;
 pub use help::HELP;
 pub use table::*;
 
@@ -81,7 +83,7 @@ mod tests {
     #[test]
     fn both_languages_take_the_same_values_and_line_ending() {
         let placeholders = |s: &str| s.matches(PLACEHOLDER).count();
-        for text in ALL.into_iter().chain([&HELP]) {
+        for text in ALL.into_iter().chain(CHECK_TEXTS).chain([&HELP]) {
             assert!(!text.english.is_empty(), "{}", text.french);
             assert!(!text.french.is_empty(), "{}", text.english);
             assert_eq!(

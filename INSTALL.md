@@ -83,7 +83,9 @@ These are the settings most often changed:
 - `thresholds` and `palettes` change the thresholds and hues of the quotas;
 - in the `system` block, `metrics` picks the metrics and their order (`ram`, `io`, `cpu`), `"enabled": false` removes the second line, and `disk_path` picks the disk to watch on Windows and Linux.
 
-An empty `metrics` list falls back to the three metrics: to hide them all, use `"enabled": false`. To use another settings file, set `STATUSLINE_CONFIG` to its path. The README lists every key with its default value.
+An empty `metrics` list, or one with no known name, falls back to the three metrics: to hide them all, use `"enabled": false`. To use another settings file, set `STATUSLINE_CONFIG` to its path. The README lists every key with its default value.
+
+A mistake in the file does not show on the bar: invalid JSON brings every setting back to its default, and a misspelt key or a wrong value is skipped. After an edit, `statusline --check` lists each mistake with its line and column.
 
 ## Updating
 

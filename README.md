@@ -122,7 +122,9 @@ The program looks for its settings file in this order:
 2. `statusline.json` in the `CLAUDE_CONFIG_DIR` folder, if it exists;
 3. `~/.claude/statusline.json`.
 
-It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, trailing commas and a BOM. A missing or unreadable file leaves every value at its default, with no message. Colors are written `#RRGGBB` or `#RGB`, the `#` is optional, and an invalid color falls back to its default. The `statusline.json` in the repository repeats part of the defaults, and any key of the table can be added to it.
+It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, trailing commas and a BOM. A missing or unreadable file leaves every value at its default, and so does invalid JSON, with no message on the bar. Colors are written `#RRGGBB` or `#RGB`, the `#` is optional, and an invalid color falls back to its default. The `statusline.json` in the repository repeats part of the defaults, and any key of the table can be added to it.
+
+`statusline --check` reads the same file and lists its mistakes, each with its line and column: invalid JSON, text after the closing brace, unknown key, value of the wrong type, invalid color or unknown name. It exits with code 1 when it finds one.
 
 | Key | Default | Effect |
 |---|---|---|
@@ -131,7 +133,7 @@ It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, 
 | `bold` | `true` | `false` drops the bold from labels and numbers |
 | `glyphs.filled`, `glyphs.empty`, `glyphs.half` | `■`, `■`, `▪` | full square, empty square, last filled square |
 | `auto_compact_marker` | `ª` | auto-compact threshold marker |
-| `effort_style` | `gradient` | `flat` draws the effort in a single hue |
+| `effort_style` | `gradient` | `flat`, in any case, draws the effort in a single hue |
 | `segments.ctx`, `segments.5h`, `segments.7d`, `segments.model` | `true` | `false` hides the segment |
 | `gradient.5h`, `gradient.7d` | `0.55`, `0.3` | how strongly the bar lightens, from 0 to 1 |
 | `thresholds.quota_warn`, `thresholds.quota_hot` | `30`, `70` | percentages from which a quota turns to warning, then critical |
@@ -143,7 +145,7 @@ It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, 
 | `colors.ctx_from_light`, `colors.ctx_to_light` | `#7DB9FF`, `#285AB4` | context gradient on a light background |
 | `colors.ctx_from_dark`, `colors.ctx_to_dark` | `#96CDFF`, `#4682DC` | context gradient on a dark background |
 | `system.enabled` | `true` | `false` removes the second line |
-| `system.metrics` | `["ram", "io", "cpu"]` | metrics shown, in the order of the list |
+| `system.metrics` | `["ram", "io", "cpu"]` | metrics shown, in the order of the list: `ram`, `io` (or `dsk`) and `cpu`, in any case. A name listed twice counts once, and a list with no known name shows all three |
 | `system.gradient` | `0.45` | how strongly the bars of the second line lighten |
 | `system.disk_path` | `C:\` on Windows, `/` elsewhere | disk to watch |
 | `system.colors.ram.ok`, `.dsk.ok`, `.cpu.ok` | `#1E787D`, `#697855`, `#375A8C` | normal hue of each metric |
@@ -164,6 +166,7 @@ The program is installed in `~/.claude/bin`, as `statusline.exe` on Windows and 
 | `--demo` | sample rendering without Claude Code (Opus 5, effort `max`, context 340k of 1M, 5h at 36%, 7d at 61%), with the real settings, theme and machine metrics. The state file is left alone. |
 | `--bench [n]` | renders the sample `n` times (200 by default) and prints the average time per rendering, then its breakdown: state, config, session, render, write. Process startup is not counted. |
 | `--theme` | prints the background in use, `light` or `dark` |
+| `--check` | lists the mistakes in `statusline.json` with their line and column, and exits with code 1 when there is one (see [Settings](#settings)) |
 | `--install` | writes the `statusLine` block into the `settings.json` of the current account (see [INSTALL.md](INSTALL.md)) |
 | `--uninstall` | removes that block |
 | `--update` | installs the latest release when it is newer (see below) |
