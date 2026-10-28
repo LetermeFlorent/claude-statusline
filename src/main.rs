@@ -9,6 +9,7 @@ mod app;
 mod backup;
 mod compact;
 mod config;
+mod global_config;
 mod json;
 mod num;
 mod os;

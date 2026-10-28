@@ -1,8 +1,10 @@
 use crate::os;
 use alloc::format;
 use alloc::string::String;
+use core::str::Chars;
 
 const SHELL_SAFE_PUNCTUATION: &str = "_./:@%+=,-";
+const DOUBLE_QUOTE_ESCAPES: &str = "$`\"\\";
 
 fn slashes(path: &str) -> String {
     if !cfg!(windows) {
@@ -57,12 +59,34 @@ pub fn home_rest(path: &str) -> Option<String> {
     under(path, &home).or_else(|| under(path, &resolved(&home)?))
 }
 
+pub fn same_path(a: &str, b: &str) -> bool {
+    same(
+        slashes(a).trim_end_matches('/'),
+        slashes(b).trim_end_matches('/'),
+    )
+}
+
 fn tilde_is_home() -> bool {
     let Some(home) = os::home() else { return false };
-    let trimmed = |p: &str| String::from(slashes(p).trim_end_matches('/'));
     os::env("HOME")
         .filter(|h| !h.is_empty())
-        .is_none_or(|h| same(&trimmed(&h), &trimmed(&home)))
+        .is_none_or(|h| same_path(&h, &home))
+}
+
+fn shell_home() -> Option<String> {
+    os::env("HOME").filter(|h| !h.is_empty()).or_else(os::home)
+}
+
+fn expand(program: &str, home: Option<&str>) -> Option<String> {
+    let full = match program.strip_prefix("~/") {
+        Some(rest) => os::join(home?, &[rest]),
+        None => String::from(program),
+    };
+    Some(slashes(&full))
+}
+
+pub fn expanded(program: &str) -> Option<String> {
+    expand(program, shell_home().as_deref())
 }
 
 fn shell_safe(text: &str) -> bool {
@@ -77,6 +101,53 @@ fn quoted(text: &str) -> String {
         return String::from(text);
     }
     format!("'{}'", text.replace('\'', r"'\''"))
+}
+
+fn bare(c: char) -> bool {
+    !c.is_ascii() || c.is_ascii_alphanumeric() || c == '~' || SHELL_SAFE_PUNCTUATION.contains(c)
+}
+
+fn single_quoted(chars: &mut Chars, word: &mut String) -> Option<()> {
+    for c in chars.by_ref() {
+        if c == '\'' {
+            return Some(());
+        }
+        word.push(c);
+    }
+    None
+}
+
+fn double_quoted(chars: &mut Chars, word: &mut String) -> Option<()> {
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => return Some(()),
+            '$' | '`' => return None,
+            '\\' => {
+                let escaped = chars.next()?;
+                if !DOUBLE_QUOTE_ESCAPES.contains(escaped) {
+                    word.push('\\');
+                }
+                word.push(escaped);
+            }
+            c => word.push(c),
+        }
+    }
+    None
+}
+
+pub fn unquoted(command: &str) -> Option<String> {
+    let mut word = String::new();
+    let mut chars = command.trim().chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' => single_quoted(&mut chars, &mut word)?,
+            '"' => double_quoted(&mut chars, &mut word)?,
+            '\\' => word.push(chars.next()?),
+            c if bare(c) => word.push(c),
+            _ => return None,
+        }
+    }
+    (!word.is_empty()).then_some(word)
 }
 
 pub fn command(exe: &str) -> String {
@@ -124,6 +195,89 @@ mod tests {
             .output()
             .unwrap();
         assert_eq!(output.stdout, b"ok\n");
+    }
+
+    #[test]
+    fn quoted_programs_read_back_as_one_word() {
+        for program in [
+            "/opt/statusline",
+            "/opt/my tools/statusline",
+            "/opt/it's $HOME/statusline",
+            "C:/Users/H\u{e9}l\u{e8}ne/.claude/bin/statusline.exe",
+        ] {
+            assert_eq!(unquoted(&quoted(program)).as_deref(), Some(program));
+        }
+    }
+
+    #[test]
+    fn shell_words_lose_their_quotes() {
+        assert_eq!(
+            unquoted(" ~/.claude/bin/statusline ").as_deref(),
+            Some("~/.claude/bin/statusline")
+        );
+        assert_eq!(
+            unquoted(r#""C:\Users\Jo\statusline.exe""#).as_deref(),
+            Some(r"C:\Users\Jo\statusline.exe")
+        );
+        assert_eq!(
+            unquoted(r#""/opt/a \"b\" \$c/statusline""#).as_deref(),
+            Some(r#"/opt/a "b" $c/statusline"#)
+        );
+        assert_eq!(
+            unquoted(r"/opt/a\ b/statusline").as_deref(),
+            Some("/opt/a b/statusline")
+        );
+    }
+
+    #[test]
+    fn arguments_and_expansions_are_not_one_word() {
+        for command in [
+            "",
+            "npx ccusage statusline",
+            "/opt/statusline --demo",
+            "'/opt/statusline",
+            "\"/opt/statusline",
+            "$HOME/statusline",
+            "\"$HOME/statusline\"",
+            "`which statusline`",
+            "/opt/statusline;ls",
+            "/opt/statusline\\",
+        ] {
+            assert_eq!(unquoted(command), None, "{}", command);
+        }
+    }
+
+    #[test]
+    fn a_tilde_expands_to_the_home_folder() {
+        assert_eq!(
+            expand("~/.claude/bin/statusline", Some("/home/a")).as_deref(),
+            Some("/home/a/.claude/bin/statusline")
+        );
+        assert_eq!(
+            expand("/opt/statusline", None).as_deref(),
+            Some("/opt/statusline")
+        );
+        assert_eq!(expand("~/statusline", None), None);
+        if cfg!(windows) {
+            assert_eq!(
+                expand("~/x.exe", Some("/c/Users/Jo")).as_deref(),
+                Some("c:/Users/Jo/x.exe")
+            );
+            assert_eq!(
+                expand(r"C:\Users\Jo\x.exe", None).as_deref(),
+                Some("C:/Users/Jo/x.exe")
+            );
+        }
+    }
+
+    #[test]
+    fn paths_match_whatever_the_trailing_slash() {
+        assert!(same_path("/home/a/.claude/", "/home/a/.claude"));
+        assert!(!same_path("/home/a/.claude", "/home/a/.claude-compte2"));
+        if cfg!(windows) {
+            assert!(same_path(r"C:\Users\Jo\.claude", "c:/users/jo/.claude/"));
+            assert!(same_path("/c/Users/Jo", r"C:\Users\Jo"));
+        }
     }
 
     #[test]

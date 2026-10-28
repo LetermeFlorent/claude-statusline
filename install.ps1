@@ -65,22 +65,4 @@ try {
     if ($old -and $old -ne $new) { Write-Host ("commande remplacee pour " + $d + " (etait : " + $old + ")") }
   }
 } finally { $env:CLAUDE_CONFIG_DIR = $prev }
-$command = Get-StatusCommand (Join-Path $main "settings.json")
-if (-not $command) { $command = $exe -replace "\\", "/" }
-
-# Le statusLine global de .claude.json peut lui aussi designer l'ancien poste :
-# il est repare quand il vise un programme absent, sans toucher au reste du fichier.
-$gconf = Join-Path $env:USERPROFILE ".claude.json"
-if (Test-Path -LiteralPath $gconf) {
-  try {
-    $text = Get-Content -LiteralPath $gconf -Raw -Encoding UTF8
-    $m = [regex]::Match($text, '"statusLine"\s*:\s*\{[^}]*"command"\s*:\s*"([^"]+)"')
-    $target = $m.Groups[1].Value -replace "^~(?=[\\/])", $env:USERPROFILE.Replace('$', '$$')
-    if ($m.Success -and -not (Test-Path -LiteralPath ($target -replace "/", "\"))) {
-      $fixed = $text.Substring(0, $m.Groups[1].Index) + $command + $text.Substring($m.Groups[1].Index + $m.Groups[1].Length)
-      [System.IO.File]::WriteAllText($gconf, $fixed)
-      Write-Host ("statusLine global repare dans " + $gconf + " (etait : " + $m.Groups[1].Value + ")")
-    }
-  } catch { Write-Warning ("fichier global laisse tel quel : " + $gconf) }
-}
 Write-Host "termine, relance Claude Code"

@@ -19,13 +19,12 @@ cd claude-statusline
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-Le script fait cinq choses :
+Le script fait quatre choses :
 
 1. Il copie le programme dans `%USERPROFILE%\.claude\bin\statusline.exe`. Un ancien programme en cours d'utilisation est d'abord renommé en `statusline.exe.old-<horodatage>`, ce qui permet le remplacement même pendant une session Claude Code, puis supprimé quand c'est possible, avec les copies `.old` laissées par une mise à jour automatique. La copie est débloquée (`Unblock-File`).
 2. Il installe `statusline.json` dans `%USERPROFILE%\.claude`, seulement s'il n'existe pas. Les autres comptes lisent ce même fichier, sauf s'ils ont le leur dans leur dossier.
 3. Il dresse la liste des comptes : `.claude`, chaque dossier `.claude-compte*` du dossier personnel, et chaque `Dir` de `.claude-accounts.json` (le registre de [claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)), sans doublon et sans les dossiers absents. Un registre illisible donne un avertissement.
-4. Pour chaque compte, il lance `statusline.exe --install` avec `CLAUDE_CONFIG_DIR` pointé sur son dossier. La commande est réécrite sous sa forme portable, `~/.claude/bin/statusline.exe` : une autre commande, comme le chemin d'un ancien PC ou d'un ancien nom d'utilisateur, est remplacée et signalée par "commande remplacee pour". Un échec est signalé par "compte laisse tel quel" et n'arrête pas les autres comptes.
-5. Il répare le `statusLine` global de `%USERPROFILE%\.claude.json` quand il désigne un programme absent, avec la même commande, sans toucher au reste du fichier.
+4. Pour chaque compte, il lance `statusline.exe --install` avec `CLAUDE_CONFIG_DIR` pointé sur son dossier. La commande est réécrite sous sa forme portable, `~/.claude/bin/statusline.exe` : une autre commande, comme le chemin d'un ancien PC ou d'un ancien nom d'utilisateur, est remplacée et signalée par "commande remplacee pour". Le programme répare aussi le `statusLine` du fichier global du compte, `.claude.json` dans son dossier (et `%USERPROFILE%\.claude.json` pour `.claude`), quand il désigne un programme statusline absent : une autre commande, comme `npx ccusage statusline`, n'y est jamais touchée. Un échec est signalé par "compte laisse tel quel" et n'arrête pas les autres comptes.
 
 Avec `-Build`, le script compile les sources (`cargo build --release`, Rust requis) au lieu de prendre le binaire du dépôt.
 
@@ -39,7 +38,7 @@ sh install.sh
 
 Le programme va dans `~/.claude/bin/statusline`. Si `cargo` est présent, le script compile les sources dans le dossier `target` du dépôt. Si `cargo` manque, ou si la compilation échoue (le script affiche alors "compilation impossible, passage au binaire publie"), il télécharge le binaire de la dernière version publiée qui correspond à `uname`. Sur un autre système ou une autre architecture, il s'arrête avec un message qui renvoie vers Rust.
 
-Le binaire est d'abord écrit en `statusline.new`, puis renommé, pour qu'une barre en cours d'exécution garde l'ancien fichier jusqu'à la fin. La suite est la même que sous Windows : `statusline.json` installé s'il manque, puis `--install` pour `.claude`, chaque `.claude-compte*` et chaque `Dir` du registre (les chemins périmés y sont réparés de la même façon), et réparation du `statusLine` global de `~/.claude.json` quand il désigne un programme absent. Le registre est lu par `grep` et `sed`, sans analyseur JSON : il doit garder le format écrit par claude-account-menu. La réparation du fichier global demande `python3`, sinon elle est sautée avec un avertissement.
+Le binaire est d'abord écrit en `statusline.new`, puis renommé, pour qu'une barre en cours d'exécution garde l'ancien fichier jusqu'à la fin. La suite est la même que sous Windows : `statusline.json` installé s'il manque, puis `--install` pour `.claude`, chaque `.claude-compte*` et chaque `Dir` du registre (les chemins périmés y sont réparés de la même façon, `~/.claude.json` compris). Le registre est lu par `grep` et `sed`, sans analyseur JSON : il doit garder le format écrit par claude-account-menu.
 
 ## Ce que fait --install
 
@@ -106,7 +105,7 @@ Supprimer ensuite le programme, `~/.claude/bin/statusline` (`statusline.exe` sou
 
 ## En cas de problème
 
-Si la barre a disparu après une migration vers un autre PC ou un autre nom d'utilisateur, ou après une synchronisation de `settings.json` entre postes, la commande inscrite dans `statusLine` désigne sans doute un chemin de l'autre poste (`C:/Users/<ancien>/...`), écrit par une version antérieure à la 2.1.0, et Claude Code ne trouve plus le programme. Faire `git pull` dans le dossier cloné puis relancer le script d'installation : il repose le programme, inscrit la commande portable dans le `settings.json` de chaque compte et répare le `statusLine` global de `~/.claude.json` quand il désigne un programme absent.
+Si la barre a disparu après une migration vers un autre PC ou un autre nom d'utilisateur, ou après une synchronisation de `settings.json` entre postes, la commande inscrite dans `statusLine` désigne sans doute un chemin de l'autre poste (`C:/Users/<ancien>/...`), écrit par une version antérieure à la 2.1.0, et Claude Code ne trouve plus le programme. Faire `git pull` dans le dossier cloné puis relancer le script d'installation : il repose le programme, inscrit la commande portable dans le `settings.json` de chaque compte et répare le `statusLine` global de `~/.claude.json` quand il désigne un programme statusline absent.
 
 Si `update` reste affiché, la mise à jour est en cours ou s'est arrêtée en route : le marqueur est ignoré au bout de 15 minutes. `statusline --update` lancé à la main montre où elle échoue. Le réseau doit laisser passer `api.github.com` et `github.com`.
 

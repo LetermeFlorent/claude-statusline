@@ -2,7 +2,7 @@ use crate::json::{self, Syntax, Value};
 use alloc::string::String;
 use alloc::vec::Vec;
 
-const STATUS_LINE: &str = "statusLine";
+pub const STATUS_LINE: &str = "statusLine";
 const REFRESH_SECONDS: &str = "3";
 
 fn object(text: &str) -> Option<Value> {

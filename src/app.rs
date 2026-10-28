@@ -1,6 +1,7 @@
 use crate::backup;
 use crate::compact;
 use crate::config::{Config, Metric};
+use crate::global_config::{self, Repair};
 use crate::os::{self, Contents};
 use crate::portable;
 use crate::render::{self, Data, SysValue};
@@ -278,6 +279,51 @@ fn unreadable_settings(path: &str) -> String {
     format!("reglages illisibles, rien n'est modifie : {}\n", path)
 }
 
+fn store(path: &str, text: &str) -> Result<(), String> {
+    if os::write_atomic(path, text.as_bytes()) {
+        Ok(())
+    } else {
+        Err(format!("ecriture impossible : {}\n", path))
+    }
+}
+
+fn replace(path: &str, raw: &[u8], text: &str) -> Result<(), String> {
+    let saved = backup::save(path, raw, os::now())
+        .ok_or_else(|| format!("ecriture impossible : {}.bak\n", path))?;
+    os::out(&format!("sauvegarde : {}\n", saved));
+    store(path, text)
+}
+
+fn repair_global(path: &str, command: &str) -> Result<Option<String>, ()> {
+    let raw = match os::read_checked(path, global_config::MAX_GLOBAL_BYTES) {
+        Contents::Missing => return Ok(None),
+        Contents::Unreadable => return Err(()),
+        Contents::Bytes(raw) => raw,
+    };
+    let text = core::str::from_utf8(&raw).map_err(|_| ())?;
+    match global_config::repair(text, command, global_config::present) {
+        Repair::Kept => Ok(None),
+        Repair::Unreadable => Err(()),
+        Repair::Repaired { text: next, was } => replace(path, &raw, &next)
+            .map(|()| Some(was))
+            .map_err(|message| os::err(&message)),
+    }
+}
+
+fn repair_globals(command: &str) {
+    let Some(dir) = os::claude_dir() else { return };
+    for path in global_config::candidates(&dir, os::home().as_deref()) {
+        match repair_global(&path, command) {
+            Ok(Some(was)) => os::out(&format!(
+                "statusLine global repare dans {} (etait : {})\n",
+                path, was
+            )),
+            Ok(None) => {}
+            Err(()) => os::err(&format!("fichier global laisse tel quel : {}\n", path)),
+        }
+    }
+}
+
 fn install() -> i32 {
     let Some(path) = settings_path() else {
         return fail("dossier personnel introuvable\n");
@@ -297,18 +343,20 @@ fn install() -> i32 {
     let Some(next) = settings::with_status_line(current.as_deref(), &command) else {
         return fail(&unreadable_settings(&path));
     };
-    if let Some(raw) = raw {
-        match backup::save(&path, &raw, os::now()) {
-            Some(b) => os::out(&format!("sauvegarde : {}\n", b)),
-            None => return fail(&format!("ecriture impossible : {}.bak\n", path)),
+    let written = match raw {
+        Some(raw) => replace(&path, &raw, &next),
+        None => {
+            if let Some(d) = os::parent(&path) {
+                os::mkdirs(d);
+            }
+            store(&path, &next)
         }
-    } else if let Some(d) = os::parent(&path) {
-        os::mkdirs(d);
-    }
-    if !os::write_atomic(&path, next.as_bytes()) {
-        return fail(&format!("ecriture impossible : {}\n", path));
+    };
+    if let Err(message) = written {
+        return fail(&message);
     }
     os::out(&format!("statusLine posee dans {}\n", path));
+    repair_globals(&command);
     let conf = config_path();
     if let Some(c) = conf.filter(|c| !os::exists(c)) {
         let target = os::claude_dir()
@@ -334,12 +382,8 @@ fn uninstall() -> i32 {
         os::out("aucune statusLine a retirer\n");
         return 0;
     };
-    match backup::save(&path, &raw, os::now()) {
-        Some(b) => os::out(&format!("sauvegarde : {}\n", b)),
-        None => return fail(&format!("ecriture impossible : {}.bak\n", path)),
-    }
-    if !os::write_atomic(&path, next.as_bytes()) {
-        return fail(&format!("ecriture impossible : {}\n", path));
+    if let Err(message) = replace(&path, &raw, &next) {
+        return fail(&message);
     }
     os::out(&format!("statusLine retiree de {}\n", path));
     0
