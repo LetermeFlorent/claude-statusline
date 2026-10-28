@@ -139,6 +139,9 @@ jobs:
           case "$plain$dumb" in *$'\033'*) exit 1 ;; esac
           case "$colored" in *$'\033'*) ;; *) exit 1 ;; esac
           echo "$plain" | grep -q ctx
+          out=$(printf '{"model":{"display_name":"Op\377us"},"context_window":{"context_window_size":200000,"used_percentage":30}}' | "$b")
+          echo "$out" | grep -q 60k/200k
+          echo "$out" | grep -q 'Op.*us'
           set +e
           "$b" --no-such-flag 2>/dev/null
           [ $? -eq 2 ] || exit 1
