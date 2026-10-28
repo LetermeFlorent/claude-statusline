@@ -6,6 +6,7 @@
 extern crate alloc;
 
 mod app;
+mod backup;
 mod compact;
 mod config;
 mod json;

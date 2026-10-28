@@ -35,6 +35,7 @@ extern "system" {
     fn GetFileSizeEx(h: Handle, size: *mut i64) -> i32;
     fn GetFileAttributesExW(name: *const u16, level: u32, data: *mut u32) -> i32;
     fn GetFileAttributesW(name: *const u16) -> u32;
+    fn GetFinalPathNameByHandleW(h: Handle, buf: *mut u16, size: u32, flags: u32) -> u32;
     fn MoveFileExW(from: *const u16, to: *const u16, flags: u32) -> i32;
     fn DeleteFileW(name: *const u16) -> i32;
     fn CreateDirectoryW(name: *const u16, sa: *mut c_void) -> i32;
@@ -89,6 +90,7 @@ const OPEN_EXISTING: u32 = 3;
 const CREATE_ALWAYS: u32 = 2;
 const CREATE_NEW: u32 = 1;
 const FILE_TYPE_DISK: u32 = 1;
+const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 const EPOCH: u64 = 116_444_736_000_000_000;
 
 pub(super) fn wide(s: &str) -> Vec<u16> {
@@ -210,15 +212,15 @@ fn write_handle(h: Handle, data: &[u8]) -> bool {
     true
 }
 
-pub fn write(path: &str, data: &[u8]) -> bool {
+fn write_with(path: &str, share: u32, disposition: u32, data: &[u8]) -> bool {
     let w = wide(path);
     let h = unsafe {
         CreateFileW(
             w.as_ptr(),
             GENERIC_WRITE,
-            1,
+            share,
             null_mut(),
-            CREATE_ALWAYS,
+            disposition,
             0x80,
             0,
         )
@@ -231,18 +233,36 @@ pub fn write(path: &str, data: &[u8]) -> bool {
     ok
 }
 
+pub fn write(path: &str, data: &[u8]) -> bool {
+    write_with(path, 1, CREATE_ALWAYS, data)
+}
+
+fn resolved(path: &str) -> String {
+    let w = wide(path);
+    let attributes = unsafe { GetFileAttributesW(w.as_ptr()) };
+    let linked = attributes != u32::MAX && attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+    let h = if linked { open_read(path) } else { INVALID };
+    if h == INVALID {
+        return String::from(path);
+    }
+    let target = grow(&|b, n| unsafe { GetFinalPathNameByHandleW(h, b, n, 0) });
+    unsafe { CloseHandle(h) };
+    target.unwrap_or_else(|| String::from(path))
+}
+
 // Ecrit a cote puis renomme, pour qu'un lecteur concurrent ne voie jamais un fichier tronque
 pub fn write_atomic(path: &str, data: &[u8]) -> bool {
-    let tmp = format!("{}.{}.tmp", path, unsafe { GetCurrentProcessId() });
+    let target = resolved(path);
+    let tmp = format!("{}.{}.tmp", target, unsafe { GetCurrentProcessId() });
     let wt = wide(&tmp);
     if write(&tmp, data) {
-        let wp = wide(path);
+        let wp = wide(&target);
         if unsafe { MoveFileExW(wt.as_ptr(), wp.as_ptr(), 1) } != 0 {
             return true;
         }
         unsafe { DeleteFileW(wt.as_ptr()) };
     }
-    write(path, data)
+    write(&target, data)
 }
 
 pub fn remove(path: &str) -> bool {
@@ -255,24 +275,8 @@ pub fn rename(from: &str, to: &str) -> bool {
     unsafe { MoveFileExW(f.as_ptr(), t.as_ptr(), 1) != 0 }
 }
 
-pub fn create_new(path: &str) -> bool {
-    let w = wide(path);
-    let h = unsafe {
-        CreateFileW(
-            w.as_ptr(),
-            GENERIC_WRITE,
-            0,
-            null_mut(),
-            CREATE_NEW,
-            0x80,
-            0,
-        )
-    };
-    if h == INVALID {
-        return false;
-    }
-    unsafe { CloseHandle(h) };
-    true
+pub fn create_private(path: &str, data: &[u8]) -> bool {
+    write_with(path, 0, CREATE_NEW, data)
 }
 
 pub fn make_executable(path: &str) -> bool {

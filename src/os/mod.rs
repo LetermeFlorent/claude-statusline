@@ -38,6 +38,10 @@ pub fn parent(path: &str) -> Option<&str> {
     path.rfind([SEP, '/']).map(|i| &path[..i])
 }
 
+pub fn file_name(path: &str) -> &str {
+    path.rfind([SEP, '/']).map_or(path, |i| &path[i + 1..])
+}
+
 // Dossier de configuration du compte Claude Code en cours
 pub fn claude_dir() -> Option<String> {
     match env("CLAUDE_CONFIG_DIR") {
@@ -50,6 +54,10 @@ pub fn claude_dir() -> Option<String> {
 mod tests {
     use super::*;
     use crate::sandbox::Sandbox;
+    #[cfg(not(windows))]
+    use std::os::unix::fs::symlink;
+    #[cfg(windows)]
+    use std::os::windows::fs::symlink_file as symlink;
 
     #[test]
     fn files_over_one_mebibyte_are_refused() {
@@ -82,5 +90,49 @@ mod tests {
         });
         let result = receiver.recv_timeout(std::time::Duration::from_secs(2));
         assert_eq!(result, Ok(None));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn atomic_write_keeps_the_mode_and_starts_private() {
+        use std::os::unix::fs::PermissionsExt;
+        const PERMISSION_BITS: u32 = 0o777;
+        const SHARED_MODE: u32 = 0o640;
+        let sandbox = Sandbox::new("mode");
+        let (fresh, shared) = (sandbox.path("fresh.json"), sandbox.path("shared.json"));
+        std::fs::write(&shared, b"{}").unwrap();
+        std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(SHARED_MODE)).unwrap();
+        assert!(write_atomic(&fresh, b"{}"));
+        assert!(write_atomic(&shared, b"[]"));
+        let mode =
+            |path: &str| std::fs::metadata(path).unwrap().permissions().mode() & PERMISSION_BITS;
+        assert_eq!([mode(&fresh), mode(&shared)], [PRIVATE_MODE, SHARED_MODE]);
+        assert_eq!(std::fs::read(&shared).unwrap(), b"[]");
+    }
+
+    #[test]
+    fn atomic_write_clears_a_leftover_temp_file() {
+        let sandbox = Sandbox::new("leftover");
+        let path = sandbox.path("state.json");
+        std::fs::write(format!("{}.{}.tmp", path, std::process::id()), b"{}").unwrap();
+        assert!(write_atomic(&path, b"[]"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"[]");
+        assert_eq!(sandbox.files(), ["state.json"]);
+    }
+
+    #[test]
+    #[cfg_attr(windows, ignore = "creating a symbolic link needs an elevated token")]
+    fn atomic_write_keeps_a_symbolic_link() {
+        let sandbox = Sandbox::new("link");
+        let (real, link) = (sandbox.path("real.json"), sandbox.path("settings.json"));
+        std::fs::write(&real, b"{}").unwrap();
+        symlink(&real, &link).unwrap();
+        assert!(write_atomic(&link, b"[]"));
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(std::fs::read(&real).unwrap(), b"[]");
+        assert_eq!(sandbox.files(), ["real.json", "settings.json"]);
     }
 }

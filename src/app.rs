@@ -1,3 +1,4 @@
+use crate::backup;
 use crate::compact;
 use crate::config::{Config, Metric};
 use crate::os;
@@ -268,21 +269,6 @@ fn settings_path() -> Option<String> {
     os::claude_dir().map(|d| os::join(&d, &["settings.json"]))
 }
 
-fn backup(path: &str, text: &[u8], now: f64) -> Option<String> {
-    let base = format!("{}.bak-{}", path, now as i64);
-    let mut name = base.clone();
-    let mut i = 1;
-    while os::exists(&name) {
-        name = format!("{}-{}", base, i);
-        i += 1;
-    }
-    if os::write(&name, text) {
-        Some(name)
-    } else {
-        None
-    }
-}
-
 fn fail(msg: &str) -> i32 {
     os::err(msg);
     1
@@ -307,14 +293,14 @@ fn install() -> i32 {
         ));
     };
     if let Some(raw) = raw {
-        match backup(&path, &raw, os::now()) {
+        match backup::save(&path, &raw, os::now()) {
             Some(b) => os::out(&format!("sauvegarde : {}\n", b)),
             None => return fail(&format!("ecriture impossible : {}.bak\n", path)),
         }
     } else if let Some(d) = os::parent(&path) {
         os::mkdirs(d);
     }
-    if !os::write(&path, next.as_bytes()) {
+    if !os::write_atomic(&path, next.as_bytes()) {
         return fail(&format!("ecriture impossible : {}\n", path));
     }
     os::out(&format!("statusLine posee dans {}\n", path));
@@ -343,11 +329,11 @@ fn uninstall() -> i32 {
         os::out("aucune statusLine a retirer\n");
         return 0;
     };
-    match backup(&path, &raw, os::now()) {
+    match backup::save(&path, &raw, os::now()) {
         Some(b) => os::out(&format!("sauvegarde : {}\n", b)),
         None => return fail(&format!("ecriture impossible : {}.bak\n", path)),
     }
-    if !os::write(&path, next.as_bytes()) {
+    if !os::write_atomic(&path, next.as_bytes()) {
         return fail(&format!("ecriture impossible : {}\n", path));
     }
     os::out(&format!("statusLine retiree de {}\n", path));

@@ -5,6 +5,7 @@ use std::string::String;
 use std::vec::Vec;
 
 pub const SEP: char = '/';
+pub const PRIVATE_MODE: u32 = 0o600;
 
 pub fn args() -> Vec<String> {
     std::env::args_os()
@@ -43,16 +44,26 @@ pub fn write(path: &str, data: &[u8]) -> bool {
     std::fs::write(path, data).is_ok()
 }
 
+fn resolved(path: &str) -> String {
+    let linked = std::fs::symlink_metadata(path).is_ok_and(|m| m.is_symlink());
+    let target = linked.then(|| std::fs::canonicalize(path).ok()).flatten();
+    target
+        .and_then(|t| t.into_os_string().into_string().ok())
+        .unwrap_or_else(|| String::from(path))
+}
+
 // Ecrit a cote puis renomme, pour qu'un lecteur concurrent ne voie jamais un fichier tronque
 pub fn write_atomic(path: &str, data: &[u8]) -> bool {
-    let tmp = format!("{}.{}.tmp", path, std::process::id());
-    if write(&tmp, data) {
-        if std::fs::rename(&tmp, path).is_ok() {
-            return true;
-        }
+    let target = resolved(path);
+    let tmp = format!("{}.{}.tmp", target, std::process::id());
+    let permissions = std::fs::metadata(&target).ok().map(|m| m.permissions());
+    let swapped = create_private(&tmp, data)
+        && permissions.is_none_or(|p| std::fs::set_permissions(&tmp, p).is_ok())
+        && std::fs::rename(&tmp, &target).is_ok();
+    if !swapped {
         let _ = std::fs::remove_file(&tmp);
     }
-    write(path, data)
+    swapped || write(&target, data)
 }
 
 pub fn remove(path: &str) -> bool {
@@ -63,11 +74,14 @@ pub fn rename(from: &str, to: &str) -> bool {
     std::fs::rename(from, to).is_ok()
 }
 
-pub fn create_new(path: &str) -> bool {
+pub fn create_private(path: &str, data: &[u8]) -> bool {
+    use std::os::unix::fs::OpenOptionsExt;
     std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
+        .mode(PRIVATE_MODE)
         .open(path)
+        .and_then(|mut file| file.write_all(data))
         .is_ok()
 }
 

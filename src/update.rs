@@ -177,11 +177,11 @@ fn report(result: Result<Outcome, String>) -> i32 {
 }
 
 fn acquire(lock: &str) -> bool {
-    if os::create_new(lock) {
+    if os::create_private(lock, &[]) {
         return true;
     }
     let stale = os::stamp(lock).is_none_or(|(_, at)| os::now() - (at as f64) > STALE_AFTER);
-    stale && os::remove(lock) && os::create_new(lock)
+    stale && os::remove(lock) && os::create_private(lock, &[])
 }
 
 fn take_lock(dir: &str) -> Result<Option<String>, String> {
