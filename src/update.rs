@@ -118,10 +118,7 @@ fn fail(msg: &str) -> i32 {
 
 fn install(exe: &str, tag: &str, fetch: Fetch) -> Result<(), String> {
     let Some(name) = asset() else {
-        return Err(String::from(
-            "aucun binaire publie pour ce systeme
-",
-        ));
+        return Err(String::from("aucun binaire publie pour ce systeme\n"));
     };
     let fresh = staging(exe);
     let url = format!(
@@ -133,11 +130,7 @@ fn install(exe: &str, tag: &str, fetch: Fetch) -> Result<(), String> {
         && os::call(&fresh, &["--version"], 30) == Some(0);
     if !ready || !swap(exe, &fresh) {
         os::remove(&fresh);
-        return Err(format!(
-            "mise a jour vers {} impossible
-",
-            tag
-        ));
+        return Err(format!("mise a jour vers {} impossible\n", tag));
     }
     Ok(())
 }
@@ -156,19 +149,11 @@ fn attempt(dir: &str, exe: &str, fetch: Fetch) -> Result<Outcome, String> {
 fn report(result: Result<Outcome, String>) -> i32 {
     match result {
         Ok(Outcome::UpToDate) => {
-            os::out(&format!(
-                "deja a jour : {}
-",
-                VERSION
-            ));
+            os::out(&format!("deja a jour : {}\n", VERSION));
             0
         }
         Ok(Outcome::Updated(tag)) => {
-            os::out(&format!(
-                "mise a jour : {} -> {}
-",
-                VERSION, tag
-            ));
+            os::out(&format!("mise a jour : {} -> {}\n", VERSION, tag));
             os::sleep(SHOWN_AFTER_SWAP_MS);
             0
         }
@@ -206,10 +191,7 @@ pub fn run() -> i32 {
     };
     let result = match os::exe() {
         Some(exe) => attempt(&dir, &exe, &download),
-        None => Err(String::from(
-            "chemin du binaire introuvable
-",
-        )),
+        None => Err(String::from("chemin du binaire introuvable\n")),
     };
     let code = report(result);
     os::remove(&os::join(&dir, &[MARKER]));
