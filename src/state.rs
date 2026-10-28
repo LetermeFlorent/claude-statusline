@@ -12,6 +12,26 @@ pub struct State {
 }
 
 const FRESH: f64 = 600.0;
+const YEAR_2000: f64 = 946_684_800.0;
+const YEAR_2100: f64 = 4_102_444_800.0;
+const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+const FNV_PRIME: u64 = 0x100000001b3;
+
+fn storable(key: &str, value: &str) -> bool {
+    !key.is_empty()
+        && !key.contains(|c: char| c.is_whitespace() || c == '\0')
+        && !value.contains(['\n', '\r', '\0'])
+}
+
+pub fn fingerprint<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
+    let mut hash = FNV_OFFSET;
+    for part in parts {
+        for byte in part.bytes().chain(core::iter::once(0)) {
+            hash = (hash ^ byte as u64).wrapping_mul(FNV_PRIME);
+        }
+    }
+    format!("{:016x}", hash)
+}
 
 impl State {
     pub fn parse(text: &str) -> State {
@@ -37,7 +57,7 @@ impl State {
     }
 
     pub fn num(&self, k: &str) -> Option<f64> {
-        self.get(k)?.parse().ok()
+        self.get(k)?.parse().ok().filter(|n: &f64| n.is_finite())
     }
 
     pub fn int(&self, k: &str) -> Option<i64> {
@@ -45,6 +65,9 @@ impl State {
     }
 
     pub fn set(&mut self, k: &str, v: &str) {
+        if !storable(k, v) {
+            return;
+        }
         match self.map.binary_search_by(|(x, _)| x.as_str().cmp(k)) {
             Ok(i) => self.map[i].1 = String::from(v),
             Err(i) => self.map.insert(i, (String::from(k), String::from(v))),
@@ -109,19 +132,18 @@ impl State {
     }
 
     fn stored(&self, p: &str, tag: &str, period: f64, now: f64) -> Option<Quota> {
-        let mut at = self.num(&format!("{}_at@{}", p, tag))?;
-        let mut pct = self.num(&format!("{}_pct@{}", p, tag));
-        if at <= now {
-            pct = None;
-            let k = crate::num::floor((now - at) / period);
-            if k > 1.0 {
-                at += (k - 1.0) * period;
-            }
-            while at <= now {
-                at += period;
-            }
+        let at = self
+            .num(&format!("{}_at@{}", p, tag))
+            .filter(|at| (YEAR_2000..YEAR_2100).contains(at))?;
+        if at > now {
+            let pct = self.num(&format!("{}_pct@{}", p, tag));
+            return Some(Quota { pct, at: Some(at) });
         }
-        Some(Quota { pct, at: Some(at) })
+        let periods = crate::num::floor((now - at) / period) + 1.0;
+        Some(Quota {
+            pct: None,
+            at: Some(at + periods * period),
+        })
     }
 
     // Pourcentage d'un compteur systeme par difference avec le releve precedent
@@ -191,14 +213,14 @@ mod tests {
 
     #[test]
     fn quotas() {
-        let now = 1_000_000.0;
-        let mut s = State::parse("q_at@a 999999\nq5_at@a 990000\nq5_pct@a 40\n");
+        let now = 1_800_000_000.0;
+        let mut s = State::parse("q_at@a 1799999999\nq5_at@a 1799990000\nq5_pct@a 40\n");
         let (q5, q7) = s.quotas(None, now, "a").unwrap();
         assert_eq!(
             q5,
             Some(Quota {
                 pct: None,
-                at: Some(1_008_000.0)
+                at: Some(1_800_008_000.0)
             })
         );
         assert_eq!(q7, None);
@@ -217,8 +239,38 @@ mod tests {
         s.quotas(live, now, "a");
         assert_eq!(
             s.text(),
-            "q5_at@a 1791373904.7\nq5_pct@a 10.5\nq7_pct@b 4\nq7_x 2\nq_at@a 1000000\nx 1\n"
+            "q5_at@a 1791373904.7\nq5_pct@a 10.5\nq7_pct@b 4\nq7_x 2\nq_at@a 1800000000\nx 1\n"
         );
+    }
+
+    #[test]
+    fn absurd_reset_times_are_dropped_without_hanging() {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut state =
+                State::parse("q_at@claude 1800000000\nq5_at@claude -5e38\nq7_at@claude 1e300\n");
+            let _ = sender.send(state.quotas(None, 1_800_000_100.0, "claude"));
+        });
+        let quotas = receiver.recv_timeout(std::time::Duration::from_secs(2));
+        assert_eq!(quotas, Ok(None));
+    }
+
+    #[test]
+    fn values_cannot_add_lines() {
+        let mut state = State::parse("");
+        state.set("bg_stamp", "x\nq5_at@claude -5e38");
+        state.set("bg_host", "dark\r");
+        state.set("bad key", "1");
+        state.set("nul\0", "1");
+        state.set("ok", "a b");
+        assert_eq!(State::parse(&state.text()).text(), "ok a b\n");
+    }
+
+    #[test]
+    fn non_finite_numbers_read_as_missing() {
+        let state = State::parse("a inf\nb NaN\nc 1e999\nd 2.5\n");
+        let read = ["a", "b", "c", "d"].map(|k| state.num(k));
+        assert_eq!(read, [None, None, None, Some(2.5)]);
     }
 
     #[test]

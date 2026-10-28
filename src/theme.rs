@@ -1,7 +1,7 @@
 use crate::config::{background_word, hex};
 use crate::json::{self, Value};
 use crate::os;
-use crate::state::State;
+use crate::state::{fingerprint, State};
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -375,6 +375,7 @@ pub fn detect(config: Option<bool>, state: &mut State) -> bool {
     }
     stamp.push('|');
     stamp.push_str(&os::os_stamp());
+    let stamp = fingerprint([stamp.as_str()]);
     if state.get("bg_stamp") == Some(stamp.as_str()) {
         match state.get("bg_host") {
             Some("light") => return true,

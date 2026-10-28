@@ -1,6 +1,6 @@
 use crate::json;
 use crate::num;
-use crate::state::State;
+use crate::state::{fingerprint, State};
 use alloc::format;
 use alloc::string::String;
 
@@ -28,7 +28,7 @@ pub fn window(
         .filter(|n| *n > 0);
     // Plusieurs sessions dans des dossiers differents partagent l'etat : le cache
     // ne vaut que pour le meme trio de fichiers
-    let key = format!("{:016x}", fnv(files));
+    let key = fingerprint(files.iter().map(String::as_str));
     let same = state.get("compact_key") == Some(key.as_str());
     if let Some(at) = state.num("compact_at").filter(|_| same) {
         if now - at < 30.0 {
@@ -81,16 +81,6 @@ pub fn window(
         None => state.remove("compact_window"),
     }
     w
-}
-
-fn fnv(files: &[String; 3]) -> u64 {
-    let mut h: u64 = 0xcbf29ce484222325;
-    for f in files {
-        for b in f.bytes().chain(core::iter::once(0)) {
-            h = (h ^ b as u64).wrapping_mul(0x100000001b3);
-        }
-    }
-    h
 }
 
 #[cfg(test)]
