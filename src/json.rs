@@ -62,26 +62,26 @@ impl Value {
     }
 
     pub fn set(&mut self, key: &str, val: Value) {
-        let Value::Obj(m) = self else {
+        let Value::Obj(members) = self else {
             return;
         };
-        let Some(first) = m.iter().position(|(k, _)| k == key) else {
-            m.push((String::from(key), val));
+        let Some(first) = members.iter().position(|(k, _)| k == key) else {
+            members.push((String::from(key), val));
             return;
         };
         let mut index = 0;
-        m.retain(|(k, _)| {
+        members.retain(|(k, _)| {
             index += 1;
             index - 1 == first || k != key
         });
-        m[first].1 = val;
+        members[first].1 = val;
     }
 
     pub fn remove(&mut self, key: &str) -> bool {
-        if let Value::Obj(m) = self {
-            let n = m.len();
-            m.retain(|(k, _)| k != key);
-            return m.len() != n;
+        if let Value::Obj(members) = self {
+            let n = members.len();
+            members.retain(|(k, _)| k != key);
+            return members.len() != n;
         }
         false
     }
@@ -95,27 +95,27 @@ pub enum Syntax {
 }
 
 pub fn parse(text: &str, syntax: Syntax) -> Option<Value> {
-    let b = text.as_bytes();
-    let mut p = Parser {
-        b,
-        i: 0,
+    let bytes = text.as_bytes();
+    let mut parser = Parser {
+        bytes,
+        pos: 0,
         syntax,
         depth: 0,
         dropped_surrogate: false,
     };
-    if b.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        p.i = 3;
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        parser.pos = 3;
     }
-    p.ws();
-    let value = p.value()?;
-    p.ws();
-    let complete = p.i == b.len() && !p.dropped_surrogate;
+    parser.ws();
+    let value = parser.value()?;
+    parser.ws();
+    let complete = parser.pos == bytes.len() && !parser.dropped_surrogate;
     (syntax != Syntax::Strict || complete).then_some(value)
 }
 
 struct Parser<'a> {
-    b: &'a [u8],
-    i: usize,
+    bytes: &'a [u8],
+    pos: usize,
     syntax: Syntax,
     depth: u32,
     dropped_surrogate: bool,
@@ -123,31 +123,35 @@ struct Parser<'a> {
 
 impl Parser<'_> {
     fn peek(&self) -> Option<u8> {
-        self.b.get(self.i).copied()
+        self.bytes.get(self.pos).copied()
     }
 
     fn ws(&mut self) {
         loop {
             match self.peek() {
-                Some(b' ' | b'\t' | b'\n' | b'\r') => self.i += 1,
-                Some(b'/') if self.syntax == Syntax::Commented => match self.b.get(self.i + 1) {
-                    Some(b'/') => {
-                        while let Some(c) = self.peek() {
-                            if c == b'\n' {
-                                break;
+                Some(b' ' | b'\t' | b'\n' | b'\r') => self.pos += 1,
+                Some(b'/') if self.syntax == Syntax::Commented => {
+                    match self.bytes.get(self.pos + 1) {
+                        Some(b'/') => {
+                            while let Some(c) = self.peek() {
+                                if c == b'\n' {
+                                    break;
+                                }
+                                self.pos += 1;
                             }
-                            self.i += 1;
                         }
-                    }
-                    Some(b'*') => {
-                        self.i += 2;
-                        while self.i < self.b.len() && !self.b[self.i..].starts_with(b"*/") {
-                            self.i += 1;
+                        Some(b'*') => {
+                            self.pos += 2;
+                            while self.pos < self.bytes.len()
+                                && !self.bytes[self.pos..].starts_with(b"*/")
+                            {
+                                self.pos += 1;
+                            }
+                            self.pos = (self.pos + 2).min(self.bytes.len());
                         }
-                        self.i = (self.i + 2).min(self.b.len());
+                        _ => return,
                     }
-                    _ => return,
-                },
+                }
                 _ => return,
             }
         }
@@ -167,8 +171,8 @@ impl Parser<'_> {
     }
 
     fn word(&mut self, w: &[u8], v: Value) -> Option<Value> {
-        if self.b[self.i..].starts_with(w) {
-            self.i += w.len();
+        if self.bytes[self.pos..].starts_with(w) {
+            self.pos += w.len();
             Some(v)
         } else {
             None
@@ -192,7 +196,7 @@ impl Parser<'_> {
             if self.peek() != Some(b',') {
                 return;
             }
-            self.i += 1;
+            self.pos += 1;
         }
     }
 
@@ -209,7 +213,7 @@ impl Parser<'_> {
             if self.peek()? != b',' {
                 return None;
             }
-            self.i += 1;
+            self.pos += 1;
             self.ws();
         }
         (self.peek()? != close).then_some(true)
@@ -217,10 +221,10 @@ impl Parser<'_> {
 
     fn object(&mut self) -> Option<Value> {
         self.enter()?;
-        self.i += 1;
-        let mut m = Vec::new();
+        self.pos += 1;
+        let mut members = Vec::new();
         loop {
-            if !self.item_follows(b'}', m.is_empty())? {
+            if !self.item_follows(b'}', members.is_empty())? {
                 break;
             }
             if self.peek()? != b'"' {
@@ -231,52 +235,52 @@ impl Parser<'_> {
             if self.peek()? != b':' {
                 return None;
             }
-            self.i += 1;
+            self.pos += 1;
             self.ws();
             let v = self.value()?;
-            m.push((k, v));
+            members.push((k, v));
         }
-        self.i += 1;
+        self.pos += 1;
         self.depth -= 1;
-        Some(Value::Obj(m))
+        Some(Value::Obj(members))
     }
 
     fn array(&mut self) -> Option<Value> {
         self.enter()?;
-        self.i += 1;
-        let mut a = Vec::new();
+        self.pos += 1;
+        let mut items = Vec::new();
         loop {
-            if !self.item_follows(b']', a.is_empty())? {
+            if !self.item_follows(b']', items.is_empty())? {
                 break;
             }
-            a.push(self.value()?);
+            items.push(self.value()?);
         }
-        self.i += 1;
+        self.pos += 1;
         self.depth -= 1;
-        Some(Value::Arr(a))
+        Some(Value::Arr(items))
     }
 
     fn hex4(&mut self) -> Option<u32> {
-        let s = self.b.get(self.i..self.i + 4)?;
+        let s = self.bytes.get(self.pos..self.pos + 4)?;
         let mut n = 0u32;
         for &c in s {
             n = n * 16 + (c as char).to_digit(16)?;
         }
-        self.i += 4;
+        self.pos += 4;
         Some(n)
     }
 
     fn string(&mut self) -> Option<String> {
-        self.i += 1;
+        self.pos += 1;
         let mut out: Vec<u8> = Vec::new();
         loop {
             let c = self.peek()?;
-            self.i += 1;
+            self.pos += 1;
             match c {
                 b'"' => break,
                 b'\\' => {
                     let e = self.peek()?;
-                    self.i += 1;
+                    self.pos += 1;
                     match e {
                         b'"' => out.push(b'"'),
                         b'\\' => out.push(b'\\'),
@@ -289,14 +293,14 @@ impl Parser<'_> {
                         b'u' => {
                             let mut cp = self.hex4()?;
                             if (0xD800..0xDC00).contains(&cp) {
-                                if self.b[self.i..].starts_with(b"\\u") {
-                                    let save = self.i;
-                                    self.i += 2;
+                                if self.bytes[self.pos..].starts_with(b"\\u") {
+                                    let save = self.pos;
+                                    self.pos += 2;
                                     let lo = self.hex4()?;
                                     if (0xDC00..0xE000).contains(&lo) {
                                         cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
                                     } else {
-                                        self.i = save;
+                                        self.pos = save;
                                         self.dropped_surrogate = true;
                                         continue;
                                     }
@@ -323,40 +327,40 @@ impl Parser<'_> {
     }
 
     fn number(&mut self) -> Option<Value> {
-        let start = self.i;
+        let start = self.pos;
         if self.peek() == Some(b'-') {
-            self.i += 1;
+            self.pos += 1;
         }
         match self.peek()? {
-            b'0' => self.i += 1,
+            b'0' => self.pos += 1,
             b'1'..=b'9' => self.digits(),
             _ => return None,
         }
         if self.peek() == Some(b'.') {
-            self.i += 1;
+            self.pos += 1;
             if !matches!(self.peek(), Some(b'0'..=b'9')) {
                 return None;
             }
             self.digits();
         }
         if matches!(self.peek(), Some(b'e' | b'E')) {
-            self.i += 1;
+            self.pos += 1;
             if matches!(self.peek(), Some(b'+' | b'-')) {
-                self.i += 1;
+                self.pos += 1;
             }
             if !matches!(self.peek(), Some(b'0'..=b'9')) {
                 return None;
             }
             self.digits();
         }
-        let raw = core::str::from_utf8(&self.b[start..self.i]).ok()?;
+        let raw = core::str::from_utf8(&self.bytes[start..self.pos]).ok()?;
         let n: f64 = raw.parse().ok().filter(|n: &f64| n.is_finite())?;
         Some(Value::Num(n, String::from(raw)))
     }
 
     fn digits(&mut self) {
         while matches!(self.peek(), Some(b'0'..=b'9')) {
-            self.i += 1;
+            self.pos += 1;
         }
     }
 }
@@ -374,22 +378,22 @@ fn indent(n: usize, out: &mut String) {
     }
 }
 
-fn write_value(v: &Value, ind: usize, out: &mut String) {
-    match v {
+fn write_value(value: &Value, ind: usize, out: &mut String) {
+    match value {
         Value::Null => out.push_str("null"),
         Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
         Value::Num(_, raw) => out.push_str(raw),
         Value::Str(s) => quote(s, out),
-        Value::Arr(a) => {
-            if a.is_empty() {
+        Value::Arr(items) => {
+            if items.is_empty() {
                 out.push_str("[]");
                 return;
             }
             out.push_str("[\n");
-            for (i, x) in a.iter().enumerate() {
+            for (i, x) in items.iter().enumerate() {
                 indent(ind + 2, out);
                 write_value(x, ind + 2, out);
-                if i + 1 < a.len() {
+                if i + 1 < items.len() {
                     out.push(',');
                 }
                 out.push('\n');
@@ -397,9 +401,9 @@ fn write_value(v: &Value, ind: usize, out: &mut String) {
             indent(ind, out);
             out.push(']');
         }
-        Value::Obj(m) => {
+        Value::Obj(members) => {
             let mut keys: Vec<&String> = Vec::new();
-            for (k, _) in m {
+            for (k, _) in members {
                 if !keys.contains(&k) {
                     keys.push(k);
                 }
@@ -413,7 +417,7 @@ fn write_value(v: &Value, ind: usize, out: &mut String) {
                 indent(ind + 2, out);
                 quote(k, out);
                 out.push_str(": ");
-                write_value(v.get(k).unwrap_or(&Value::Null), ind + 2, out);
+                write_value(value.get(k).unwrap_or(&Value::Null), ind + 2, out);
                 if i + 1 < keys.len() {
                     out.push(',');
                 }
@@ -454,13 +458,13 @@ mod tests {
 
     #[test]
     fn lecture() {
-        let v = parse(
+        let parsed = parse(
             "{\"a\":1,\"a\":2,\"s\":\"\\u00e9\\ud83d\\ude00\"}",
             Syntax::Tolerant,
         )
         .unwrap();
-        assert_eq!(v.get("a").unwrap().num(), Some(2.0));
-        assert_eq!(v.get("s").unwrap().str(), Some("\u{e9}\u{1f600}"));
+        assert_eq!(parsed.get("a").unwrap().num(), Some(2.0));
+        assert_eq!(parsed.get("s").unwrap().str(), Some("\u{e9}\u{1f600}"));
         assert!(parse("{,\"a\":1,,}", Syntax::Tolerant).is_some());
         assert!(
             parse("[1,,2,]", Syntax::Tolerant)
@@ -494,17 +498,17 @@ mod tests {
 
     #[test]
     fn ecriture() {
-        let v = parse(
+        let document = parse(
             "{\"b\":[1,2.50],\"a\":{},\"c\":\"x\\u0001\\\"\",\"d\":[]}",
             Syntax::Tolerant,
         )
         .unwrap();
-        assert_eq!(pretty(&v), "{\n  \"b\": [\n    1,\n    2.50\n  ],\n  \"a\": {},\n  \"c\": \"x\\u0001\\\"\",\n  \"d\": []\n}\n");
-        let mut v = parse("{\"a\":1,\"b\":2,\"a\":3}", Syntax::Tolerant).unwrap();
-        v.set("a", Value::Bool(true));
-        v.set("c", Value::Null);
+        assert_eq!(pretty(&document), "{\n  \"b\": [\n    1,\n    2.50\n  ],\n  \"a\": {},\n  \"c\": \"x\\u0001\\\"\",\n  \"d\": []\n}\n");
+        let mut document = parse("{\"a\":1,\"b\":2,\"a\":3}", Syntax::Tolerant).unwrap();
+        document.set("a", Value::Bool(true));
+        document.set("c", Value::Null);
         assert_eq!(
-            pretty(&v),
+            pretty(&document),
             "{\n  \"a\": true,\n  \"b\": 2,\n  \"c\": null\n}\n"
         );
     }

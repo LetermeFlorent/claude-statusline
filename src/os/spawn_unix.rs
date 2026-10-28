@@ -3,13 +3,14 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 fn silent(exe: &str, args: &[&str], dir: &str) -> Command {
-    let mut c = Command::new(exe);
-    c.args(args)
+    let mut command = Command::new(exe);
+    command
+        .args(args)
         .current_dir(dir)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
-    c
+    command
 }
 
 pub fn spawn(exe: &str, args: &[&str], dir: &str) -> bool {

@@ -28,15 +28,19 @@ impl Live {
     }
 }
 
-fn model_name(m: Option<&Value>) -> String {
-    let m = m.filter(|v| v.is_obj());
-    match m.and_then(|m| m.get("display_name")).and_then(|v| v.str()) {
+fn model_name(model: Option<&Value>) -> String {
+    let model = model.filter(|v| v.is_obj());
+    match model
+        .and_then(|m| m.get("display_name"))
+        .and_then(|v| v.str())
+    {
         Some(s) if !s.is_empty() && s != "Unknown" => {
             let cut = s.find('(').map(|i| &s[..i]).unwrap_or(s);
             label_text(cut)
         }
         _ => label_text(
-            m.and_then(|m| m.get("id"))
+            model
+                .and_then(|m| m.get("id"))
                 .and_then(|v| v.str())
                 .unwrap_or("claude"),
         ),
@@ -44,9 +48,9 @@ fn model_name(m: Option<&Value>) -> String {
 }
 
 // Somme des jetons d'entree ; un champ present mais invalide annule tout
-fn usage_tokens(cu: Option<&Value>) -> Option<u64> {
-    let cu = cu?;
-    if *cu == Value::Null {
+fn usage_tokens(current_usage: Option<&Value>) -> Option<u64> {
+    let current_usage = current_usage?;
+    if *current_usage == Value::Null {
         return None;
     }
     let mut sum = 0u64;
@@ -55,7 +59,7 @@ fn usage_tokens(cu: Option<&Value>) -> Option<u64> {
         "cache_creation_input_tokens",
         "cache_read_input_tokens",
     ] {
-        if let Some(v) = cu.get(k) {
+        if let Some(v) = current_usage.get(k) {
             let n = v.num()?;
             if n < 0.0 || !num::is_integral(n) {
                 return None;
@@ -76,33 +80,33 @@ fn live(v: Option<&Value>) -> Option<Live> {
 
 impl Session {
     pub fn parse(text: &str) -> Session {
-        let v = json::parse(text, Syntax::Tolerant).unwrap_or(Value::Null);
-        let cw = v.get("context_window");
-        let rl = v.get("rate_limits");
-        let five = rl.and_then(|r| r.get("five_hour"));
-        let seven = rl.and_then(|r| r.get("seven_day"));
+        let payload = json::parse(text, Syntax::Tolerant).unwrap_or(Value::Null);
+        let context_window = payload.get("context_window");
+        let limits = payload.get("rate_limits");
+        let five = limits.and_then(|r| r.get("five_hour"));
+        let seven = limits.and_then(|r| r.get("seven_day"));
         Session {
-            model: model_name(v.get("model")),
-            effort: v
+            model: model_name(payload.get("model")),
+            effort: payload
                 .at(&["effort", "level"])
                 .and_then(|x| x.str())
                 .map(label_text)
                 .filter(|s| !s.is_empty()),
             ctx: Ctx {
-                size: cw
+                size: context_window
                     .and_then(|c| c.get("context_window_size"))
                     .and_then(|x| x.num()),
-                pct: cw
+                pct: context_window
                     .and_then(|c| c.get("used_percentage"))
                     .and_then(|x| x.num()),
-                tokens: usage_tokens(cw.and_then(|c| c.get("current_usage"))),
+                tokens: usage_tokens(context_window.and_then(|c| c.get("current_usage"))),
             },
             live: if five.is_some() || seven.is_some() {
                 Some((live(five), live(seven)))
             } else {
                 None
             },
-            cwd: v.get("cwd").and_then(|x| x.str()).map(String::from),
+            cwd: payload.get("cwd").and_then(|x| x.str()).map(String::from),
         }
     }
 }
@@ -113,9 +117,9 @@ mod tests {
 
     #[test]
     fn lecture() {
-        let s = Session::parse("{\"model\":{\"display_name\":\"Opus 4 (1M context)\"},\"effort\":{\"level\":\" high \"}}");
-        assert_eq!(s.model, "Opus 4");
-        assert_eq!(s.effort.as_deref(), Some("high"));
+        let session = Session::parse("{\"model\":{\"display_name\":\"Opus 4 (1M context)\"},\"effort\":{\"level\":\" high \"}}");
+        assert_eq!(session.model, "Opus 4");
+        assert_eq!(session.effort.as_deref(), Some("high"));
         assert_eq!(
             Session::parse("{\"model\":{\"display_name\":\"(x)\",\"id\":\"i\"}}").model,
             ""
@@ -125,7 +129,7 @@ mod tests {
             "i"
         );
         assert_eq!(Session::parse("{\"model\":\"Opus\"}").model, "claude");
-        let t = |cu: &str| {
+        let tokens_for = |cu: &str| {
             Session::parse(&alloc::format!(
                 "{{\"context_window\":{{\"current_usage\":{}}}}}",
                 cu
@@ -134,13 +138,13 @@ mod tests {
             .tokens
         };
         assert_eq!(
-            t("{\"input_tokens\":1000.0,\"cache_read_input_tokens\":1.5e3}"),
+            tokens_for("{\"input_tokens\":1000.0,\"cache_read_input_tokens\":1.5e3}"),
             Some(2500)
         );
-        assert_eq!(t("{\"input_tokens\":1000.7}"), None);
-        assert_eq!(t("{\"input_tokens\":null}"), None);
-        assert_eq!(t("[1]"), Some(0));
-        assert_eq!(t("null"), None);
+        assert_eq!(tokens_for("{\"input_tokens\":1000.7}"), None);
+        assert_eq!(tokens_for("{\"input_tokens\":null}"), None);
+        assert_eq!(tokens_for("[1]"), Some(0));
+        assert_eq!(tokens_for("null"), None);
         assert!(Session::parse("{\"rate_limits\":{}}").live.is_none());
         assert!(Session::parse("{\"rate_limits\":{\"five_hour\":null}}")
             .live

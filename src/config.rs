@@ -82,17 +82,21 @@ pub fn background_word(s: &str) -> Option<bool> {
 pub fn hex(v: Option<&Value>) -> Option<Rgb> {
     let s = v?.str()?.trim();
     let s = s.strip_prefix('#').unwrap_or(s);
-    let d: Vec<u32> = s
+    let digits: Vec<u32> = s
         .chars()
         .map(|c| c.to_digit(16))
         .collect::<Option<Vec<u32>>>()?;
-    match d.len() {
+    match digits.len() {
         6 => Some([
-            (d[0] * 16 + d[1]) as f64,
-            (d[2] * 16 + d[3]) as f64,
-            (d[4] * 16 + d[5]) as f64,
+            (digits[0] * 16 + digits[1]) as f64,
+            (digits[2] * 16 + digits[3]) as f64,
+            (digits[4] * 16 + digits[5]) as f64,
         ]),
-        3 => Some([(d[0] * 17) as f64, (d[1] * 17) as f64, (d[2] * 17) as f64]),
+        3 => Some([
+            (digits[0] * 17) as f64,
+            (digits[1] * 17) as f64,
+            (digits[2] * 17) as f64,
+        ]),
         _ => None,
     }
 }
@@ -223,25 +227,25 @@ impl Config {
 
     pub fn colors(&self, light: bool) -> Colors {
         let t = if light { "light" } else { "dark" };
-        let c = |k: &str, def: Rgb| {
+        let color = |k: &str, def: Rgb| {
             let key = alloc::format!("{}_{}", k, t);
             hex(self.raw.at(&["colors", &key])).unwrap_or(def)
         };
         if light {
             Colors {
                 light,
-                ink: c("ink", [0.0, 0.0, 0.0]),
-                empty: c("empty", [190.0, 180.0, 165.0]),
-                ctx_from: c("ctx_from", [125.0, 185.0, 255.0]),
-                ctx_to: c("ctx_to", [40.0, 90.0, 180.0]),
+                ink: color("ink", [0.0, 0.0, 0.0]),
+                empty: color("empty", [190.0, 180.0, 165.0]),
+                ctx_from: color("ctx_from", [125.0, 185.0, 255.0]),
+                ctx_to: color("ctx_to", [40.0, 90.0, 180.0]),
             }
         } else {
             Colors {
                 light,
-                ink: c("ink", [232.0, 234.0, 237.0]),
-                empty: c("empty", [226.0, 229.0, 234.0]),
-                ctx_from: c("ctx_from", [150.0, 205.0, 255.0]),
-                ctx_to: c("ctx_to", [70.0, 130.0, 220.0]),
+                ink: color("ink", [232.0, 234.0, 237.0]),
+                empty: color("empty", [226.0, 229.0, 234.0]),
+                ctx_from: color("ctx_from", [150.0, 205.0, 255.0]),
+                ctx_to: color("ctx_to", [70.0, 130.0, 220.0]),
             }
         }
     }
@@ -249,14 +253,14 @@ impl Config {
     // Lettre du lecteur sous Windows ("C:"), "dsk" ailleurs
     pub fn disk_label(&self) -> String {
         if cfg!(windows) {
-            let mut s: String = self
+            let mut label: String = self
                 .disk_path
                 .chars()
                 .take(1)
                 .flat_map(|c| c.to_uppercase())
                 .collect();
-            s.push(':');
-            s
+            label.push(':');
+            label
         } else {
             String::from("dsk")
         }

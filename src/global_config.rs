@@ -29,9 +29,11 @@ pub fn candidates(claude_dir: &str, home: Option<&str>) -> Vec<String> {
 }
 
 fn rooted(program: &str) -> bool {
-    let b = program.as_bytes();
-    let drive =
-        b.len() > 2 && b[0].is_ascii_alphabetic() && b[1] == b':' && matches!(b[2], b'/' | b'\\');
+    let bytes = program.as_bytes();
+    let drive = bytes.len() > 2
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'/' | b'\\');
     drive || program.starts_with('/') || program.starts_with("~/")
 }
 

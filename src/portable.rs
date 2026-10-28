@@ -10,16 +10,16 @@ fn slashes(path: &str) -> String {
     if !cfg!(windows) {
         return String::from(path);
     }
-    let s = path.replace('\\', "/");
-    let b = s.as_bytes();
-    let msys_drive = b.len() >= 2
-        && b[0] == b'/'
-        && b[1].is_ascii_alphabetic()
-        && (b.len() == 2 || b[2] == b'/');
+    let normalized = path.replace('\\', "/");
+    let bytes = normalized.as_bytes();
+    let msys_drive = bytes.len() >= 2
+        && bytes[0] == b'/'
+        && bytes[1].is_ascii_alphabetic()
+        && (bytes.len() == 2 || bytes[2] == b'/');
     if msys_drive {
-        return format!("{}:{}", &s[1..2], &s[2..]);
+        return format!("{}:{}", &normalized[1..2], &normalized[2..]);
     }
-    s
+    normalized
 }
 
 pub fn same(a: &str, b: &str) -> bool {
@@ -31,12 +31,12 @@ pub fn same(a: &str, b: &str) -> bool {
 }
 
 pub fn under(path: &str, home: &str) -> Option<String> {
-    let p = slashes(path);
-    let h = slashes(home);
-    let h = h.trim_end_matches('/');
-    let head = p.get(..h.len())?;
-    let rest = p.get(h.len()..)?.strip_prefix('/')?;
-    if h.is_empty() || rest.is_empty() || !same(head, h) {
+    let candidate = slashes(path);
+    let prefix = slashes(home);
+    let prefix = prefix.trim_end_matches('/');
+    let head = candidate.get(..prefix.len())?;
+    let rest = candidate.get(prefix.len()..)?.strip_prefix('/')?;
+    if prefix.is_empty() || rest.is_empty() || !same(head, prefix) {
         return None;
     }
     Some(String::from(rest))

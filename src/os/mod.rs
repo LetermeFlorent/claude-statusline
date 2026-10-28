@@ -28,14 +28,14 @@ pub enum Contents {
 }
 
 pub fn join(base: &str, parts: &[&str]) -> String {
-    let mut s = String::from(base);
+    let mut joined = String::from(base);
     for p in parts {
-        if !s.is_empty() && !s.ends_with(SEP) && !s.ends_with('/') {
-            s.push(SEP);
+        if !joined.is_empty() && !joined.ends_with(SEP) && !joined.ends_with('/') {
+            joined.push(SEP);
         }
-        s.push_str(p);
+        joined.push_str(p);
     }
-    s
+    joined
 }
 
 pub fn read(path: &str) -> Option<Vec<u8>> {

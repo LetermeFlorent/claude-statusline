@@ -12,6 +12,9 @@ pub struct State {
 }
 
 const FRESH: f64 = 600.0;
+const HOUR: f64 = 3600.0;
+const FIVE_HOUR_PERIOD: f64 = 5.0 * HOUR;
+const SEVEN_DAY_PERIOD: f64 = 7.0 * 24.0 * HOUR;
 const YEAR_2000: f64 = 946_684_800.0;
 const YEAR_2100: f64 = 4_102_444_800.0;
 const FNV_OFFSET: u64 = 0xcbf29ce484222325;
@@ -35,55 +38,55 @@ pub fn fingerprint<'a>(parts: impl IntoIterator<Item = &'a str>) -> String {
 
 impl State {
     pub fn parse(text: &str) -> State {
-        let mut s = State {
+        let mut state = State {
             map: Vec::new(),
             loaded: String::new(),
         };
         for line in text.split('\n') {
             let line = line.strip_suffix('\r').unwrap_or(line);
             if let Some(i) = line.find(' ') {
-                s.set(&line[..i], &line[i + 1..]);
+                state.set(&line[..i], &line[i + 1..]);
             }
         }
-        s.loaded = s.text();
-        s
+        state.loaded = state.text();
+        state
     }
 
-    pub fn get(&self, k: &str) -> Option<&str> {
+    pub fn get(&self, key: &str) -> Option<&str> {
         self.map
             .iter()
-            .find(|(x, _)| x == k)
+            .find(|(x, _)| x == key)
             .map(|(_, v)| v.as_str())
     }
 
-    pub fn num(&self, k: &str) -> Option<f64> {
-        self.get(k)?.parse().ok().filter(|n: &f64| n.is_finite())
+    pub fn num(&self, key: &str) -> Option<f64> {
+        self.get(key)?.parse().ok().filter(|n: &f64| n.is_finite())
     }
 
-    pub fn int(&self, k: &str) -> Option<i64> {
-        self.get(k)?.parse().ok()
+    pub fn int(&self, key: &str) -> Option<i64> {
+        self.get(key)?.parse().ok()
     }
 
-    pub fn set(&mut self, k: &str, v: &str) {
-        if !storable(k, v) {
+    pub fn set(&mut self, key: &str, value: &str) {
+        if !storable(key, value) {
             return;
         }
-        match self.map.binary_search_by(|(x, _)| x.as_str().cmp(k)) {
-            Ok(i) => self.map[i].1 = String::from(v),
-            Err(i) => self.map.insert(i, (String::from(k), String::from(v))),
+        match self.map.binary_search_by(|(x, _)| x.as_str().cmp(key)) {
+            Ok(i) => self.map[i].1 = String::from(value),
+            Err(i) => self.map.insert(i, (String::from(key), String::from(value))),
         }
     }
 
-    pub fn remove(&mut self, k: &str) {
-        self.map.retain(|(x, _)| x != k);
+    pub fn remove(&mut self, key: &str) {
+        self.map.retain(|(x, _)| x != key);
     }
 
     pub fn text(&self) -> String {
         let mut out = String::new();
-        for (k, v) in &self.map {
-            out.push_str(k);
+        for (key, value) in &self.map {
+            out.push_str(key);
             out.push(' ');
-            out.push_str(v);
+            out.push_str(value);
             out.push('\n');
         }
         out
@@ -109,11 +112,11 @@ impl State {
                 self.remove(&format!("{}@{}", k, tag));
             }
             self.set(&format!("q_at@{}", tag), &format!("{}", now as i64));
-            for (w, p) in [(five, "q5"), (seven, "q7")] {
-                if let Some(at) = w.and_then(|w| w.at) {
-                    self.set(&format!("{}_at@{}", p, tag), &format!("{}", at));
-                    if let Some(pct) = w.and_then(|w| w.pct) {
-                        self.set(&format!("{}_pct@{}", p, tag), &format!("{}", pct));
+            for (window, prefix) in [(five, "q5"), (seven, "q7")] {
+                if let Some(at) = window.and_then(|w| w.at) {
+                    self.set(&format!("{}_at@{}", prefix, tag), &format!("{}", at));
+                    if let Some(pct) = window.and_then(|w| w.pct) {
+                        self.set(&format!("{}_pct@{}", prefix, tag), &format!("{}", pct));
                     }
                 }
             }
@@ -123,20 +126,20 @@ impl State {
         if !(now - q_at < FRESH) {
             return None;
         }
-        let q5 = self.stored("q5", tag, 18000.0, now);
-        let q7 = self.stored("q7", tag, 604800.0, now);
+        let q5 = self.stored("q5", tag, FIVE_HOUR_PERIOD, now);
+        let q7 = self.stored("q7", tag, SEVEN_DAY_PERIOD, now);
         if q5.is_none() && q7.is_none() {
             return None;
         }
         Some((q5, q7))
     }
 
-    fn stored(&self, p: &str, tag: &str, period: f64, now: f64) -> Option<Quota> {
+    fn stored(&self, prefix: &str, tag: &str, period: f64, now: f64) -> Option<Quota> {
         let at = self
-            .num(&format!("{}_at@{}", p, tag))
+            .num(&format!("{}_at@{}", prefix, tag))
             .filter(|at| (YEAR_2000..YEAR_2100).contains(at))?;
         if at > now {
-            let pct = self.num(&format!("{}_pct@{}", p, tag));
+            let pct = self.num(&format!("{}_pct@{}", prefix, tag));
             return Some(Quota { pct, at: Some(at) });
         }
         let periods = crate::num::floor((now - at) / period) + 1.0;
@@ -147,25 +150,25 @@ impl State {
     }
 
     // Pourcentage d'un compteur systeme par difference avec le releve precedent
-    pub fn counter(&mut self, name: &str, cur: Option<(i64, i64)>) -> Option<f64> {
-        let kc = format!("{}_clock", name);
-        let kv = format!("{}_value", name);
-        let prev = (self.int(&kc), self.int(&kv));
-        let Some((c, v)) = cur else {
-            self.remove(&kc);
-            self.remove(&kv);
+    pub fn counter(&mut self, name: &str, current: Option<(i64, i64)>) -> Option<f64> {
+        let clock_key = format!("{}_clock", name);
+        let value_key = format!("{}_value", name);
+        let previous = (self.int(&clock_key), self.int(&value_key));
+        let Some((clock, value)) = current else {
+            self.remove(&clock_key);
+            self.remove(&value_key);
             return None;
         };
-        self.set(&kc, &format!("{}", c));
-        self.set(&kv, &format!("{}", v));
-        let (pc, pv) = (prev.0?, prev.1?);
-        let dc = c.wrapping_sub(pc);
-        let dv = v.wrapping_sub(pv);
-        if dc <= 0 || dv < 0 {
+        self.set(&clock_key, &format!("{}", clock));
+        self.set(&value_key, &format!("{}", value));
+        let (previous_clock, previous_value) = (previous.0?, previous.1?);
+        let elapsed = clock.wrapping_sub(previous_clock);
+        let busy = value.wrapping_sub(previous_value);
+        if elapsed <= 0 || busy < 0 {
             return None;
         }
-        let p = dv as f64 / dc as f64 * 100.0;
-        Some(if p > 100.0 { 100.0 } else { p })
+        let pct = busy as f64 / elapsed as f64 * 100.0;
+        Some(if pct > 100.0 { 100.0 } else { pct })
     }
 }
 
@@ -177,7 +180,7 @@ pub fn tag(dir: &str) -> String {
         .rsplit(['/', '\\'])
         .next()
         .unwrap_or("");
-    let t: String = leaf
+    let name: String = leaf
         .trim_start_matches('.')
         .chars()
         .map(|c| {
@@ -189,10 +192,10 @@ pub fn tag(dir: &str) -> String {
             }
         })
         .collect();
-    if t.is_empty() {
+    if name.is_empty() {
         String::from("claude")
     } else {
-        t
+        name
     }
 }
 

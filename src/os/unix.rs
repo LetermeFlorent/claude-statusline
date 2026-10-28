@@ -116,12 +116,12 @@ pub fn list(dir: &str, prefix: &str) -> Vec<String> {
 
 // Rien a lire quand l'entree est un terminal : on ne bloque pas
 pub fn stdin() -> Option<String> {
-    let mut i = std::io::stdin();
-    if i.is_terminal() {
+    let mut input = std::io::stdin();
+    if input.is_terminal() {
         return None;
     }
     let mut data = Vec::new();
-    let _ = i.read_to_end(&mut data);
+    let _ = input.read_to_end(&mut data);
     Some(String::from_utf8_lossy(&data).into_owned())
 }
 
@@ -204,12 +204,12 @@ mod sys {
         if it.next()? != "cpu" {
             return None;
         }
-        let v: Vec<i64> = it.take(8).filter_map(|x| x.parse().ok()).collect();
-        if v.len() < 5 {
+        let jiffies: Vec<i64> = it.take(8).filter_map(|x| x.parse().ok()).collect();
+        if jiffies.len() < 5 {
             return None;
         }
-        let clock: i64 = v.iter().sum();
-        Some((clock, clock - v[3] - v[4]))
+        let clock: i64 = jiffies.iter().sum();
+        Some((clock, clock - jiffies[3] - jiffies[4]))
     }
 
     fn dev_numbers(path: &str) -> Option<(u64, u64)> {
@@ -228,21 +228,24 @@ mod sys {
         let want = dev_numbers(path);
         let mut fallback: Option<i64> = None;
         for line in stats.lines() {
-            let f: Vec<&str> = line.split_whitespace().collect();
-            if f.len() < 13 {
+            let columns: Vec<&str> = line.split_whitespace().collect();
+            if columns.len() < 13 {
                 continue;
             }
-            let ticks: i64 = match f[12].parse() {
+            let ticks: i64 = match columns[12].parse() {
                 Ok(t) => t,
                 Err(_) => continue,
             };
-            let num = (f[0].parse::<u64>().ok(), f[1].parse::<u64>().ok());
+            let num = (
+                columns[0].parse::<u64>().ok(),
+                columns[1].parse::<u64>().ok(),
+            );
             if let (Some((a, b)), (Some(x), Some(y))) = (want, num) {
                 if a == x && b == y {
                     return Some(((secs * 1000.0) as i64, ticks));
                 }
             }
-            let name = f[2];
+            let name = columns[2];
             let virt = ["loop", "ram", "zram", "sr", "fd", "nbd"]
                 .iter()
                 .any(|p| name.starts_with(p));
@@ -257,9 +260,9 @@ mod sys {
     }
 
     pub fn memory() -> Option<(f64, f64)> {
-        let s = read_str("/proc/meminfo")?;
+        let meminfo = read_str("/proc/meminfo")?;
         let get = |k: &str| -> Option<f64> {
-            let line = s.lines().find(|l| l.starts_with(k))?;
+            let line = meminfo.lines().find(|l| l.starts_with(k))?;
             let kb: f64 = line[k.len()..]
                 .trim()
                 .trim_end_matches("kB")
@@ -272,16 +275,16 @@ mod sys {
     }
 
     fn gsettings(key: &str) -> Option<String> {
-        let o = std::process::Command::new("gsettings")
+        let output = std::process::Command::new("gsettings")
             .args(["get", "org.gnome.desktop.interface", key])
             .stderr(std::process::Stdio::null())
             .output()
             .ok()?;
-        if !o.status.success() {
+        if !output.status.success() {
             return None;
         }
         Some(
-            String::from_utf8_lossy(&o.stdout)
+            String::from_utf8_lossy(&output.stdout)
                 .trim()
                 .trim_matches('\'')
                 .to_lowercase(),
@@ -305,9 +308,14 @@ mod sys {
             }
             if section == "[Colors:Window]" {
                 if let Some(v) = line.strip_prefix("BackgroundNormal=") {
-                    let c: Vec<f64> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
-                    if c.len() >= 3 {
-                        return Some(crate::theme::luminance_light([c[0], c[1], c[2]]));
+                    let channels: Vec<f64> =
+                        v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+                    if channels.len() >= 3 {
+                        return Some(crate::theme::luminance_light([
+                            channels[0],
+                            channels[1],
+                            channels[2],
+                        ]));
                     }
                 }
             }
@@ -331,16 +339,21 @@ mod sys {
     }
 
     pub fn os_stamp() -> String {
-        let ch = config_home();
+        let config_dir = config_home();
         format!(
             "{}|{}|{}|{}",
             env("GTK_THEME").unwrap_or_default(),
             env("XDG_CURRENT_DESKTOP").unwrap_or_default(),
             stamp_text(
-                ch.as_ref()
+                config_dir
+                    .as_ref()
                     .map(|c| super::super::join(c, &["dconf", "user"]))
             ),
-            stamp_text(ch.as_ref().map(|c| super::super::join(c, &["kdeglobals"]))),
+            stamp_text(
+                config_dir
+                    .as_ref()
+                    .map(|c| super::super::join(c, &["kdeglobals"]))
+            ),
         )
     }
 }
@@ -433,21 +446,22 @@ mod sys {
         let mut busy = 0i64;
         let mut seen = false;
         loop {
-            let e = unsafe { IOIteratorNext(iter) };
-            if e == 0 {
+            let entry = unsafe { IOIteratorNext(iter) };
+            if entry == 0 {
                 break;
             }
-            let d = unsafe { IORegistryEntryCreateCFProperty(e, k_stats, std::ptr::null(), 0) };
-            if !d.is_null() {
-                if unsafe { CFGetTypeID(d) == CFDictionaryGetTypeID() } {
+            let stats =
+                unsafe { IORegistryEntryCreateCFProperty(entry, k_stats, std::ptr::null(), 0) };
+            if !stats.is_null() {
+                if unsafe { CFGetTypeID(stats) == CFDictionaryGetTypeID() } {
                     busy = busy
-                        .wrapping_add(number(d, k_read))
-                        .wrapping_add(number(d, k_write));
+                        .wrapping_add(number(stats, k_read))
+                        .wrapping_add(number(stats, k_write));
                     seen = true;
                 }
-                unsafe { CFRelease(d) };
+                unsafe { CFRelease(stats) };
             }
-            unsafe { IOObjectRelease(e) };
+            unsafe { IOObjectRelease(entry) };
         }
         unsafe {
             IOObjectRelease(iter);
@@ -482,12 +496,12 @@ mod sys {
         if unsafe { host_page_size(host, &mut page) } != 0 {
             return None;
         }
-        let mut v = [0i32; 38];
+        let mut vm_stats = [0i32; 38];
         let mut n = 38u32;
-        if unsafe { host_statistics64(host, 4, v.as_mut_ptr(), &mut n) } != 0 {
+        if unsafe { host_statistics64(host, 4, vm_stats.as_mut_ptr(), &mut n) } != 0 {
             return None;
         }
-        let at = |off: usize| v[off / 4] as u32 as f64;
+        let at = |off: usize| vm_stats[off / 4] as u32 as f64;
         let pages = at(140) - at(88) + at(12) + at(128);
         let used = pages * page as f64;
         let used = if used > total as f64 {
@@ -518,11 +532,11 @@ mod sys {
             return Some(!(find(&data, &key).is_some() && find(&data, &dark).is_some()));
         }
         let text = String::from_utf8_lossy(&data);
-        let Some(i) = text.find("<key>AppleInterfaceStyle</key>") else {
+        let Some(key_at) = text.find("<key>AppleInterfaceStyle</key>") else {
             return Some(true);
         };
         Some(
-            !text[i..]
+            !text[key_at..]
                 .trim_start_matches("<key>AppleInterfaceStyle</key>")
                 .trim_start()
                 .starts_with("<string>Dark</string>"),
