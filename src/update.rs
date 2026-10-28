@@ -7,8 +7,12 @@ use alloc::string::String;
 const REPO: &str = "LetermeFlorent/claude-statusline";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SHOWN_AFTER_SWAP_MS: u32 = 5000;
+const HTTP_OK: u16 = 200;
+const NO_RELEASE: &str = "derniere version introuvable\n";
+const RATE_LIMIT_STATUSES: [u16; 2] = [403, 429];
+const RATE_LIMITED: &str = "limite de requetes GitHub atteinte, reessayez plus tard\n";
 
-type Fetch<'a> = &'a dyn Fn(&str, &str, u32) -> bool;
+type Fetch<'a> = &'a dyn Fn(&str, &str, u32) -> Option<u16>;
 
 #[derive(Debug, PartialEq)]
 enum Outcome {
@@ -29,27 +33,39 @@ fn curl() -> String {
     String::from("curl")
 }
 
-fn download(url: &str, to: &str, secs: u32) -> bool {
-    let limit = format!("{}", secs);
-    os::call(
-        &curl(),
-        &["-fsSL", "--max-time", &limit, "-o", to, url],
-        secs + 15,
-    ) == Some(0)
+fn last_status(headers: &str) -> Option<u16> {
+    let line = headers.lines().rfind(|l| l.starts_with("HTTP/"))?;
+    line.split_whitespace().nth(1)?.parse().ok()
 }
 
-fn latest(dir: &str, fetch: Fetch) -> Option<String> {
+fn download(url: &str, to: &str, secs: u32) -> Option<u16> {
+    let headers = format!("{}.headers", to);
+    let limit = format!("{}", secs);
+    let finished = os::call(
+        &curl(),
+        &["-sSL", "--max-time", &limit, "-D", &headers, "-o", to, url],
+        secs + 15,
+    ) == Some(0);
+    let status = os::read_text(&headers).and_then(|h| last_status(&h));
+    os::remove(&headers);
+    status.filter(|_| finished)
+}
+
+fn latest(dir: &str, fetch: Fetch) -> Result<String, String> {
     let file = os::join(dir, &["release.json"]);
-    let ok = fetch(
-        &format!("https://api.github.com/repos/{}/releases/latest", REPO),
-        &file,
-        30,
-    );
+    let url = format!("https://api.github.com/repos/{}/releases/latest", REPO);
+    let status = fetch(&url, &file, 30);
     let text = os::read_text(&file);
     os::remove(&file);
-    let release = json::parse(&text.filter(|_| ok)?, false)?;
-    let tag = release.get("tag_name")?.str()?;
-    parts(tag).map(|_| String::from(tag))
+    if status.is_some_and(|s| RATE_LIMIT_STATUSES.contains(&s)) {
+        return Err(String::from(RATE_LIMITED));
+    }
+    let tag = text
+        .filter(|_| status == Some(HTTP_OK))
+        .and_then(|t| json::parse(&t, false))
+        .and_then(|release| release.get("tag_name")?.str().map(String::from))
+        .filter(|tag| parts(tag).is_some());
+    tag.ok_or_else(|| String::from(NO_RELEASE))
 }
 
 fn staging(exe: &str) -> String {
@@ -112,7 +128,7 @@ fn install(exe: &str, tag: &str, fetch: Fetch) -> Result<(), String> {
         "https://github.com/{}/releases/download/{}/{}",
         REPO, tag, name
     );
-    let ready = fetch(&url, &fresh, 300)
+    let ready = fetch(&url, &fresh, 300) == Some(HTTP_OK)
         && os::make_executable(&fresh)
         && os::call(&fresh, &["--version"], 30) == Some(0);
     if !ready || !swap(exe, &fresh) {
@@ -128,12 +144,7 @@ fn install(exe: &str, tag: &str, fetch: Fetch) -> Result<(), String> {
 
 fn attempt(dir: &str, exe: &str, fetch: Fetch) -> Result<Outcome, String> {
     clean(exe);
-    let Some(tag) = latest(dir, fetch) else {
-        return Err(String::from(
-            "derniere version introuvable
-",
-        ));
-    };
+    let tag = latest(dir, fetch)?;
     if !newer(&tag, VERSION) {
         return Ok(Outcome::UpToDate);
     }
@@ -173,16 +184,26 @@ fn acquire(lock: &str) -> bool {
     stale && os::remove(lock) && os::create_new(lock)
 }
 
+fn take_lock(dir: &str) -> Result<Option<String>, String> {
+    if !os::mkdirs(dir) {
+        return Err(format!("dossier d'etat impossible a creer : {}\n", dir));
+    }
+    let lock = os::join(dir, &["update.lock"]);
+    Ok(acquire(&lock).then_some(lock))
+}
+
 pub fn run() -> i32 {
     let Some(dir) = os::state_dir() else {
         return fail("dossier d'etat introuvable\n");
     };
-    os::mkdirs(&dir);
-    let lock = os::join(&dir, &["update.lock"]);
-    if !acquire(&lock) {
-        os::out("mise a jour deja en cours\n");
-        return 0;
-    }
+    let lock = match take_lock(&dir) {
+        Ok(Some(lock)) => lock,
+        Ok(None) => {
+            os::out("mise a jour deja en cours\n");
+            return 0;
+        }
+        Err(msg) => return fail(&msg),
+    };
     let result = match os::exe() {
         Some(exe) => attempt(&dir, &exe, &download),
         None => Err(String::from(
@@ -270,21 +291,40 @@ mod tests {
     struct Release<'a> {
         tag: &'a str,
         binary: &'a [u8],
+        api_status: u16,
         asked: RefCell<Vec<String>>,
     }
 
+    fn release<'a>(tag: &'a str, binary: &'a [u8]) -> Release<'a> {
+        Release {
+            tag,
+            binary,
+            api_status: HTTP_OK,
+            asked: RefCell::new(Vec::new()),
+        }
+    }
+
     impl Release<'_> {
-        fn serve(&self, url: &str, to: &str, _: u32) -> bool {
+        fn serve(&self, url: &str, to: &str, _: u32) -> Option<u16> {
             self.asked.borrow_mut().push(String::from(url));
             let asset_url = format!("/download/{}/{}", self.tag, asset().unwrap());
-            let body = if url.ends_with("/releases/latest") {
-                format!("{{\"tag_name\": \"{}\"}}", self.tag).into_bytes()
+            let (status, body) = if url.ends_with("/releases/latest") && self.api_status != HTTP_OK
+            {
+                (
+                    self.api_status,
+                    b"{\"message\": \"API rate limit exceeded\"}".to_vec(),
+                )
+            } else if url.ends_with("/releases/latest") {
+                (
+                    HTTP_OK,
+                    format!("{{\"tag_name\": \"{}\"}}", self.tag).into_bytes(),
+                )
             } else if url.ends_with(&asset_url) {
-                self.binary.to_vec()
+                (HTTP_OK, self.binary.to_vec())
             } else {
-                return false;
+                (404, b"Not Found".to_vec())
             };
-            std::fs::write(to, body).is_ok()
+            std::fs::write(to, body).ok().map(|_| status)
         }
     }
 
@@ -295,15 +335,10 @@ mod tests {
         asked: usize,
     }
 
-    fn update(name: &str, tag: &str, binary: &[u8]) -> Run {
+    fn update(name: &str, release: Release) -> Run {
         let sandbox = Sandbox::new(name);
         let exe = sandbox.0.join(EXE_NAME).to_string_lossy().into_owned();
         std::fs::write(&exe, OLD_BINARY).unwrap();
-        let release = Release {
-            tag,
-            binary,
-            asked: RefCell::new(Vec::new()),
-        };
         let result = attempt(&sandbox.dir(), &exe, &|u, t, s| release.serve(u, t, s));
         Run {
             result,
@@ -316,7 +351,7 @@ mod tests {
     #[test]
     fn newer_tag_is_installed() {
         let binary = working_binary();
-        let run = update("newer", "v99.0.0", &binary);
+        let run = update("newer", release("v99.0.0", &binary));
         assert_eq!(run.result, Ok(Outcome::Updated(String::from("v99.0.0"))));
         assert_eq!(run.installed, binary);
         assert!(!run.files.iter().any(|f| f.contains(".new")));
@@ -324,7 +359,7 @@ mod tests {
 
     #[test]
     fn same_tag_is_already_up_to_date() {
-        let run = update("same", &format!("v{}", VERSION), &working_binary());
+        let run = update("same", release(&format!("v{}", VERSION), &working_binary()));
         assert_eq!(run.result, Ok(Outcome::UpToDate));
         assert_eq!(run.installed, OLD_BINARY);
         assert_eq!(run.asked, 1);
@@ -334,11 +369,8 @@ mod tests {
     #[test]
     fn tag_outside_x_y_z_is_refused() {
         for (i, tag) in ["v99.0", "v99.0.0-rc1", "latest"].iter().enumerate() {
-            let run = update(&format!("refused-{}", i), tag, &working_binary());
-            assert_eq!(
-                run.result,
-                Err(String::from("derniere version introuvable\n"))
-            );
+            let run = update(&format!("refused-{}", i), release(tag, &working_binary()));
+            assert_eq!(run.result, Err(String::from(NO_RELEASE)));
             assert_eq!(run.installed, OLD_BINARY);
             assert_eq!(run.files, [EXE_NAME]);
         }
@@ -346,12 +378,56 @@ mod tests {
 
     #[test]
     fn binary_failing_its_version_check_is_not_swapped_in() {
-        let run = update("failing", "v99.0.0", FAILING_BINARY);
+        let run = update("failing", release("v99.0.0", FAILING_BINARY));
         assert_eq!(
             run.result,
             Err(String::from("mise a jour vers v99.0.0 impossible\n"))
         );
         assert_eq!(run.installed, OLD_BINARY);
         assert_eq!(run.files, [EXE_NAME, MARKER]);
+    }
+
+    #[test]
+    fn rate_limited_api_is_reported() {
+        for status in [403, 429] {
+            let run = update(
+                &format!("limited-{}", status),
+                Release {
+                    api_status: status,
+                    ..release("v99.0.0", OLD_BINARY)
+                },
+            );
+            assert_eq!(run.result, Err(String::from(RATE_LIMITED)));
+            assert_eq!(run.asked, 1);
+            assert_eq!(run.files, [EXE_NAME]);
+        }
+    }
+
+    #[test]
+    fn status_comes_from_the_last_response() {
+        let redirected = "HTTP/1.1 302 Found\r\nLocation: x\r\n\r\nHTTP/2 200\r\nserver: y\r\n\r\n";
+        assert_eq!(last_status(redirected), Some(200));
+        assert_eq!(last_status("HTTP/2 403 \r\n\r\n"), Some(403));
+        assert_eq!(last_status(""), None);
+    }
+
+    #[test]
+    fn state_folder_that_cannot_be_created_is_an_error() {
+        let sandbox = Sandbox::new("blocked");
+        let blocker = sandbox.0.join("file");
+        std::fs::write(&blocker, b"").unwrap();
+        let dir = blocker.join("state").to_string_lossy().into_owned();
+        assert_eq!(
+            take_lock(&dir),
+            Err(format!("dossier d'etat impossible a creer : {}\n", dir))
+        );
+    }
+
+    #[test]
+    fn second_lock_waits_for_the_first() {
+        let sandbox = Sandbox::new("lock");
+        let dir = sandbox.0.join("state").to_string_lossy().into_owned();
+        assert_eq!(take_lock(&dir), Ok(Some(os::join(&dir, &["update.lock"]))));
+        assert_eq!(take_lock(&dir), Ok(None));
     }
 }
