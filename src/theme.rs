@@ -327,7 +327,7 @@ fn host_mode(terminal: Host, files: &[String], context: &Context<'_>) -> Mode {
     }
 }
 
-fn host_stamp(terminal: Host, files: &[String], workspace: Option<&str>) -> String {
+fn host_stamp(terminal: Host, files: &[String], context: &Context<'_>) -> String {
     let mut stamp = String::from(match terminal {
         Host::Vscode => "vscode|",
         Host::Wt => "wt|",
@@ -335,7 +335,9 @@ fn host_stamp(terminal: Host, files: &[String], workspace: Option<&str>) -> Stri
         Host::Ghostty => "ghostty|",
         Host::Other => "os|",
     });
-    for file in files.iter().map(String::as_str).chain(workspace) {
+    stamp.push_str(context.profile_id.unwrap_or_default());
+    stamp.push('|');
+    for file in files.iter().map(String::as_str).chain(context.workspace) {
         let (size, mtime) = os::stamp(file).unwrap_or((0, 0));
         stamp.push_str(&format!("{}:{}:{};", file, size, mtime));
     }
@@ -369,7 +371,14 @@ pub fn detect_light(
     let workspace = project
         .filter(|_| terminal == Host::Vscode)
         .map(|dir| os::join(dir, &VSCODE_WORKSPACE));
-    let stamp = host_stamp(terminal, &files, workspace.as_deref());
+    let profile_id = var("WT_PROFILE_ID").filter(|_| terminal == Host::Wt);
+    let context = Context {
+        places: &places,
+        order: &order,
+        profile_id: profile_id.as_deref(),
+        workspace: workspace.as_deref(),
+    };
+    let stamp = host_stamp(terminal, &files, &context);
     if state.get("bg_stamp") == Some(stamp.as_str()) {
         match state.get("bg_host") {
             Some("light") => return true,
@@ -377,13 +386,6 @@ pub fn detect_light(
             _ => {}
         }
     }
-    let profile_id = var("WT_PROFILE_ID");
-    let context = Context {
-        places: &places,
-        order: &order,
-        profile_id: profile_id.as_deref(),
-        workspace: workspace.as_deref(),
-    };
     let light = match host_mode(terminal, &files, &context) {
         Mode::Light => true,
         Mode::Dark => false,
@@ -498,5 +500,27 @@ mod tests {
         assert_eq!(ghostty_keys("background = #ffffff\nbackground =\n").0, None);
         assert_eq!(ghostty_keys("theme = Dracula\ntheme = \"\"\n").1, None);
         assert_eq!(ghostty_keys("theme = Dracula\n").1, Some("Dracula"));
+    }
+
+    #[test]
+    fn each_windows_terminal_profile_has_its_own_cache_key() {
+        let places = Places {
+            windows: None,
+            unix: None,
+            macos: false,
+            unresolved: false,
+            ghostty_resources: None,
+        };
+        let key = |profile_id| {
+            let context = Context {
+                places: &places,
+                order: &[],
+                profile_id,
+                workspace: None,
+            };
+            host_stamp(Host::Wt, &[], &context)
+        };
+        assert_ne!(key(Some("{a}")), key(Some("{b}")));
+        assert_ne!(key(Some("{a}")), key(None));
     }
 }

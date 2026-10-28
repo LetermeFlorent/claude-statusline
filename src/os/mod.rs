@@ -203,4 +203,17 @@ mod tests {
         assert_eq!(std::fs::read(&real).unwrap(), b"[]");
         assert_eq!(sandbox.files(), ["real.json", "settings.json"]);
     }
+
+    #[test]
+    #[cfg_attr(windows, ignore = "creating a symbolic link needs an elevated token")]
+    fn the_stamp_of_a_link_follows_its_target() {
+        let sandbox = Sandbox::new("stamp-link");
+        let (real, link) = (sandbox.path("real.json"), sandbox.path("settings.json"));
+        std::fs::write(&real, b"{}").unwrap();
+        symlink(&real, &link).unwrap();
+        let before = stamp(&link);
+        std::fs::write(&real, b"{\"theme\": 1}").unwrap();
+        assert_ne!(stamp(&link), before);
+        assert_eq!(stamp(&link), stamp(&real));
+    }
 }

@@ -49,7 +49,7 @@ extern "system" {
     ) -> Handle;
     fn CloseHandle(handle: Handle) -> i32;
     fn GetFileSizeEx(file: Handle, size: *mut i64) -> i32;
-    fn GetFileAttributesExW(name: *const u16, level: u32, data: *mut FileAttributeData) -> i32;
+    fn GetFileInformationByHandle(file: Handle, info: *mut HandleInformation) -> i32;
     fn GetFileAttributesW(name: *const u16) -> u32;
     fn GetFinalPathNameByHandleW(file: Handle, buf: *mut u16, size: u32, flags: u32) -> u32;
     fn MoveFileExW(from: *const u16, to: *const u16, flags: u32) -> i32;
@@ -103,6 +103,7 @@ extern "system" {
 
 const GENERIC_READ: u32 = 0x8000_0000;
 const GENERIC_WRITE: u32 = 0x4000_0000;
+const FILE_READ_ATTRIBUTES: u32 = 0x80;
 const DEVICE_ATTRIBUTES_ONLY: u32 = 0;
 const FILE_SHARE_READ: u32 = 1;
 const FILE_SHARE_WRITE: u32 = 2;
@@ -114,10 +115,10 @@ const CREATE_ALWAYS: u32 = 2;
 const CREATE_NEW: u32 = 1;
 const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
 const FILE_TYPE_DISK: u32 = 1;
 const FILE_TYPE_CHAR: u32 = 2;
 const MOVEFILE_REPLACE_EXISTING: u32 = 1;
-const GET_FILE_EX_INFO_STANDARD: u32 = 0;
 const STD_INPUT_HANDLE: u32 = -10i32 as u32;
 const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;
 const STD_ERROR_HANDLE: u32 = -12i32 as u32;
@@ -160,6 +161,21 @@ struct FileAttributeData {
     written: FileTime,
     size_high: u32,
     size_low: u32,
+}
+
+#[repr(C)]
+#[derive(Default)]
+struct HandleInformation {
+    attributes: u32,
+    created: FileTime,
+    accessed: FileTime,
+    written: FileTime,
+    volume: u32,
+    size_high: u32,
+    size_low: u32,
+    links: u32,
+    index_high: u32,
+    index_low: u32,
 }
 
 #[repr(C)]
@@ -265,16 +281,16 @@ pub fn env(name: &str) -> Option<String> {
     with_growing_buffer(&|b, n| unsafe { GetEnvironmentVariableW(wide_name.as_ptr(), b, n) })
 }
 
-fn open_read(path: &str) -> Handle {
+fn open_existing(path: &str, access: u32, flags: u32) -> Handle {
     let wide_path = wide(path);
     unsafe {
         CreateFileW(
             wide_path.as_ptr(),
-            GENERIC_READ,
+            access,
             SHARE_ALL,
             null_mut(),
             OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL,
+            flags,
             0,
         )
     }
@@ -303,7 +319,7 @@ fn read_all(file: Handle, hint: usize, limit: usize) -> Vec<u8> {
 }
 
 pub fn read_limited(path: &str, limit: usize) -> Option<Vec<u8>> {
-    let file = open_read(path);
+    let file = open_existing(path, GENERIC_READ, FILE_ATTRIBUTE_NORMAL);
     if file == INVALID {
         return None;
     }
@@ -359,7 +375,11 @@ fn resolved(path: &str) -> String {
     let wide_path = wide(path);
     let attributes = unsafe { GetFileAttributesW(wide_path.as_ptr()) };
     let linked = attributes != u32::MAX && attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0;
-    let file = if linked { open_read(path) } else { INVALID };
+    let file = if linked {
+        open_existing(path, GENERIC_READ, FILE_ATTRIBUTE_NORMAL)
+    } else {
+        INVALID
+    };
     if file == INVALID {
         return String::from(path);
     }
@@ -402,15 +422,16 @@ pub fn make_executable(path: &str) -> bool {
 }
 
 pub fn stamp(path: &str) -> Option<(u64, i64)> {
-    let wide_path = wide(path);
-    let mut data = FileAttributeData::default();
-    let level = GET_FILE_EX_INFO_STANDARD;
-    if unsafe { GetFileAttributesExW(wide_path.as_ptr(), level, &mut data) } == 0 {
+    let file = open_existing(path, FILE_READ_ATTRIBUTES, FILE_FLAG_BACKUP_SEMANTICS);
+    if file == INVALID {
         return None;
     }
-    let since_epoch = data.written.ticks() as i64 - UNIX_EPOCH_TICKS as i64;
-    let size = (data.size_high as u64) << 32 | data.size_low as u64;
-    Some((size, since_epoch.div_euclid(TICKS_PER_SECOND)))
+    let mut info = HandleInformation::default();
+    let read = unsafe { GetFileInformationByHandle(file, &mut info) } != 0;
+    unsafe { CloseHandle(file) };
+    let since_epoch = info.written.ticks() as i64 - UNIX_EPOCH_TICKS as i64;
+    let size = (info.size_high as u64) << 32 | info.size_low as u64;
+    read.then_some((size, since_epoch.div_euclid(TICKS_PER_SECOND)))
 }
 
 pub fn exists(path: &str) -> bool {
