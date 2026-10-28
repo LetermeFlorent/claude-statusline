@@ -1,4 +1,4 @@
-use crate::config::{Colors, Config, Metric, Palette, Rgb};
+use crate::config::{Colors, Config, Metric, Rgb};
 use crate::num;
 use alloc::format;
 use alloc::string::String;
@@ -10,6 +10,12 @@ use core::ops::RangeInclusive;
 pub struct Quota {
     pub pct: Option<f64>,
     pub at: Option<f64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Quotas {
+    pub five_hour: Option<Quota>,
+    pub seven_day: Option<Quota>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -29,7 +35,7 @@ pub struct Data {
     pub ctx: Ctx,
     pub window: Option<u64>,
     // Les deux segments de quota n'apparaissent que si l'une des fenetres est connue
-    pub quotas: Option<(Option<Quota>, Option<Quota>)>,
+    pub quotas: Option<Quotas>,
     pub model: String,
     pub effort: Option<String>,
     pub sys: Vec<SysValue>,
@@ -50,33 +56,70 @@ const MAX_CHANNEL: f64 = 255.0;
 const LIGHT_GRADIENT_SHADE: f64 = 0.65;
 const DARK_GRADIENT_TINT: f64 = 0.3;
 const LINE_CAPACITY: usize = 2048;
-const EFFORT_LEVELS: usize = 6;
 
 type Pair = (Rgb, Rgb);
 
-fn effort_pair(light: bool, key: &str) -> Pair {
-    let light_pairs: [(&str, Pair); EFFORT_LEVELS] = [
-        ("low", ([70.0, 100.0, 97.0], [72.0, 92.0, 114.0])),
-        ("medium", ([71.0, 90.0, 115.0], [77.0, 85.0, 117.0])),
-        ("high", ([75.0, 84.0, 118.0], [90.0, 81.0, 117.0])),
-        ("xhigh", ([88.0, 80.0, 118.0], [102.0, 78.0, 116.0])),
-        ("max", ([102.0, 78.0, 116.0], [114.0, 80.0, 114.0])),
-        ("", ([116.0, 80.0, 117.0], [128.0, 93.0, 121.0])),
-    ];
-    let dark_pairs: [(&str, Pair); EFFORT_LEVELS] = [
-        ("low", ([120.0, 172.0, 168.0], [124.0, 158.0, 196.0])),
-        ("medium", ([122.0, 156.0, 198.0], [132.0, 146.0, 202.0])),
-        ("high", ([130.0, 144.0, 204.0], [156.0, 140.0, 202.0])),
-        ("xhigh", ([152.0, 138.0, 204.0], [176.0, 134.0, 200.0])),
-        ("max", ([176.0, 134.0, 200.0], [196.0, 138.0, 196.0])),
-        ("", ([200.0, 138.0, 202.0], [220.0, 160.0, 208.0])),
-    ];
-    let pairs = if light { &light_pairs } else { &dark_pairs };
-    pairs
-        .iter()
-        .find(|(k, _)| *k == key)
-        .unwrap_or(&pairs[EFFORT_LEVELS - 1])
-        .1
+#[derive(Clone, Copy)]
+enum Tone {
+    Low,
+    Medium,
+    High,
+    ExtraHigh,
+    Max,
+    Beyond,
+}
+
+const TONES: usize = Tone::Beyond as usize + 1;
+
+const LIGHT_TONES: [Pair; TONES] = [
+    ([70.0, 100.0, 97.0], [72.0, 92.0, 114.0]),
+    ([71.0, 90.0, 115.0], [77.0, 85.0, 117.0]),
+    ([75.0, 84.0, 118.0], [90.0, 81.0, 117.0]),
+    ([88.0, 80.0, 118.0], [102.0, 78.0, 116.0]),
+    ([102.0, 78.0, 116.0], [114.0, 80.0, 114.0]),
+    ([116.0, 80.0, 117.0], [128.0, 93.0, 121.0]),
+];
+
+const DARK_TONES: [Pair; TONES] = [
+    ([120.0, 172.0, 168.0], [124.0, 158.0, 196.0]),
+    ([122.0, 156.0, 198.0], [132.0, 146.0, 202.0]),
+    ([130.0, 144.0, 204.0], [156.0, 140.0, 202.0]),
+    ([152.0, 138.0, 204.0], [176.0, 134.0, 200.0]),
+    ([176.0, 134.0, 200.0], [196.0, 138.0, 196.0]),
+    ([200.0, 138.0, 202.0], [220.0, 160.0, 208.0]),
+];
+
+impl Tone {
+    fn of(effort: &str) -> Tone {
+        match effort {
+            "low" | "auto" => Tone::Low,
+            "medium" => Tone::Medium,
+            "high" => Tone::High,
+            "xhigh" => Tone::ExtraHigh,
+            "max" => Tone::Max,
+            _ => Tone::Beyond,
+        }
+    }
+
+    fn pair(self, light: bool) -> Pair {
+        let tones = if light { &LIGHT_TONES } else { &DARK_TONES };
+        tones[self as usize]
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum QuotaWindow {
+    FiveHour,
+    SevenDay,
+}
+
+impl QuotaWindow {
+    fn label(self) -> &'static str {
+        match self {
+            QuotaWindow::FiveHour => "5h",
+            QuotaWindow::SevenDay => "7d",
+        }
+    }
 }
 
 fn lerp(a: Rgb, b: Rgb, t: f64) -> Rgb {
@@ -232,16 +275,13 @@ impl Out<'_> {
         self.value(&text, pct, last);
     }
 
-    fn quota(
-        &mut self,
-        name: &str,
-        quota: Option<Quota>,
-        palette: Palette,
-        gradient: f64,
-        now: f64,
-    ) {
+    fn quota(&mut self, window: QuotaWindow, quota: Option<Quota>, now: f64) {
+        let (palette, gradient) = match window {
+            QuotaWindow::FiveHour => (self.cfg.pal_5h, self.cfg.grad_5h),
+            QuotaWindow::SevenDay => (self.cfg.pal_7d, self.cfg.grad_7d),
+        };
         let quota = quota.unwrap_or_default();
-        self.label(name);
+        self.label(window.label());
         self.line.push(' ');
         let start = match quota.pct {
             Some(p) if p >= self.cfg.quota_hot => palette.hot,
@@ -253,8 +293,8 @@ impl Out<'_> {
         self.value(&pct_text(quota.pct), quota.pct, last);
         if let Some(at) = quota.at {
             self.line.push(' ');
-            self.label(&reset_text(at - now, name == "7d"));
-        } else if name == "5h" {
+            self.label(&reset_text(at - now, window == QuotaWindow::SevenDay));
+        } else if window == QuotaWindow::FiveHour {
             self.line.push(' ');
             self.label("--");
         }
@@ -269,16 +309,13 @@ impl Out<'_> {
         let Some(level) = data.effort.as_deref() else {
             return;
         };
-        let mut key = level.to_lowercase();
-        if key == "auto" {
-            key = String::from("low");
-        }
+        let key = level.to_lowercase();
         let word = if key == "ultracode" {
             format!("{}(+workflows)", level)
         } else {
             String::from(level)
         };
-        let (start, end) = effort_pair(self.col.light, &key);
+        let (start, end) = Tone::of(&key).pair(self.col.light);
         self.label(":");
         if self.cfg.effort_flat {
             self.strong(&word, end);
@@ -430,14 +467,14 @@ pub fn render(cfg: &Config, col: &Colors, data: &Data, now: f64) -> String {
         out.sep(&mut first);
         out.ctx(data);
     }
-    if let Some((q5, q7)) = data.quotas {
+    if let Some(quotas) = data.quotas {
         if cfg.seg_5h {
             out.sep(&mut first);
-            out.quota("5h", q5, cfg.pal_5h, cfg.grad_5h, now);
+            out.quota(QuotaWindow::FiveHour, quotas.five_hour, now);
         }
         if cfg.seg_7d {
             out.sep(&mut first);
-            out.quota("7d", q7, cfg.pal_7d, cfg.grad_7d, now);
+            out.quota(QuotaWindow::SevenDay, quotas.seven_day, now);
         }
     }
     if cfg.seg_model {
@@ -526,16 +563,16 @@ mod tests {
                 tokens: Some(60_000),
             },
             window: Some(200_000),
-            quotas: Some((
-                Some(Quota {
+            quotas: Some(Quotas {
+                five_hour: Some(Quota {
                     pct: Some(36.0),
                     at: Some(NOW + 3600.0),
                 }),
-                Some(Quota {
+                seven_day: Some(Quota {
                     pct: Some(81.0),
                     at: Some(NOW + 200_000.0),
                 }),
-            )),
+            }),
             model: String::from("Opus 4"),
             effort: Some(String::from("high")),
             sys: alloc::vec![
@@ -566,7 +603,10 @@ mod tests {
 
     fn quota_only(pct: Option<f64>) -> String {
         let mut data = sample();
-        data.quotas = Some((Some(Quota { pct, at: None }), None));
+        data.quotas = Some(Quotas {
+            five_hour: Some(Quota { pct, at: None }),
+            seven_day: None,
+        });
         data.sys.clear();
         data.updating = false;
         let only_5h = "{\"segments\": {\"ctx\": false, \"7d\": false, \"model\": false}}";

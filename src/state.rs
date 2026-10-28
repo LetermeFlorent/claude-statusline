@@ -1,4 +1,4 @@
-use crate::render::Quota;
+use crate::render::{Quota, Quotas};
 use crate::session::Live;
 use alloc::format;
 use alloc::string::String;
@@ -104,7 +104,7 @@ impl State {
         live: Option<(Option<Live>, Option<Live>)>,
         now: f64,
         tag: &str,
-    ) -> Option<(Option<Quota>, Option<Quota>)> {
+    ) -> Option<Quotas> {
         if let Some((five, seven)) = live {
             for k in ["q_at", "q5_at", "q5_pct", "q7_at", "q7_pct"] {
                 // Cles de la version 1, sans compte
@@ -120,18 +120,24 @@ impl State {
                     }
                 }
             }
-            return Some((five.map(|w| w.quota()), seven.map(|w| w.quota())));
+            return Some(Quotas {
+                five_hour: five.map(|w| w.quota()),
+                seven_day: seven.map(|w| w.quota()),
+            });
         }
         let q_at = self.num(&format!("q_at@{}", tag))?;
         if !(now - q_at < FRESH) {
             return None;
         }
-        let q5 = self.stored("q5", tag, FIVE_HOUR_PERIOD, now);
-        let q7 = self.stored("q7", tag, SEVEN_DAY_PERIOD, now);
-        if q5.is_none() && q7.is_none() {
+        let five_hour = self.stored("q5", tag, FIVE_HOUR_PERIOD, now);
+        let seven_day = self.stored("q7", tag, SEVEN_DAY_PERIOD, now);
+        if five_hour.is_none() && seven_day.is_none() {
             return None;
         }
-        Some((q5, q7))
+        Some(Quotas {
+            five_hour,
+            seven_day,
+        })
     }
 
     fn stored(&self, prefix: &str, tag: &str, period: f64, now: f64) -> Option<Quota> {
@@ -205,32 +211,32 @@ mod tests {
 
     #[test]
     fn fichier() {
-        let mut s = State::parse("z 1\r\nq5_at  12\na b c\n");
-        assert_eq!(s.get("a"), Some("b c"));
-        assert_eq!(s.num("q5_at"), None);
-        assert!(!s.changed());
-        s.set("b", "2");
-        assert_eq!(s.text(), "a b c\nb 2\nq5_at  12\nz 1\n");
-        assert!(s.changed());
+        let mut state = State::parse("z 1\r\nq5_at  12\na b c\n");
+        assert_eq!(state.get("a"), Some("b c"));
+        assert_eq!(state.num("q5_at"), None);
+        assert!(!state.changed());
+        state.set("b", "2");
+        assert_eq!(state.text(), "a b c\nb 2\nq5_at  12\nz 1\n");
+        assert!(state.changed());
     }
 
     #[test]
     fn quotas() {
         let now = 1_800_000_000.0;
-        let mut s = State::parse("q_at@a 1799999999\nq5_at@a 1799990000\nq5_pct@a 40\n");
-        let (q5, q7) = s.quotas(None, now, "a").unwrap();
+        let mut state = State::parse("q_at@a 1799999999\nq5_at@a 1799990000\nq5_pct@a 40\n");
+        let quotas = state.quotas(None, now, "a").unwrap();
         assert_eq!(
-            q5,
+            quotas.five_hour,
             Some(Quota {
                 pct: None,
                 at: Some(1_800_008_000.0)
             })
         );
-        assert_eq!(q7, None);
+        assert_eq!(quotas.seven_day, None);
         // Les quotas d'un autre compte ne servent pas
-        assert!(s.quotas(None, now, "b").is_none());
-        let mut s = State::parse("q_at@a 1\nq5_at@a 2000000\n");
-        assert!(s.quotas(None, now, "a").is_none());
+        assert!(state.quotas(None, now, "b").is_none());
+        let mut state = State::parse("q_at@a 1\nq5_at@a 2000000\n");
+        assert!(state.quotas(None, now, "a").is_none());
         let live = Some((
             Some(Live {
                 pct: Some(10.5),
@@ -238,10 +244,10 @@ mod tests {
             }),
             None,
         ));
-        let mut s = State::parse("q7_pct 3\nq7_pct@a 3\nq7_pct@b 4\nq7_x 2\nx 1\n");
-        s.quotas(live, now, "a");
+        let mut state = State::parse("q7_pct 3\nq7_pct@a 3\nq7_pct@b 4\nq7_x 2\nx 1\n");
+        state.quotas(live, now, "a");
         assert_eq!(
-            s.text(),
+            state.text(),
             "q5_at@a 1791373904.7\nq5_pct@a 10.5\nq7_pct@b 4\nq7_x 2\nq_at@a 1800000000\nx 1\n"
         );
     }
@@ -286,10 +292,10 @@ mod tests {
 
     #[test]
     fn compteurs() {
-        let mut s = State::parse("cpu_clock 100\ncpu_value 10\n");
-        assert_eq!(s.counter("cpu", Some((200, 60))), Some(50.0));
-        assert_eq!(s.counter("cpu", Some((200, 70))), None);
-        assert_eq!(s.counter("io", None), None);
-        assert_eq!(s.get("cpu_value"), Some("70"));
+        let mut state = State::parse("cpu_clock 100\ncpu_value 10\n");
+        assert_eq!(state.counter("cpu", Some((200, 60))), Some(50.0));
+        assert_eq!(state.counter("cpu", Some((200, 70))), None);
+        assert_eq!(state.counter("io", None), None);
+        assert_eq!(state.get("cpu_value"), Some("70"));
     }
 }
