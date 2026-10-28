@@ -2,14 +2,19 @@ use crate::os;
 use alloc::format;
 use alloc::string::String;
 
+const SHELL_SAFE_PUNCTUATION: &str = "_./:@%+=,-";
+
 fn slashes(path: &str) -> String {
+    if !cfg!(windows) {
+        return String::from(path);
+    }
     let s = path.replace('\\', "/");
     let b = s.as_bytes();
     let msys_drive = b.len() >= 2
         && b[0] == b'/'
         && b[1].is_ascii_alphabetic()
         && (b.len() == 2 || b[2] == b'/');
-    if cfg!(windows) && msys_drive {
+    if msys_drive {
         return format!("{}:{}", &s[1..2], &s[2..]);
     }
     s
@@ -60,16 +65,66 @@ fn tilde_is_home() -> bool {
         .is_none_or(|h| same(&trimmed(&h), &trimmed(&home)))
 }
 
+fn shell_safe(text: &str) -> bool {
+    !text.is_empty()
+        && text
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || SHELL_SAFE_PUNCTUATION.contains(c))
+}
+
+fn quoted(text: &str) -> String {
+    if shell_safe(text) {
+        return String::from(text);
+    }
+    format!("'{}'", text.replace('\'', r"'\''"))
+}
+
 pub fn command(exe: &str) -> String {
     match home_rest(exe).filter(|_| tilde_is_home()) {
-        Some(rest) if !rest.contains([' ', '\t']) => format!("~/{}", rest),
-        _ => exe.replace('\\', "/"),
+        Some(rest) if shell_safe(&rest) => format!("~/{}", rest),
+        _ => quoted(&slashes(exe)),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unsafe_paths_are_single_quoted() {
+        assert_eq!(command("/opt/statusline"), "/opt/statusline");
+        assert_eq!(
+            command("/opt/my tools/statusline"),
+            "'/opt/my tools/statusline'"
+        );
+        assert_eq!(
+            command("/opt/it's $HOME/statusline"),
+            r"'/opt/it'\''s $HOME/statusline'"
+        );
+        let backslash = if cfg!(windows) {
+            "/opt/a/statusline"
+        } else {
+            r"'/opt/a\statusline'"
+        };
+        assert_eq!(command(r"/opt/a\statusline"), backslash);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn awkward_folders_still_run_through_sh() {
+        let sandbox = crate::sandbox::Sandbox::new("quote");
+        let folder = sandbox.path("a b'c$d");
+        std::fs::create_dir(&folder).unwrap();
+        let program = os::join(&folder, &["statusline"]);
+        std::os::unix::fs::symlink("/bin/echo", &program).unwrap();
+        let line = format!("{} ok", command(&program));
+        let output = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&line)
+            .output()
+            .unwrap();
+        assert_eq!(output.stdout, b"ok\n");
+    }
 
     #[test]
     fn chemins() {
