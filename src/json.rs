@@ -329,7 +329,6 @@ impl Parser<'_> {
     }
 }
 
-// Ecriture indentee de 2 espaces, cles triees, comme serde_json avec une BTreeMap
 pub fn pretty(v: &Value) -> String {
     let mut out = String::new();
     write_value(v, 0, &mut out);
