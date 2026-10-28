@@ -64,7 +64,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn arrondis() {
+    fn round_floor_and_ceil_behave_like_f64() {
         assert_eq!(round(2.5), 3.0);
         assert_eq!(round(-2.5), -3.0);
         assert_eq!(round(0.49999999999999994), 0.0);

@@ -281,7 +281,7 @@ mod tests {
     }
 
     #[test]
-    fn chemins() {
+    fn paths_strictly_inside_home_become_relative() {
         assert_eq!(
             under("/home/a/.claude/bin/statusline", "/home/a").as_deref(),
             Some(".claude/bin/statusline")

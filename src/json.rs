@@ -452,7 +452,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lecture() {
+    fn tolerant_syntax_reads_loose_json() {
         let parsed = parse(
             "{\"a\":1,\"a\":2,\"s\":\"\\u00e9\\ud83d\\ude00\"}",
             Syntax::Tolerant,
@@ -492,7 +492,7 @@ mod tests {
     }
 
     #[test]
-    fn ecriture() {
+    fn pretty_keeps_key_order_and_number_text() {
         let document = parse(
             "{\"b\":[1,2.50],\"a\":{},\"c\":\"x\\u0001\\\"\",\"d\":[]}",
             Syntax::Tolerant,

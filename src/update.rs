@@ -236,7 +236,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn noms() {
+    fn staging_name_puts_new_before_the_extension() {
         assert_eq!(
             staging("C:\\a\\statusline.exe"),
             "C:\\a\\statusline.new.exe"

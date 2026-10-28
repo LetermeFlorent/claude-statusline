@@ -269,7 +269,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn valeurs() {
+    fn values_are_clamped_and_bad_ones_ignored() {
         let c = Config::parse(Some("{\"bar_width\": 2.7, \"bold\": 0, \"glyphs\": {\"empty\": \"\"}, // x\n \"system\": {\"metrics\": [\"io\", \"RAM\", \"io\"]},}"));
         assert_eq!(c.width, 2);
         assert!(c.bold);

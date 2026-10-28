@@ -500,7 +500,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn textes() {
+    fn labels_shorten_and_cells_stay_within_the_bar() {
         assert_eq!(tokens(2500), "2k");
         assert_eq!(tokens(3500), "4k");
         assert_eq!(tokens(999), "999");

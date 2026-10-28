@@ -89,7 +89,7 @@ mod tests {
     }
 
     #[test]
-    fn reglages() {
+    fn reads_compact_window_from_settings() {
         let read = |f: &str| match f {
             "a" => Some(String::from("{\"autoCompactWindow\": 1.5e5}")),
             "b" => Some(String::from(

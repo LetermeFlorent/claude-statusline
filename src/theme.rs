@@ -398,7 +398,7 @@ mod tests {
     }
 
     #[test]
-    fn terminaux() {
+    fn terminal_settings_map_to_light_dark_or_system() {
         assert_eq!(colorfgbg("0;15"), Some(true));
         assert_eq!(colorfgbg("15;0"), Some(false));
         assert_eq!(colorfgbg("15;default;7"), Some(true));

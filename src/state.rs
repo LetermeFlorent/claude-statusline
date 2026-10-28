@@ -201,7 +201,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fichier() {
+    fn lines_come_back_sorted_and_changes_are_tracked() {
         let mut state = State::parse("z 1\r\nq5_at  12\na b c\n");
         assert_eq!(state.get("a"), Some("b c"));
         assert_eq!(state.num("q5_at"), None);
@@ -273,7 +273,7 @@ mod tests {
     }
 
     #[test]
-    fn comptes() {
+    fn account_tag_comes_from_the_config_folder() {
         assert_eq!(account_tag("C:\\Users\\u\\.claude"), "claude");
         assert_eq!(account_tag("/home/u/.claude-compte2/"), "claude-compte2");
         assert_eq!(account_tag("/home/u/.Claude Work/"), "claude_work");
@@ -281,7 +281,7 @@ mod tests {
     }
 
     #[test]
-    fn compteurs() {
+    fn counter_percent_comes_from_the_previous_reading() {
         let mut state = State::parse("cpu_clock 100\ncpu_value 10\n");
         assert_eq!(state.counter("cpu", Some((200, 60))), Some(50.0));
         assert_eq!(state.counter("cpu", Some((200, 70))), None);

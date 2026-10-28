@@ -113,7 +113,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lecture() {
+    fn reads_model_effort_tokens_and_rate_limits() {
         let session = Session::parse("{\"model\":{\"display_name\":\"Opus 4 (1M context)\"},\"effort\":{\"level\":\" high \"}}");
         assert_eq!(session.model, "Opus 4");
         assert_eq!(session.effort.as_deref(), Some("high"));
