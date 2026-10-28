@@ -219,7 +219,7 @@ Une variable vide compte comme absente.
 cargo build --release
 ```
 
-Le binaire sort dans `target/release`. Sous Windows, `.cargo/config.toml` lie le programme avec `rust-lld` sans la bibliothèque C, et rien d'autre que Rust n'est nécessaire. Seule la cible `x86_64-pc-windows-msvc` y est prévue. Le profil de publication active `lto`, `panic = "abort"` et retire les symboles.
+Le binaire sort dans `target/release`. Sous Windows, `.cargo/config.toml` lie le programme avec `rust-lld` sans la bibliothèque C, et rien d'autre que Rust n'est nécessaire. Seule la cible `x86_64-pc-windows-msvc` y est prévue. Le même fichier active la protection CET (`/CETCOMPAT`), remplace l'horodatage du binaire par une empreinte de son contenu (`/Brepro`) et ne produit pas de `.pdb` : deux compilations du même code donnent le même fichier, quel que soit le dossier. Le profil de publication active `lto`, `panic = "abort"` et retire les symboles.
 
 Les tests (`cargo test`) tournent tels quels sous Linux et macOS. Sous Windows, ils ont besoin de la bibliothèque C de Visual Studio et d'une variable `RUSTFLAGS` qui remplace les options de liaison du fichier de configuration, comme le fait la CI (`RUSTFLAGS=-Cdebuginfo=0`).
 
@@ -237,10 +237,18 @@ Une étiquette `v*` publie une version avec les binaires ci-dessous. Elle doit r
 | `statusline-macos-x86_64` | macOS Intel |
 | `statusline-windows-x86_64.exe` | Windows 64 bits |
 
+La CI compile avec Rust 1.99.1, fixé par la variable `RUSTUP_TOOLCHAIN` du workflow. Chaque version publie aussi `SHA256SUMS`, qui donne l'empreinte SHA-256 de chaque binaire, et une attestation de provenance qui relie chaque fichier au workflow qui l'a compilé. Pour vérifier un binaire téléchargé avec GitHub CLI :
+
+```sh
+gh attestation verify statusline-linux-x86_64 --repo LetermeFlorent/claude-statusline
+```
+
+Sous Linux, `sha256sum -c SHA256SUMS --ignore-missing` compare aussi les binaires présents dans le dossier à la liste.
+
 `install.sh` télécharge le fichier de son système dans la dernière version publiée. Sous Windows, `install.ps1` utilise le binaire `bin/statusline.exe` du dépôt, qui est le même programme.
 
 ## Limites
 
-Le binaire macOS Intel est compilé par la CI sans y être lancé. Il n'y a pas de binaire Windows ARM64 natif. Sur les autres Unix (BSD par exemple), la barre fonctionne sans métriques du poste, sans thème du système et sans mise à jour automatique : `--%` partout sur la seconde ligne et fond sombre, sauf réglage. La mise à jour automatique demande `curl`, livré avec Windows 10 depuis la version 1803 et avec macOS, à installer sur certains Linux.
+Le binaire macOS Intel est compilé par la CI sans y être lancé. Il n'y a pas de binaire Windows ARM64 natif. Le binaire Linux arm64 se charge toujours à la même adresse : Rust ne sait pas encore produire d'exécutable statique indépendant de la position pour la cible `aarch64-unknown-linux-musl`. Sur les autres Unix (BSD par exemple), la barre fonctionne sans métriques du poste, sans thème du système et sans mise à jour automatique : `--%` partout sur la seconde ligne et fond sombre, sauf réglage. La mise à jour automatique demande `curl`, livré avec Windows 10 depuis la version 1803 et avec macOS, à installer sur certains Linux.
 
 Les couleurs sont envoyées en 24 bits, sans repli sur 256 couleurs, et la variable `NO_COLOR` n'est pas prise en compte. La détection du fond par le terminal hôte couvre VS Code et ses dérivés, Windows Terminal, Zed et Ghostty. Les autres terminaux passent par `COLORFGBG` ou le thème du système, et `STATUSLINE_BG` permet de forcer le choix.
