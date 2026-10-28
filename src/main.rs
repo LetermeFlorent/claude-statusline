@@ -13,6 +13,7 @@ mod json;
 mod messages;
 mod num;
 mod os;
+mod plain;
 mod portable;
 mod render;
 #[cfg(test)]

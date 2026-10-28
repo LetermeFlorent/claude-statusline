@@ -4,6 +4,7 @@ use crate::config::{Config, Metric};
 use crate::global_config::{self, Repair};
 use crate::messages;
 use crate::os::{self, Contents};
+use crate::plain;
 use crate::portable;
 use crate::render::{self, Data, SysValue};
 use crate::session::Session;
@@ -210,6 +211,11 @@ fn run(input: &str, now: f64, laps: &mut Laps) -> (String, State, bool) {
         updating,
     };
     let out = render::render(&cfg, &cfg.colors(light), &data, now);
+    let out = if plain::wanted(&os::env) {
+        plain::strip(&out)
+    } else {
+        out
+    };
     laps.lap(Stage::Render);
     (out, state, cfg.auto_update)
 }

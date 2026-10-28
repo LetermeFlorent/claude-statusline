@@ -126,6 +126,12 @@ jobs:
           cp "$b" "$HOME/.claude/bin/statusline$ext"
           "$HOME/.claude/bin/statusline$ext" --install
           grep -q "\"~/.claude/bin/statusline$ext\"" "$HOME/.claude/settings.json"
+          plain=$(NO_COLOR=1 "$b" --demo)
+          dumb=$(env -u NO_COLOR TERM=dumb "$b" --demo)
+          colored=$(env -u NO_COLOR TERM=xterm-256color "$b" --demo)
+          case "$plain$dumb" in *$'\033'*) exit 1 ;; esac
+          case "$colored" in *$'\033'*) ;; *) exit 1 ;; esac
+          echo "$plain" | grep -q ctx
           set +e
           "$b" --no-such-flag 2>/dev/null
           [ $? -eq 2 ] || exit 1
