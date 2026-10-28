@@ -4,8 +4,6 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-// Fichier d'etat : une ligne "cle valeur" par entree, triees par cle.
-// Les cles inconnues sont gardees telles quelles.
 pub struct State {
     map: Vec<(String, String)>,
     loaded: String,
@@ -96,9 +94,6 @@ impl State {
         self.text() != self.loaded
     }
 
-    // Quotas : ceux de Claude Code s'il les envoie (et on les garde), sinon
-    // ceux du fichier s'ils ont moins de 10 minutes, avances jusqu'au prochain reset.
-    // Le fichier sert a tous les comptes : chaque cle porte le suffixe @<tag> du compte.
     pub fn quotas(
         &mut self,
         live: Option<(Option<Live>, Option<Live>)>,
@@ -106,10 +101,9 @@ impl State {
         tag: &str,
     ) -> Option<Quotas> {
         if let Some((five, seven)) = live {
-            for k in ["q_at", "q5_at", "q5_pct", "q7_at", "q7_pct"] {
-                // Cles de la version 1, sans compte
-                self.remove(k);
-                self.remove(&format!("{}@{}", k, tag));
+            for key in ["q_at", "q5_at", "q5_pct", "q7_at", "q7_pct"] {
+                self.remove(key);
+                self.remove(&format!("{}@{}", key, tag));
             }
             self.set(&format!("q_at@{}", tag), &format!("{}", now as i64));
             for (window, prefix) in [(five, "q5"), (seven, "q7")] {
@@ -155,7 +149,6 @@ impl State {
         })
     }
 
-    // Pourcentage d'un compteur systeme par difference avec le releve precedent
     pub fn counter(&mut self, name: &str, current: Option<(i64, i64)>) -> Option<f64> {
         let clock_key = format!("{}_clock", name);
         let value_key = format!("{}_value", name);
@@ -178,9 +171,7 @@ impl State {
     }
 }
 
-// Tag du compte tire de son dossier de config : ".claude-compte2" => "claude-compte2".
-// Le hook SessionStart de claude-account-menu calcule le meme.
-pub fn tag(dir: &str) -> String {
+pub fn account_tag(dir: &str) -> String {
     let leaf = dir
         .trim_end_matches(['/', '\\'])
         .rsplit(['/', '\\'])
@@ -233,7 +224,6 @@ mod tests {
             })
         );
         assert_eq!(quotas.seven_day, None);
-        // Les quotas d'un autre compte ne servent pas
         assert!(state.quotas(None, now, "b").is_none());
         let mut state = State::parse("q_at@a 1\nq5_at@a 2000000\n");
         assert!(state.quotas(None, now, "a").is_none());
@@ -284,10 +274,10 @@ mod tests {
 
     #[test]
     fn comptes() {
-        assert_eq!(tag("C:\\Users\\u\\.claude"), "claude");
-        assert_eq!(tag("/home/u/.claude-compte2/"), "claude-compte2");
-        assert_eq!(tag("/home/u/.Claude Work/"), "claude_work");
-        assert_eq!(tag(""), "claude");
+        assert_eq!(account_tag("C:\\Users\\u\\.claude"), "claude");
+        assert_eq!(account_tag("/home/u/.claude-compte2/"), "claude-compte2");
+        assert_eq!(account_tag("/home/u/.Claude Work/"), "claude_work");
+        assert_eq!(account_tag(""), "claude");
     }
 
     #[test]

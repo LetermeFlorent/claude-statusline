@@ -3,12 +3,10 @@ use crate::num;
 use crate::render::{label_text, Ctx, Quota};
 use alloc::string::String;
 
-// Ce que Claude Code envoie sur l'entree standard
 pub struct Session {
     pub model: String,
     pub effort: Option<String>,
     pub ctx: Ctx,
-    // Some des que five_hour ou seven_day est present, meme nul : les quotas viennent alors de Claude Code
     pub live: Option<(Option<Live>, Option<Live>)>,
     pub cwd: Option<String>,
 }
@@ -47,7 +45,6 @@ fn model_name(model: Option<&Value>) -> String {
     }
 }
 
-// Somme des jetons d'entree ; un champ present mais invalide annule tout
 fn usage_tokens(current_usage: Option<&Value>) -> Option<u64> {
     let current_usage = current_usage?;
     if *current_usage == Value::Null {

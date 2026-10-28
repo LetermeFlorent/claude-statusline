@@ -4,13 +4,12 @@ use crate::state::{fingerprint, State};
 use alloc::format;
 use alloc::string::String;
 
+const RECHECK_AFTER: f64 = 30.0;
+
 fn positive(s: &str) -> Option<u64> {
     s.trim().parse::<u64>().ok().filter(|n| *n > 0)
 }
 
-// Fenetre d'auto-compactage : la variable d'environnement d'abord, sinon les
-// reglages (dossier de config, puis projet, puis projet local), relus seulement
-// quand leur taille ou leur date change.
 pub fn window(
     env: Option<&str>,
     files: &[String; 3],
@@ -26,12 +25,10 @@ pub fn window(
         .get("compact_window")
         .and_then(|s| s.parse::<u64>().ok())
         .filter(|n| *n > 0);
-    // Plusieurs sessions dans des dossiers differents partagent l'etat : le cache
-    // ne vaut que pour le meme trio de fichiers
-    let key = fingerprint(files.iter().map(String::as_str));
-    let same = state.get("compact_key") == Some(key.as_str());
-    if let Some(at) = state.num("compact_at").filter(|_| same) {
-        if now - at < 30.0 {
+    let files_key = fingerprint(files.iter().map(String::as_str));
+    let same_files = state.get("compact_key") == Some(files_key.as_str());
+    if let Some(at) = state.num("compact_at").filter(|_| same_files) {
+        if now - at < RECHECK_AFTER {
             return cached;
         }
     }
@@ -43,7 +40,7 @@ pub fn window(
         }
     }
     let now_s = format!("{}", now as i64);
-    if same && state.get("compact_stamp") == Some(stamp.as_str()) {
+    if same_files && state.get("compact_stamp") == Some(stamp.as_str()) {
         state.set("compact_at", &now_s);
         return cached;
     }
@@ -73,7 +70,7 @@ pub fn window(
             }
         }
     }
-    state.set("compact_key", &key);
+    state.set("compact_key", &files_key);
     state.set("compact_stamp", &stamp);
     state.set("compact_at", &now_s);
     match configured {
@@ -107,26 +104,23 @@ mod tests {
             Some(90000)
         );
         assert_eq!(state.get("compact_stamp"), Some("10:20;10:20;0;"));
-        // Dans les 30 s : aucune lecture
-        let none = |_: &str| -> Option<String> { panic!() };
+        let no_read = |_: &str| -> Option<String> { panic!() };
         assert_eq!(
-            window(None, &files(), &mut state, 1010.0, &stat, &none),
-            Some(90000)
-        );
-        // Fichiers inchanges : pas de relecture
-        assert_eq!(
-            window(None, &files(), &mut state, 2000.0, &stat, &none),
+            window(None, &files(), &mut state, 1010.0, &stat, &no_read),
             Some(90000)
         );
         assert_eq!(
-            window(Some(" 5 "), &files(), &mut state, 2000.0, &stat, &none),
+            window(None, &files(), &mut state, 2000.0, &stat, &no_read),
+            Some(90000)
+        );
+        assert_eq!(
+            window(Some(" 5 "), &files(), &mut state, 2000.0, &stat, &no_read),
             Some(5)
         );
-        // Autre dossier de travail, meme dans les 30 s : relu
-        let other = [String::from("a"), String::from("x"), String::from("y")];
+        let other_folder = [String::from("a"), String::from("x"), String::from("y")];
         let only_a = |f: &str| if f == "a" { read(f) } else { None };
         assert_eq!(
-            window(None, &other, &mut state, 2001.0, &stat, &only_a),
+            window(None, &other_folder, &mut state, 2001.0, &stat, &only_a),
             Some(150000)
         );
         assert_eq!(

@@ -1,6 +1,5 @@
 #![cfg_attr(all(windows, not(test)), no_std)]
 #![cfg_attr(all(windows, not(test)), no_main)]
-// Les comparaisons niees laissent passer NaN du bon cote, voulu
 #![allow(clippy::neg_cmp_op_on_partial_ord)]
 
 extern crate alloc;

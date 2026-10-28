@@ -6,12 +6,6 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-// Fond clair ou sombre. L'ordre : STATUSLINE_BG, le reglage terminal_background,
-// COLORFGBG, puis le terminal hote (VS Code et derives, Windows Terminal, Zed,
-// Ghostty) avec le theme du systeme en repli, et sombre si rien ne repond.
-// Le resultat de la detection est garde dans l'etat tant que les fichiers lus
-// et le theme du systeme ne bougent pas.
-
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Mode {
     Light,
@@ -68,8 +62,7 @@ fn name_mode(name: &str) -> Mode {
     }
 }
 
-// Cle a plat ("workbench.colorTheme") comme l'ecrit VS Code, sinon imbriquee
-fn dotted<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
+fn flat_or_nested<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
     v.get(key).or_else(|| {
         let parts: Vec<&str> = key.split('.').collect();
         v.at(&parts)
@@ -77,10 +70,10 @@ fn dotted<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
 }
 
 pub fn vscode(v: &Value) -> Mode {
-    if dotted(v, "window.autoDetectColorScheme").and_then(|x| x.bool()) == Some(true) {
+    if flat_or_nested(v, "window.autoDetectColorScheme").and_then(|x| x.bool()) == Some(true) {
         return Mode::System;
     }
-    match dotted(v, "workbench.colorTheme").and_then(|x| x.str()) {
+    match flat_or_nested(v, "workbench.colorTheme").and_then(|x| x.str()) {
         Some(t) => name_mode(t),
         None => Mode::Dark,
     }
@@ -214,8 +207,7 @@ fn vscode_files() -> Vec<String> {
         config_home()
     };
     let Some(base) = base else { return Vec::new() };
-    // Le produit qui a lance le terminal passe en premier
-    let hint = [
+    let launcher_hint = [
         "VSCODE_GIT_ASKPASS_NODE",
         "VSCODE_GIT_ASKPASS_MAIN",
         "VSCODE_CWD",
@@ -225,13 +217,13 @@ fn vscode_files() -> Vec<String> {
     .map(|s| s.to_lowercase())
     .collect::<Vec<_>>()
     .join(" ");
-    let first = if hint.contains("cursor") {
+    let first = if launcher_hint.contains("cursor") {
         3
-    } else if hint.contains("windsurf") {
+    } else if launcher_hint.contains("windsurf") {
         4
-    } else if hint.contains("vscodium") {
+    } else if launcher_hint.contains("vscodium") {
         2
-    } else if hint.contains("insiders") {
+    } else if launcher_hint.contains("insiders") {
         1
     } else {
         0
@@ -244,6 +236,10 @@ fn vscode_files() -> Vec<String> {
         .collect()
 }
 
+fn stable_before_preview(names: &mut [String]) {
+    names.sort_by_key(|name| (name.len(), name.clone()));
+}
+
 fn wt_files() -> Vec<String> {
     let mut out = Vec::new();
     let Some(local) = os::env("LOCALAPPDATA")
@@ -254,8 +250,7 @@ fn wt_files() -> Vec<String> {
     };
     let packages = os::join(&local, &["Packages"]);
     let mut names = os::list(&packages, "Microsoft.WindowsTerminal");
-    // La version stable avant Preview et Canary
-    names.sort_by_key(|n| (n.len(), n.clone()));
+    stable_before_preview(&mut names);
     for n in names {
         out.push(os::join(&packages, &[&n, "LocalState", "settings.json"]));
     }
@@ -337,17 +332,17 @@ fn host_mode(terminal: Host, files: &[String]) -> Mode {
     }
 }
 
-// true : fond clair
-pub fn detect(config: Option<bool>, state: &mut State) -> bool {
-    // Cle de la version 1
-    state.remove("bg_at");
+const LEGACY_BACKGROUND_KEY: &str = "bg_at";
+
+pub fn detect_light(light_override: Option<bool>, state: &mut State) -> bool {
+    state.remove(LEGACY_BACKGROUND_KEY);
     if let Some(b) = os::env("STATUSLINE_BG")
         .as_deref()
         .and_then(background_word)
     {
         return b;
     }
-    if let Some(b) = config {
+    if let Some(b) = light_override {
         return b;
     }
     if let Some(b) = os::env("COLORFGBG").as_deref().and_then(colorfgbg) {

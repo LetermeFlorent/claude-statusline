@@ -22,8 +22,7 @@ pub struct Palette {
 
 pub struct Config {
     raw: Value,
-    // Some(true) : clair force, Some(false) : sombre force, None : detection
-    pub background: Option<bool>,
+    pub light_override: Option<bool>,
     pub width: usize,
     pub bold: bool,
     pub filled: String,
@@ -69,7 +68,6 @@ pub const DEFAULT_DISK: &str = "C:\\";
 #[cfg(not(windows))]
 pub const DEFAULT_DISK: &str = "/";
 
-// light/clair ou dark/sombre, casse ignoree
 pub fn background_word(s: &str) -> Option<bool> {
     let w = s.trim().to_lowercase();
     match w.as_str() {
@@ -132,7 +130,7 @@ impl Config {
             .and_then(|t| json::parse(t, Syntax::Commented))
             .filter(|v| v.is_obj())
             .unwrap_or(Value::Obj(Vec::new()));
-        let background = raw
+        let light_override = raw
             .get("terminal_background")
             .and_then(|v| v.str())
             .and_then(background_word);
@@ -159,7 +157,7 @@ impl Config {
             _ => String::from(DEFAULT_DISK),
         };
         Config {
-            background,
+            light_override,
             width,
             bold: raw.get("bold").and_then(|v| v.bool()) != Some(false),
             filled: glyph(&raw, "filled", "\u{25A0}"),
@@ -250,7 +248,6 @@ impl Config {
         }
     }
 
-    // Lettre du lecteur sous Windows ("C:"), "dsk" ailleurs
     pub fn disk_label(&self) -> String {
         if cfg!(windows) {
             let mut label: String = self

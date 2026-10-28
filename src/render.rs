@@ -34,7 +34,6 @@ pub struct SysValue {
 pub struct Data {
     pub ctx: Ctx,
     pub window: Option<u64>,
-    // Les deux segments de quota n'apparaissent que si l'une des fenetres est connue
     pub quotas: Option<Quotas>,
     pub model: String,
     pub effort: Option<String>,
@@ -167,7 +166,6 @@ impl Out<'_> {
         self.strong(text, ink);
     }
 
-    // Une cellule par couleur ; une barre sans valeur est un seul bloc vide
     fn bar(&mut self, pct: Option<f64>, color_at: &dyn Fn(usize, usize) -> Rgb) -> Option<Rgb> {
         let width = self.cfg.width;
         let empty = self.col.empty;
@@ -402,7 +400,6 @@ pub fn cell_count(pct: f64, width: usize) -> usize {
 
 pub fn pct_text(p: Option<f64>) -> String {
     match p {
-        // Une valeur negative s'affiche 0%
         Some(p) => format!("{}%", num::round(p) as u64),
         None => String::from("--%"),
     }
@@ -664,5 +661,10 @@ mod tests {
                 "[b][#e8eaed]5h[/] [#e2e5ea]■■■■■■■■[/] [b][#e8eaed]--%[/] [b][#e8eaed]--[/][/]\n",
             ]
         );
+    }
+
+    #[test]
+    fn negative_percent_reads_zero() {
+        assert_eq!(pct_text(Some(-3.0)), "0%");
     }
 }

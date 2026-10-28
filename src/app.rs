@@ -104,7 +104,6 @@ enum Stage {
 
 const STAGE_COUNT: usize = Stage::Render as usize + 1;
 
-// Temps passe par etape, pour --bench : etat, config, session, rendu
 struct Laps {
     seconds: [f64; STAGE_COUNT],
     last: f64,
@@ -194,11 +193,11 @@ fn run(input: &str, now: f64, laps: &mut Laps) -> (String, State, bool) {
     let session = Session::parse(input);
     laps.lap(Stage::Session);
     let mut state = load_state();
-    let light = theme::detect(cfg.background, &mut state);
+    let light = theme::detect_light(cfg.light_override, &mut state);
     let quotas = state.quotas(
         session.live,
         now,
-        &state::tag(&os::claude_dir().unwrap_or_default()),
+        &state::account_tag(&os::claude_dir().unwrap_or_default()),
     );
     let window = if cfg.seg_ctx {
         let env = os::env("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
@@ -437,7 +436,7 @@ pub fn main(args: Vec<String>) -> i32 {
         Some("--theme") => {
             let cfg = load_config();
             let mut state = load_state();
-            let light = theme::detect(cfg.background, &mut state);
+            let light = theme::detect_light(cfg.light_override, &mut state);
             save_state(&state);
             os::out(if light { "light\n" } else { "dark\n" });
             0

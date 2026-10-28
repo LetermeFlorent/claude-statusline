@@ -5,7 +5,6 @@ use alloc::vec::Vec;
 pub enum Value {
     Null,
     Bool(bool),
-    // Le texte d'origine est garde pour reecrire un nombre tel que l'utilisateur l'a saisi
     Num(f64, String),
     Str(String),
     Arr(Vec<Value>),
@@ -13,7 +12,6 @@ pub enum Value {
 }
 
 impl Value {
-    // Cle en double : la derniere gagne, comme dans l'ancien binaire
     pub fn get(&self, key: &str) -> Option<&Value> {
         match self {
             Value::Obj(m) => m.iter().rev().find(|(k, _)| k == key).map(|(_, v)| v),
@@ -188,9 +186,7 @@ impl Parser<'_> {
         }
     }
 
-    // Les virgules entre elements sont facultatives et peuvent se repeter,
-    // comme dans l'ancien binaire
-    fn seps(&mut self) {
+    fn skip_commas(&mut self) {
         loop {
             self.ws();
             if self.peek() != Some(b',') {
@@ -202,7 +198,7 @@ impl Parser<'_> {
 
     fn item_follows(&mut self, close: u8, first: bool) -> Option<bool> {
         if self.syntax != Syntax::Strict {
-            self.seps();
+            self.skip_commas();
             return Some(self.peek()? != close);
         }
         self.ws();
@@ -309,7 +305,6 @@ impl Parser<'_> {
                                     continue;
                                 }
                             }
-                            // Demi-paire orpheline : abandonnee, comme avant
                             if let Some(ch) = char::from_u32(cp) {
                                 let mut buf = [0u8; 4];
                                 out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
