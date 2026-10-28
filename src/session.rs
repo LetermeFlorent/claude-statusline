@@ -1,6 +1,6 @@
 use crate::json::{self, Value};
 use crate::num;
-use crate::render::{Ctx, Quota};
+use crate::render::{label_text, Ctx, Quota};
 use alloc::string::String;
 
 // Ce que Claude Code envoie sur l'entree standard
@@ -33,9 +33,9 @@ fn model_name(m: Option<&Value>) -> String {
     match m.and_then(|m| m.get("display_name")).and_then(|v| v.str()) {
         Some(s) if !s.is_empty() && s != "Unknown" => {
             let cut = s.find('(').map(|i| &s[..i]).unwrap_or(s);
-            String::from(cut.trim())
+            label_text(cut)
         }
-        _ => String::from(
+        _ => label_text(
             m.and_then(|m| m.get("id"))
                 .and_then(|v| v.str())
                 .unwrap_or("claude"),
@@ -86,7 +86,7 @@ impl Session {
             effort: v
                 .at(&["effort", "level"])
                 .and_then(|x| x.str())
-                .map(|s| String::from(s.trim()))
+                .map(label_text)
                 .filter(|s| !s.is_empty()),
             ctx: Ctx {
                 size: cw
@@ -145,5 +145,33 @@ mod tests {
         assert!(Session::parse("{\"rate_limits\":{\"five_hour\":null}}")
             .live
             .is_some());
+    }
+
+    #[test]
+    fn terminal_controls_are_dropped_from_model_and_effort() {
+        let session = Session::parse(
+            r#"{"model":{"display_name":"Opus\u001b]52;c;aGk=\u0007"},"effort":{"level":"hi\u009bgh\u007f"}}"#,
+        );
+        assert_eq!(session.model, "Opus]52;c;aGk=");
+        assert_eq!(session.effort.as_deref(), Some("high"));
+    }
+
+    #[test]
+    fn bidi_controls_are_dropped() {
+        let session = Session::parse(r#"{"model":{"id":"\u2066claude\u202e-opus\u2069"}}"#);
+        assert_eq!(session.model, "claude-opus");
+    }
+
+    #[test]
+    fn long_model_names_are_capped() {
+        let name = "x".repeat(10_000);
+        let session = Session::parse(&alloc::format!(
+            r#"{{"model":{{"display_name":"{}"}}}}"#,
+            name
+        ));
+        assert_eq!(
+            session.model.chars().count(),
+            crate::render::MAX_LABEL_CHARS
+        );
     }
 }

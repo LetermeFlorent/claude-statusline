@@ -1,5 +1,6 @@
 use crate::json::{self, Value};
 use crate::num;
+use crate::render::printable;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -101,10 +102,7 @@ fn number(v: Option<&Value>, def: f64) -> f64 {
 }
 
 fn glyph(raw: &Value, k: &str, def: &str) -> String {
-    match raw.at(&["glyphs", k]).and_then(|v| v.str()) {
-        Some(s) => String::from(s),
-        None => String::from(def),
-    }
+    printable(raw.at(&["glyphs", k]).and_then(|v| v.str()).unwrap_or(def))
 }
 
 fn shown(raw: &Value, k: &str) -> bool {
@@ -163,7 +161,7 @@ impl Config {
             filled: glyph(&raw, "filled", "\u{25A0}"),
             empty: glyph(&raw, "empty", "\u{25A0}"),
             half: glyph(&raw, "half", "\u{25AA}"),
-            marker: String::from(
+            marker: printable(
                 raw.get("auto_compact_marker")
                     .and_then(|v| v.str())
                     .unwrap_or("\u{AA}"),
@@ -286,5 +284,16 @@ mod tests {
             Some([170.0, 187.0, 204.0])
         );
         assert_eq!(hex(Some(&Value::Str(String::from("#GG0000")))), None);
+    }
+
+    #[test]
+    fn glyphs_lose_terminal_controls() {
+        let config = Config::parse(Some(
+            r#"{"glyphs": {"filled": "\u001b[5m#", "half": "\u202e+", "empty": "\u0085."}, "auto_compact_marker": "\u0007*"}"#,
+        ));
+        assert_eq!(
+            [config.filled, config.half, config.empty, config.marker],
+            ["[5m#", "+", ".", "*"]
+        );
     }
 }

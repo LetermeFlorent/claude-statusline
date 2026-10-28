@@ -4,6 +4,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt::Write;
+use core::ops::RangeInclusive;
 
 #[derive(Clone, Copy, Default, Debug, PartialEq)]
 pub struct Quota {
@@ -38,6 +39,8 @@ pub struct Data {
 const RESET: &str = "\x1b[0m";
 const MAX_TOKENS: u64 = 999_000_000_000;
 const MAX_RESET_SECS: f64 = 99.0 * 86400.0;
+pub const MAX_LABEL_CHARS: usize = 48;
+const BIDI_CONTROLS: [RangeInclusive<u32>; 2] = [0x202A..=0x202E, 0x2066..=0x2069];
 
 type Pair = (Rgb, Rgb);
 
@@ -362,6 +365,26 @@ pub fn reset_text(secs: f64, long: bool) -> String {
         return format!("{}d{:02}h", s / 86400, (s % 86400) / 3600);
     }
     format!("{}h{:02}m", s / 3600, (s % 3600) / 60)
+}
+
+fn is_printable(c: char) -> bool {
+    !c.is_control()
+        && !BIDI_CONTROLS
+            .iter()
+            .any(|range| range.contains(&(c as u32)))
+}
+
+pub fn printable(text: &str) -> String {
+    text.chars().filter(|&c| is_printable(c)).collect()
+}
+
+pub fn label_text(text: &str) -> String {
+    let capped: String = printable(text)
+        .trim()
+        .chars()
+        .take(MAX_LABEL_CHARS)
+        .collect();
+    String::from(capped.trim_end())
 }
 
 pub fn render(cfg: &Config, col: &Colors, d: &Data, now: f64) -> String {
