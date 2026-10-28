@@ -14,6 +14,7 @@ mod os;
 mod portable;
 mod render;
 mod session;
+mod settings;
 mod state;
 mod theme;
 mod update;

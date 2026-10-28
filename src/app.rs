@@ -1,10 +1,10 @@
 use crate::compact;
 use crate::config::{Config, Metric};
-use crate::json::{self, Value};
 use crate::os;
 use crate::portable;
 use crate::render::{self, Data, SysValue};
 use crate::session::Session;
+use crate::settings;
 use crate::state::{self, State};
 use crate::theme;
 use crate::update;
@@ -295,38 +295,26 @@ fn install() -> i32 {
     let Some(exe) = os::exe() else {
         return fail("chemin du binaire introuvable\n");
     };
-    let now = os::now();
-    let mut v = Value::Obj(Vec::new());
-    if let Some(raw) = os::read(&path) {
-        let text = String::from_utf8_lossy(&raw).into_owned();
-        // Un fichier illisible n'est jamais remplace : on s'arrete
-        match json::parse(&text, false).filter(|x| x.is_obj()) {
-            Some(x) => v = x,
-            None => {
-                return fail(&format!(
-                    "reglages illisibles, rien n'est modifie : {}\n",
-                    path
-                ))
-            }
-        }
-        match backup(&path, &raw, now) {
+    let command = portable::command(&exe);
+    let raw = os::read(&path);
+    let current = raw
+        .as_ref()
+        .map(|r| String::from_utf8_lossy(r).into_owned());
+    let Some(next) = settings::with_status_line(current.as_deref(), &command) else {
+        return fail(&format!(
+            "reglages illisibles, rien n'est modifie : {}\n",
+            path
+        ));
+    };
+    if let Some(raw) = raw {
+        match backup(&path, &raw, os::now()) {
             Some(b) => os::out(&format!("sauvegarde : {}\n", b)),
             None => return fail(&format!("ecriture impossible : {}.bak\n", path)),
         }
     } else if let Some(d) = os::parent(&path) {
         os::mkdirs(d);
     }
-    let mut line = match v.get("statusLine") {
-        Some(x) if x.is_obj() => x.clone(),
-        _ => Value::Obj(Vec::new()),
-    };
-    line.set("type", Value::Str(String::from("command")));
-    line.set("command", Value::Str(portable::command(&exe)));
-    if line.get("refreshInterval").is_none() {
-        line.set("refreshInterval", Value::Num(3.0, String::from("3")));
-    }
-    v.set("statusLine", line);
-    if !os::write(&path, json::pretty(&v).as_bytes()) {
+    if !os::write(&path, next.as_bytes()) {
         return fail(&format!("ecriture impossible : {}\n", path));
     }
     os::out(&format!("statusLine posee dans {}\n", path));
@@ -348,11 +336,10 @@ fn uninstall() -> i32 {
         return fail("dossier personnel introuvable\n");
     };
     let raw = os::read(&path);
-    let parsed = raw
+    let next = raw
         .as_ref()
-        .and_then(|r| json::parse(&String::from_utf8_lossy(r), false))
-        .filter(|x| x.is_obj() && x.get("statusLine").is_some());
-    let (Some(raw), Some(mut v)) = (raw, parsed) else {
+        .and_then(|r| settings::without_status_line(&String::from_utf8_lossy(r)));
+    let (Some(raw), Some(next)) = (raw, next) else {
         os::out("aucune statusLine a retirer\n");
         return 0;
     };
@@ -360,8 +347,7 @@ fn uninstall() -> i32 {
         Some(b) => os::out(&format!("sauvegarde : {}\n", b)),
         None => return fail(&format!("ecriture impossible : {}.bak\n", path)),
     }
-    v.remove("statusLine");
-    if !os::write(&path, json::pretty(&v).as_bytes()) {
+    if !os::write(&path, next.as_bytes()) {
         return fail(&format!("ecriture impossible : {}\n", path));
     }
     os::out(&format!("statusLine retiree de {}\n", path));
