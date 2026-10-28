@@ -234,8 +234,8 @@ mod tests {
         assert_eq!(staging("/a/statusline"), "/a/statusline.new");
     }
 
+    use crate::sandbox::Sandbox;
     use core::cell::RefCell;
-    use std::path::PathBuf;
 
     const OLD_BINARY: &[u8] = b"old";
     const FAILING_BINARY: &[u8] = b"#!/bin/sh\nexit 3\n";
@@ -244,40 +244,6 @@ mod tests {
     } else {
         "statusline"
     };
-
-    struct Sandbox(PathBuf);
-
-    impl Sandbox {
-        fn new(name: &str) -> Sandbox {
-            let root = std::env::temp_dir().join(format!(
-                "statusline-update-{}-{}",
-                name,
-                std::process::id()
-            ));
-            let _ = std::fs::remove_dir_all(&root);
-            std::fs::create_dir_all(&root).unwrap();
-            Sandbox(root)
-        }
-
-        fn dir(&self) -> String {
-            self.0.to_string_lossy().into_owned()
-        }
-
-        fn files(&self) -> Vec<String> {
-            let mut names: Vec<String> = std::fs::read_dir(&self.0)
-                .unwrap()
-                .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-                .collect();
-            names.sort();
-            names
-        }
-    }
-
-    impl Drop for Sandbox {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
 
     fn working_binary() -> Vec<u8> {
         match std::env::var("SystemRoot") {
@@ -337,7 +303,7 @@ mod tests {
 
     fn update(name: &str, release: Release) -> Run {
         let sandbox = Sandbox::new(name);
-        let exe = sandbox.0.join(EXE_NAME).to_string_lossy().into_owned();
+        let exe = sandbox.path(EXE_NAME);
         std::fs::write(&exe, OLD_BINARY).unwrap();
         let result = attempt(&sandbox.dir(), &exe, &|u, t, s| release.serve(u, t, s));
         Run {
@@ -426,7 +392,7 @@ mod tests {
     #[test]
     fn second_lock_waits_for_the_first() {
         let sandbox = Sandbox::new("lock");
-        let dir = sandbox.0.join("state").to_string_lossy().into_owned();
+        let dir = sandbox.path("state");
         assert_eq!(take_lock(&dir), Ok(Some(os::join(&dir, &["update.lock"]))));
         assert_eq!(take_lock(&dir), Ok(None));
     }

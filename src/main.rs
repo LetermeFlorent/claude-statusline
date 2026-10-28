@@ -13,6 +13,8 @@ mod num;
 mod os;
 mod portable;
 mod render;
+#[cfg(test)]
+mod sandbox;
 mod session;
 mod settings;
 mod state;

@@ -49,26 +49,16 @@ pub fn claude_dir() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-
-    fn scratch(name: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("statusline-os-{}-{}", name, std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
+    use crate::sandbox::Sandbox;
 
     #[test]
     fn files_over_one_mebibyte_are_refused() {
-        let dir = scratch("size");
-        let path = dir.join("settings.json");
-        let text = path.to_string_lossy().into_owned();
+        let sandbox = Sandbox::new("size");
+        let path = sandbox.path("settings.json");
         std::fs::write(&path, vec![b' '; MAX_READ_BYTES]).unwrap();
-        let at_limit = read(&text).map(|data| data.len());
+        let at_limit = read(&path).map(|data| data.len());
         std::fs::write(&path, vec![b' '; MAX_READ_BYTES + 1]).unwrap();
-        let over_limit = read(&text).map(|data| data.len());
-        let _ = std::fs::remove_dir_all(&dir);
+        let over_limit = read(&path).map(|data| data.len());
         assert_eq!(at_limit, Some(MAX_READ_BYTES));
         assert_eq!(over_limit, None);
     }
@@ -82,17 +72,15 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn fifo_is_refused_at_once() {
-        let dir = scratch("fifo");
-        let fifo = dir.join("settings.local.json");
-        let made = std::process::Command::new("mkfifo").arg(&fifo).status();
+        let sandbox = Sandbox::new("fifo");
+        let path = sandbox.path("settings.local.json");
+        let made = std::process::Command::new("mkfifo").arg(&path).status();
         assert!(made.is_ok_and(|status| status.success()));
-        let path = fifo.to_string_lossy().into_owned();
         let (sender, receiver) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let _ = sender.send(read(&path));
         });
         let result = receiver.recv_timeout(std::time::Duration::from_secs(2));
-        let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(result, Ok(None));
     }
 }
