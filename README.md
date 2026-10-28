@@ -148,7 +148,7 @@ Il est relu à chaque rafraîchissement. Le JSON y tolère les commentaires `//`
 | `system.disk_path` | `C:\` sous Windows, `/` ailleurs | disque suivi |
 | `system.colors.ram.ok`, `.dsk.ok`, `.cpu.ok` | `#1E787D`, `#697855`, `#375A8C` | teinte normale de chaque métrique |
 | `system.colors.<métrique>.warn`, `.hot` | `#BE823C`, `#C83C3C` | teintes d'alerte et critique |
-| `auto_update` | `true` | `false` coupe la recherche automatique de mises à jour |
+| `auto_update` | `false` | `true` active la recherche automatique de mises à jour |
 
 Les noms de `system.metrics` s'écrivent en minuscules, et les noms inconnus sont ignorés. Une liste vide, ou absente, revient aux trois métriques. La couleur du disque se règle sous `dsk`, même si la métrique s'appelle `io`.
 
@@ -174,13 +174,13 @@ Seul le premier argument est lu. Le code de sortie vaut 0 en cas de succès, 1 q
 
 ## Mise à jour automatique
 
-Au plus toutes les 6 heures, un rendu de la barre lance `statusline --update` en arrière-plan, sans fenêtre et en priorité basse, puis rend la main sans l'attendre. Ce lancement n'a lieu que si le programme tourne depuis `~/.claude/bin` et qu'un binaire est publié pour le système. L'heure de la dernière recherche est gardée dans le fichier d'état, sous la clé `update_at`.
+Avec `"auto_update": true` dans `statusline.json`, un rendu de la barre lance `statusline --update` au plus toutes les 6 heures, en arrière-plan, sans fenêtre et en priorité basse, puis rend la main sans l'attendre. Ce lancement n'a lieu que si le programme tourne depuis `~/.claude/bin` et qu'un binaire est publié pour le système. L'heure de la dernière recherche est gardée dans le fichier d'état, sous la clé `update_at`.
 
 `--update` demande la dernière version publiée à l'API GitHub, avec `curl`. Si elle est plus récente, il télécharge le binaire du système à côté du programme (`statusline.new.exe`, ou `statusline.new`), vérifie qu'il répond à `--version`, puis le met à la place de l'ancien. Sous Windows, le programme en cours d'exécution ne peut pas être écrasé : il est renommé `statusline.exe.old-<horodatage>`, et ce fichier est supprimé à la recherche suivante.
 
 Pendant le téléchargement, puis 5 secondes après le remplacement, la barre affiche `update`. Le rafraîchissement suivant lance le nouveau programme, sans redémarrer Claude Code. Un échec (réseau coupé, binaire absent, remplacement refusé) laisse l'ancien programme en place jusqu'à la recherche suivante.
 
-Un verrou `update.lock`, dans le dossier du fichier d'état, empêche deux mises à jour en même temps. Il est ignoré au bout de 15 minutes, tout comme le marqueur `updating` qui fait afficher `update`. `"auto_update": false` dans `statusline.json` coupe la recherche automatique, et `statusline --update` reste utilisable à la main.
+Un verrou `update.lock`, dans le dossier du fichier d'état, empêche deux mises à jour en même temps. Il est ignoré au bout de 15 minutes, tout comme le marqueur `updating` qui fait afficher `update`. La recherche automatique est coupée par défaut, car aucune signature ne garantit encore le binaire téléchargé. `statusline --update` reste utilisable à la main.
 
 ## Fichier d'état
 

@@ -87,7 +87,7 @@ Une liste `metrics` vide revient aux trois métriques : pour tout masquer, il fa
 
 ## Mettre à jour
 
-La barre se met à jour seule : au plus toutes les 6 heures, elle cherche une version plus récente sur GitHub, l'installe en arrière-plan et affiche `update` le temps du remplacement. Claude Code n'a pas à redémarrer. Le détail est dans la section "Mise à jour automatique" du README, et `"auto_update": false` dans `statusline.json` la coupe.
+La mise à jour automatique est coupée par défaut. Avec `"auto_update": true` dans `statusline.json`, la barre cherche au plus toutes les 6 heures une version plus récente sur GitHub, l'installe en arrière-plan et affiche `update` le temps du remplacement, sans que Claude Code ait à redémarrer. Le détail est dans la section "Mise à jour automatique" du README.
 
 `statusline --update` lance la même mise à jour à la main et affiche son résultat : "deja a jour", "mise a jour : 2.1.0 -> v2.2.0", ou la raison d'un échec.
 
