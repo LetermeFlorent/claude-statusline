@@ -114,7 +114,11 @@ fn listed_metrics(list: Option<&Value>) -> Vec<Metric> {
 }
 
 pub fn hex(v: Option<&Value>) -> Option<Rgb> {
-    let s = v?.str()?.trim();
+    hex_text(v?.str()?)
+}
+
+pub fn hex_text(s: &str) -> Option<Rgb> {
+    let s = s.trim();
     let s = s.strip_prefix('#').unwrap_or(s);
     let digits: Vec<u32> = s
         .chars()

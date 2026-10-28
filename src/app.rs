@@ -179,7 +179,8 @@ fn run(input: &str, now: f64, laps: &mut Laps) -> (String, State, bool) {
     let session = Session::parse(input);
     laps.lap(Stage::Session);
     let mut state = load_state();
-    let light = theme::detect_light(cfg.light_override, &mut state);
+    let project = session.project.as_deref().or(session.cwd.as_deref());
+    let light = theme::detect_light(cfg.light_override, project, &mut state);
     let quotas = state.quotas(
         session.live,
         now,
@@ -427,7 +428,7 @@ pub fn main(args: Vec<String>) -> i32 {
         Some("--theme") => {
             let cfg = load_config();
             let mut state = load_state();
-            let light = theme::detect_light(cfg.light_override, &mut state);
+            let light = theme::detect_light(cfg.light_override, os::cwd().as_deref(), &mut state);
             save_state(&state);
             os::out(if light { "light\n" } else { "dark\n" });
             0

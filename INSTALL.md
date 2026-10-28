@@ -119,4 +119,6 @@ Disk and CPU show `--%` on the first refresh, until there are two readings to co
 
 If the colors are wrong or the squares turn into question marks, the terminal does not handle 24-bit colors or the font lacks the `■` and `▪` characters. These characters can be changed in `glyphs`.
 
+If the bar picks a dark palette on a light terminal under WSL, it most likely found no Windows profile, neither in `PATH` nor through the Windows Terminal package in `/mnt/c/Users`. Set `STATUSLINE_BG=light` in the shell profile, or `terminal_background` in `statusline.json`.
+
 A change of auto-compact threshold can take 30 seconds to show in the bar.
