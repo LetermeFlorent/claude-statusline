@@ -219,7 +219,7 @@ Une variable vide compte comme absente.
 cargo build --release
 ```
 
-Le binaire sort dans `target/release`. Sous Windows, `.cargo/config.toml` lie le programme avec `rust-lld` sans la bibliothèque C, et rien d'autre que Rust n'est nécessaire. Seule la cible `x86_64-pc-windows-msvc` y est prévue. Le même fichier active la protection CET (`/CETCOMPAT`), remplace l'horodatage du binaire par une empreinte de son contenu (`/Brepro`) et ne produit pas de `.pdb` : deux compilations du même code donnent le même fichier, quel que soit le dossier. Le profil de publication active `lto`, `panic = "abort"` et retire les symboles.
+Le binaire sort dans `target/release`. Sous Windows, `.cargo/config.toml` lie le programme avec `rust-lld` sans la bibliothèque C, et rien d'autre que Rust n'est nécessaire. Seule la cible `x86_64-pc-windows-msvc` y est prévue. Le même fichier active la protection CET (`/CETCOMPAT`), remplace l'horodatage du binaire par une empreinte de son contenu (`/Brepro`) et ne produit pas de `.pdb` : deux compilations du même code donnent le même fichier, quel que soit le dossier. Sous macOS, il passe `-S` à l'éditeur de liens, qui n'inscrit alors aucun chemin de fichier objet : l'identifiant UUID du binaire, calculé sur son contenu, ne dépend plus du dossier de compilation. Le profil de publication active `lto`, `panic = "abort"` et retire les symboles.
 
 Les tests (`cargo test`) tournent tels quels sous Linux et macOS. Sous Windows, ils ont besoin de la bibliothèque C de Visual Studio et d'une variable `RUSTFLAGS` qui remplace les options de liaison du fichier de configuration, comme le fait la CI (`RUSTFLAGS=-Cdebuginfo=0`).
 

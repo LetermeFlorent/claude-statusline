@@ -95,7 +95,9 @@ jobs:
           ext=""
           [ "$RUNNER_OS" = Windows ] && ext=.exe
           (cd "$copy" && cargo build --release --locked --target ${{ matrix.target }})
-          cmp "$copy/target/${{ matrix.target }}/release/statusline$ext" "dist/${{ matrix.asset }}"
+          rebuilt="$copy/target/${{ matrix.target }}/release/statusline$ext"
+          shipped="dist/${{ matrix.asset }}"
+          cmp "$rebuilt" "$shipped" || { ls -l "$rebuilt" "$shipped"; cmp -l "$rebuilt" "$shipped" | head -n 40; exit 1; }
 
       - name: essai du binaire
         run: |
