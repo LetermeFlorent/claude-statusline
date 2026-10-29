@@ -128,7 +128,15 @@ if [ "$flag" = --uninstall ]; then
   exit 0
 fi
 
-can_build() { [ -f "$here/Cargo.toml" ] && command -v cargo >/dev/null 2>&1; }
+is_repo() {
+  [ -f "$here/src/main.rs" ] && [ -f "$here/Cargo.toml" ] || return 1
+  tr -d '\r' < "$here/Cargo.toml" | awk '
+    substr($0, 1, 1) == "[" { in_package = ($0 == "[package]") }
+    in_package && /^name[[:space:]]*=[[:space:]]*"statusline"[[:space:]]*$/ { found = 1 }
+    END { exit !found }'
+}
+
+can_build() { is_repo && command -v cargo >/dev/null 2>&1; }
 
 mkdir -p "$bin_dir"
 if can_build && (cd "$here" && cargo build --release --quiet --target-dir "$here/target"); then
@@ -169,7 +177,7 @@ show copied "$bin_dir/statusline"
 
 if [ -f "$main/statusline.json" ]; then
   show config_kept
-elif [ -f "$here/statusline.json" ]; then
+elif is_repo && [ -f "$here/statusline.json" ]; then
   cp "$here/statusline.json" "$main/statusline.json"
   show config_installed
 fi
