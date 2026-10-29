@@ -26,7 +26,10 @@ pub fn clean_binaries(exe: &str, now: f64) {
     };
     let name = os::file_name(exe);
     let (stem, extension) = split_extension(name);
-    remove_legacy(&os::join(dir, &[&format!("{}.new{}", stem, extension)]), now);
+    remove_legacy(
+        &os::join(dir, &[&format!("{}.new{}", stem, extension)]),
+        now,
+    );
     remove_named(dir, &format!("{}.new-", stem));
     remove_named(dir, &format!("{}.old-", name));
 }
