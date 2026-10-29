@@ -2,6 +2,8 @@ use super::env::pid;
 use super::PRIVATE_MODE;
 use std::io::{Read, Write};
 
+const NANOS_PER_SECOND: i64 = 1_000_000_000;
+
 #[cfg(any(target_os = "linux", target_os = "android"))]
 const O_NONBLOCK: i32 = 0o4000;
 
@@ -77,6 +79,12 @@ pub fn stamp(path: &str) -> Option<(u64, i64)> {
     use std::os::unix::fs::MetadataExt;
     let m = std::fs::metadata(path).ok()?;
     Some((m.len(), m.mtime()))
+}
+
+pub fn written(path: &str) -> Option<i64> {
+    use std::os::unix::fs::MetadataExt;
+    let m = std::fs::metadata(path).ok()?;
+    Some(m.mtime().saturating_mul(NANOS_PER_SECOND) + m.mtime_nsec())
 }
 
 pub fn exists(path: &str) -> bool {
