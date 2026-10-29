@@ -62,6 +62,8 @@ show() {
     fr.config_installed) text="statusline.json installé" ;;
     en.account_kept) text="account left as is: $2" ;;
     fr.account_kept) text="compte laissé tel quel : $2" ;;
+    en.account_missing) text="account folder not found, skipped: $2" ;;
+    fr.account_missing) text="dossier de compte introuvable, ignoré : $2" ;;
     en.done) text="done, restart Claude Code" ;;
     fr.done) text="terminé, relancez Claude Code" ;;
   esac
@@ -135,7 +137,7 @@ done
 reg="$HOME/.claude-accounts.json"
 if [ -f "$reg" ]; then
   grep -o '"Dir"[[:space:]]*:[[:space:]]*"[^"]*"' "$reg" | sed 's/.*"\([^"]*\)"$/\1/' | while IFS= read -r rel; do
-    install_for "$HOME/$rel"
+    if [ -d "$HOME/$rel" ]; then install_for "$HOME/$rel"; else show account_missing "$HOME/$rel" >&2; fi
   done
 fi
 show done

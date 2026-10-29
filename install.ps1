@@ -21,6 +21,7 @@ $texts = @{
   config_installed = "statusline.json installed", "statusline.json installé"
   registry_unreadable = "account list cannot be read: {0}", "liste des comptes illisible : {0}"
   account_kept = "account left as is: {0}", "compte laissé tel quel : {0}"
+  account_missing = "account folder not found, skipped: {0}", "dossier de compte introuvable, ignoré : {0}"
   command_replaced = "command replaced for {0} (was: {1})", "commande remplacée pour {0} (était : {1})"
   done = "done, restart Claude Code", "terminé, relancez Claude Code"
 }
@@ -115,8 +116,12 @@ $found = @($main) + @(Get-ChildItem -LiteralPath $env:USERPROFILE -Directory -Fi
 $reg = Join-Path $env:USERPROFILE ".claude-accounts.json"
 if (Test-Path -LiteralPath $reg) {
   try {
-    $list = Get-Content -LiteralPath $reg -Raw | ConvertFrom-Json
-    foreach ($a in $list) { if ($a.Dir) { $found += Join-Path $env:USERPROFILE $a.Dir } }
+    $list = Get-Content -LiteralPath $reg -Raw -Encoding UTF8 | ConvertFrom-Json
+    foreach ($a in $list) {
+      if (-not $a.Dir) { continue }
+      $listed = Join-Path $env:USERPROFILE $a.Dir
+      if (Test-Path -LiteralPath $listed) { $found += $listed } else { Write-Warning (Get-Text account_missing $listed) }
+    }
   } catch { Write-Warning (Get-Text registry_unreadable $reg) }
 }
 foreach ($d in $found) {
