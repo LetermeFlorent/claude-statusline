@@ -5,6 +5,7 @@ use alloc::string::String;
 
 pub struct Session {
     pub model: String,
+    pub model_id: Option<String>,
     pub effort: Option<String>,
     pub ctx: Ctx,
     pub live: Option<(Option<Live>, Option<Live>)>,
@@ -85,6 +86,10 @@ impl Session {
         let seven = limits.and_then(|r| r.get("seven_day"));
         Session {
             model: model_name(payload.get("model")),
+            model_id: payload
+                .at(&["model", "id"])
+                .and_then(|x| x.str())
+                .map(String::from),
             effort: payload
                 .at(&["effort", "level"])
                 .and_then(|x| x.str())

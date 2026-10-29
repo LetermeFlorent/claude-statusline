@@ -321,14 +321,14 @@ fn run_on(
     let window = if cfg.seg_ctx {
         let env = os::env("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
         let files = compact_files(session.cwd.as_deref());
-        compact::window(
-            env.as_deref(),
-            &files,
-            &mut state,
-            now,
-            &stat_file,
-            &read_file,
-        )
+        let disable = os::env("DISABLE_AUTO_COMPACT");
+        let inputs = compact::Inputs {
+            env: env.as_deref(),
+            disable: disable.as_deref(),
+            model: session.model_id.as_deref(),
+            size: session.ctx.size,
+        };
+        compact::window(&inputs, &files, &mut state, now, &stat_file, &read_file)
     } else {
         None
     };
