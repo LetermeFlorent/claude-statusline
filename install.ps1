@@ -35,7 +35,7 @@ function Get-Text([string]$key) {
 $main = Join-Path $env:USERPROFILE ".claude"
 $binDir = Join-Path $main "bin"
 $exe = Join-Path $binDir "statusline.exe"
-$staged = Join-Path $binDir "statusline.new.exe"
+$staged = Join-Path $binDir ("statusline.install-" + $PID + ".exe")
 $releaseUrl = "https://github.com/LetermeFlorent/claude-statusline/releases/latest/download/"
 $asset = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "statusline-windows-arm64.exe" } else { "statusline-windows-x86_64.exe" }
 function Get-BinaryLanguage([string]$file) {
@@ -45,6 +45,7 @@ function Get-BinaryLanguage([string]$file) {
   return Get-LanguageCode "$answer"
 }
 function Remove-OldCopies { Get-ChildItem -LiteralPath $binDir -Filter "statusline.exe.old*" | Remove-Item -Force -ErrorAction SilentlyContinue }
+function Remove-StaleStaging { Get-ChildItem -LiteralPath $binDir -Filter "statusline.install-*" | Where-Object { $_.FullName -ne $staged -and $_.LastWriteTime -lt (Get-Date).AddMinutes(-10) } | Remove-Item -Force -ErrorAction SilentlyContinue }
 function Get-StatusCommand([string]$file) {
   if (-not (Test-Path -LiteralPath $file)) { return $null }
   try { return (Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).statusLine.command } catch { return $null }
@@ -119,6 +120,7 @@ if ($Uninstall) {
 }
 
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+Remove-StaleStaging
 if ($Build) {
   if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot "Cargo.toml"))) { throw (Get-Text no_sources) }
   Push-Location $PSScriptRoot
