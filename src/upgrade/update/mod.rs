@@ -1,7 +1,12 @@
+#[cfg(test)]
+mod fake;
 mod fetch;
 mod leftovers;
 mod lock;
 mod origin;
+mod release;
+#[cfg(test)]
+mod signed_tests;
 mod swap;
 #[cfg(test)]
 mod tests;
@@ -10,10 +15,12 @@ mod verify;
 use crate::messages;
 use crate::os;
 use crate::update_watch::{asset, newer, MARKER};
+use crate::upgrade::sign::key::release_key;
 use alloc::string::String;
 use fetch::{curl, latest, Curl, Fetch, HTTP_OK};
 use leftovers::{clean_binaries, clean_temp};
 use origin::{origin, Origin};
+use release::{matches, signed_sum};
 use swap::{staging, swap, Swap};
 use verify::{check, printed, Failure, Probe, FAILED_EXIT};
 
@@ -34,6 +41,7 @@ struct Tools<'a> {
     origin: Origin,
     fetch: Fetch<'a>,
     probe: Probe<'a>,
+    key: [u8; 32],
 }
 
 fn install(exe: &str, tag: &str, tools: &Tools) -> Result<(), Failure> {
@@ -42,12 +50,16 @@ fn install(exe: &str, tag: &str, tools: &Tools) -> Result<(), Failure> {
     };
     let id = os::pid();
     let fresh = staging(exe, id);
+    let sum = signed_sum(&fresh, tag, name, tools)?;
     let url = tools.origin.download(tag, name);
-    let fetched = (tools.fetch)(&url, &fresh, 300) == Some(HTTP_OK) && os::make_executable(&fresh);
-    let checked = if fetched {
-        check(&fresh, tag, tools.probe)
-    } else {
+    let checked = if (tools.fetch)(&url, &fresh, 300) != Some(HTTP_OK) {
         Err(messages::UPDATE_FAILED.with(&[tag]).into())
+    } else if !matches(&fresh, &sum) {
+        Err(messages::SUM_MISMATCH.with(&[tag]).into())
+    } else if !os::make_executable(&fresh) {
+        Err(messages::UPDATE_FAILED.with(&[tag]).into())
+    } else {
+        check(&fresh, tag, tools.probe)
     };
     if let Err(failure) = checked {
         os::remove(&fresh);
@@ -123,6 +135,7 @@ pub fn run() -> i32 {
         origin,
         fetch: &fetch,
         probe: &probe,
+        key: release_key().unwrap_or_default(),
     };
     let result = match os::exe() {
         Some(exe) => attempt(&dir, &exe, &tools),
