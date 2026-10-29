@@ -81,6 +81,13 @@ mod tests {
     }
 
     #[test]
+    fn the_help_names_the_account_folder() {
+        for help in [HELP.english, HELP.french] {
+            assert_eq!(help.matches("$CLAUDE_CONFIG_DIR").count(), 2, "{}", help);
+        }
+    }
+
+    #[test]
     fn both_languages_take_the_same_values_and_line_ending() {
         let placeholders = |s: &str| s.matches(PLACEHOLDER).count();
         for text in ALL.into_iter().chain(CHECK_TEXTS).chain([&HELP]) {
