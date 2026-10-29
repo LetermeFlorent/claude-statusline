@@ -14,7 +14,7 @@ pub use console::{err, out, stdin};
 pub use env::{args, cwd, env, exe, home, pid, state_dir};
 pub use files::{
     create_private, exists, list, make_executable, mkdirs, read_limited, remove, rename, stamp,
-    write, write_atomic,
+    write, write_atomic, written,
 };
 pub use lock::{lock, Lock};
 pub use platform::{cpu, disk, memory, on_network, os_stamp, os_theme};
