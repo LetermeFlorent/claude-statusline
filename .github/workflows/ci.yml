@@ -539,7 +539,11 @@ jobs:
           merge-multiple: true
       - name: checksums
         working-directory: dist
-        run: sha256sum statusline-* > SHA256SUMS
+        run: |
+          sha256sum statusline-* > SHA256SUMS
+          { printf 'tag %s
+' "$GITHUB_REF_NAME"; cat SHA256SUMS; } > release-manifest
+          cat release-manifest
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-checksums: dist/SHA256SUMS
@@ -548,4 +552,4 @@ jobs:
         run: |
           ls -l dist
           bash .github/release-notes.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
-          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md" --draft
