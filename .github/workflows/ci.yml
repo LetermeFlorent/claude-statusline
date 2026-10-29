@@ -229,6 +229,7 @@ jobs:
           echo "$out" | grep -q '/0\.5G'
 
       - name: installer
+        timeout-minutes: 20
         run: |
           export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
           ext=""
@@ -237,17 +238,27 @@ jobs:
           line='  "statusLine": {\n    "type": "command",\n    "command": "~/.claude/bin/statusline'$ext'",\n    "refreshInterval": 3\n  }\n'
           printf '{\n  "model": "opus",\n  "env": {\n    "B": "1",\n    "A": "2"\n  },\n'"$line"'}\n' > "$RUNNER_TEMP/main.json"
           printf '{\n'"$line"'}\n' > "$RUNNER_TEMP/account.json"
-          install_in() {
-            label="$1"; built="$2"; shift 2
-            root="$RUNNER_TEMP/i-$label"
+          config=statusline.json
+          home_of() {
+            root="$RUNNER_TEMP/i-$1"
             mkdir -p "$root/.claude" "$root/.claude-compte2"
-            printf '{"model": "opus", "env": {"B": "1", "A": "2"}}' > "$root/.claude/settings.json"
             export HOME="$root"
             if [ "$RUNNER_OS" = Windows ]; then
               export USERPROFILE="$(cygpath -w "$root")" LOCALAPPDATA="$(cygpath -w "$root/local")"
             else
               export XDG_STATE_HOME="$root/state"
             fi
+          }
+          absent() {
+            if grep -q "$1" "$2" 2> /dev/null; then
+              echo "$2 still holds $1"
+              exit 1
+            fi
+          }
+          install_in() {
+            label="$1"; built="$2"; shift 2
+            home_of "$label"
+            printf '{"model": "opus", "env": {"B": "1", "A": "2"}}' > "$root/.claude/settings.json"
             if [ "$built" = refused ]; then
               cp "$root/.claude/settings.json" "$root/settings.before"
               if "$@" > /dev/null 2> "$root/refusal.log"; then
@@ -274,14 +285,67 @@ jobs:
                 grep -q '"statusLine"' "$root/.claude/settings.json"
                 grep -q '"statusLine"' "$root/.claude-compte2/settings.json"
               fi
-              cmp statusline.json "$root/.claude/statusline.json"
+              [ "$config" = none ] || cmp "$config" "$root/.claude/statusline.json"
             done
+          }
+          uninstall_in() {
+            label="$1"; shift
+            home_of "$label"
+            for run in first second; do
+              echo "uninstaller $label, $run run"
+              out=$(env STATUSLINE_LANG=en "$@" 2>&1)
+              echo "$out"
+              case "$out" in *"removed from the accounts"*) ;; *) echo "no uninstall message"; exit 1 ;; esac
+              absent '"statusLine"' "$root/.claude/settings.json"
+              absent '"statusLine"' "$root/.claude-compte2/settings.json"
+              grep -q '"model": "opus"' "$root/.claude/settings.json"
+              test -e "$root/.claude/bin/statusline$ext"
+            done
+          }
+          say_in() {
+            want="$1"; shift
+            home_of language
+            out=$(env -u STATUSLINE_LANG -u LANGUAGE -u LC_ALL -u LC_MESSAGES -u LANG "$@" 2>&1)
+            case "$out" in *"$want"*) ;; *) echo "$*: no '$want' in:"; echo "$out"; exit 1 ;; esac
+          }
+          registry_in() {
+            label="$1"; shift
+            home_of "$label"
+            accent=".claude-compt$(printf '\303\251')"
+            mkdir -p "$root/$accent"
+            printf '[{"Dir": "%s"}, {"Dir": ".claude-absent"}]' "$accent" > "$root/.claude-accounts.json"
+            out=$(env STATUSLINE_LANG=en "$@" 2>&1)
+            echo "$out"
+            case "$out" in *"account folder not found, skipped"*".claude-absent"*) ;; *) echo "missing folder not reported"; exit 1 ;; esac
+            grep -q '"statusLine"' "$root/$accent/settings.json"
+            test ! -e "$root/.claude-absent"
           }
           if [ "$RUNNER_OS" = Windows ]; then
             install_in powershell yes powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -Build
+            uninstall_in powershell powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -Uninstall
             install_in pwsh yes pwsh -NoProfile -File ./install.ps1 -Build
+            uninstall_in pwsh pwsh -NoProfile -File ./install.ps1 -Uninstall
+            registry_in registry-powershell powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -Build
+            registry_in registry-pwsh pwsh -NoProfile -File ./install.ps1 -Build
+            for shell in powershell pwsh; do
+              case "$shell" in powershell) options="-NoProfile -ExecutionPolicy Bypass" ;; *) options=-NoProfile ;; esac
+              say_in 'relancez Claude Code' STATUSLINE_LANG=fr "$shell" $options -File ./install.ps1 -Build
+              say_in 'restart Claude Code' STATUSLINE_LANG=en "$shell" $options -File ./install.ps1 -Build
+              say_in 'des comptes' STATUSLINE_LANG=fr_FR.UTF-8 "$shell" $options -File ./install.ps1 -Uninstall
+              say_in 'from the accounts' STATUSLINE_LANG=en "$shell" $options -File ./install.ps1 -Uninstall
+            done
           else
             install_in sh yes sh install.sh
+            uninstall_in sh sh install.sh --uninstall
+            registry_in registry-sh sh install.sh
+            say_in 'relancez Claude Code' STATUSLINE_LANG=fr sh install.sh
+            say_in 'restart Claude Code' STATUSLINE_LANG=en sh install.sh
+            say_in 'relancez Claude Code' LANG=fr_FR.UTF-8 sh install.sh
+            say_in 'restart Claude Code' LANG=C sh install.sh
+            say_in 'relancez Claude Code' LANG=en_US.UTF-8 LANGUAGE=de:fr sh install.sh
+            say_in 'restart Claude Code' LANG=C LANGUAGE=de:fr sh install.sh
+            say_in 'restart Claude Code' STATUSLINE_LANG=en LANG=fr_FR.UTF-8 sh install.sh
+            say_in 'des comptes' STATUSLINE_LANG=fr sh install.sh --uninstall
             nocargo=$(
               hash -r
               for _ in 1 2 3 4 5 6 7 8; do
@@ -301,6 +365,13 @@ jobs:
             fi
             echo "latest release install: $release"
             install_in release "$release" env LC_ALL=C PATH="$nocargo" sh install.sh
+            alone="$RUNNER_TEMP/alone"
+            mkdir -p "$alone"
+            cp install.sh "$alone/install.sh"
+            config=none
+            install_in alone "$release" sh "$alone/install.sh"
+            config=statusline.json
+            test "$(ls -A "$alone")" = install.sh
           fi
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
