@@ -268,12 +268,10 @@ impl Out<'_> {
                 marked = true;
             }
         }
-        if marked {
-            if !self.cfg.marker.is_empty() {
-                let marker = self.cfg.marker.clone();
-                self.label(&marker);
-                self.line.push(' ');
-            }
+        if marked && !self.cfg.marker.is_empty() {
+            let marker = self.cfg.marker.clone();
+            self.label(&marker);
+            self.line.push(' ');
         }
         self.label("ctx");
         self.line.push(' ');
