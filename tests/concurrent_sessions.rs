@@ -11,7 +11,7 @@ const ROUNDS: usize = 3;
 const RESET_IN_SECONDS: u64 = 3600;
 const TURNED_AWAY_WITHIN: Duration = Duration::from_secs(10);
 const AUTO_UPDATE: &str = "{\"auto_update\": true}";
-const SHARED_KEYS: [&str; 5] = ["bg_host ", "bg_stamp ", "compact@", "cpu_at ", "update_at "];
+const SHARED_KEYS: [&str; 4] = ["bg@", "compact@", "cpu_at ", "update_at "];
 
 impl Home {
     fn check_updates_in_every_account(&self) {
