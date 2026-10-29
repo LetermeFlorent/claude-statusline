@@ -15,12 +15,11 @@ mod verify;
 use crate::messages;
 use crate::os;
 use crate::update_watch::{asset, newer, MARKER};
-use crate::upgrade::sign::key::release_key;
 use alloc::string::String;
 use fetch::{curl, latest, Curl, Fetch, HTTP_OK};
 use leftovers::{clean_binaries, clean_temp};
 use origin::{origin, Origin};
-use release::{matches, signed_sum};
+use release::{matches, signed_sum, trusted_key};
 use swap::{staging, swap, Swap};
 use verify::{check, printed, Failure, Probe, FAILED_EXIT};
 
@@ -135,7 +134,7 @@ pub fn run() -> i32 {
         origin,
         fetch: &fetch,
         probe: &probe,
-        key: release_key().unwrap_or_default(),
+        key: trusted_key(),
     };
     let result = match os::exe() {
         Some(exe) => attempt(&dir, &exe, &tools),
