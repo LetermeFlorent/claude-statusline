@@ -610,10 +610,10 @@ pub fn main(args: Vec<String>) -> i32 {
             let cfg = load_config();
             let mut state = load_state();
             let cwd = os::cwd();
-            let light =
-                theme::detect_light(cfg.light_override, local_only(cwd.as_deref()), &mut state);
+            let decision =
+                theme::detect(cfg.light_override, local_only(cwd.as_deref()), &mut state);
             save_state(&state);
-            os::out(if light { "light\n" } else { "dark\n" });
+            os::out(&decision.report());
             0
         }
         Some("--check") => check::run(config_path()),

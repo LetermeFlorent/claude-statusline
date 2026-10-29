@@ -73,7 +73,7 @@ On Windows, `& "$env:USERPROFILE\.claude\bin\statusline.exe" --demo`. Two lines 
 
 ## Configuring the look
 
-Everything is set in `~/.claude/statusline.json`, read again on every refresh, with no need to restart Claude Code. Colors follow the terminal background on their own, and `statusline --theme` prints the detected background (`light` or `dark`). If detection gets it wrong, set `terminal_background` to `light` or `dark` in the file, or set the `STATUSLINE_BG` variable.
+Everything is set in `~/.claude/statusline.json`, read again on every refresh, with no need to restart Claude Code. The bars follow the terminal background on their own, the text keeps the terminal's default color, and `statusline --theme` prints the detected background (`light` or `dark`) and where that choice came from. If detection gets it wrong, set `terminal_background` to `light` or `dark` in the file, or set the `STATUSLINE_BG` variable.
 
 These are the settings most often changed:
 

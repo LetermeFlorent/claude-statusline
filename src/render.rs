@@ -154,9 +154,15 @@ impl Out<'_> {
         }
     }
 
-    fn strong(&mut self, text: &str, c: Rgb) {
+    fn tint(&mut self, c: Option<Rgb>) {
+        if let Some(c) = c {
+            self.fg(c);
+        }
+    }
+
+    fn strong(&mut self, text: &str, c: Option<Rgb>) {
         self.bold();
-        self.fg(c);
+        self.tint(c);
         self.line.push_str(text);
         self.line.push_str(RESET);
     }
@@ -224,7 +230,7 @@ impl Out<'_> {
 
     fn value(&mut self, text: &str, pct: Option<f64>, last: Option<Rgb>) {
         let color = match (pct, last) {
-            (Some(p), Some(l)) if num::round(p) >= 100.0 => l,
+            (Some(p), Some(l)) if num::round(p) >= 100.0 => Some(l),
             _ => self.col.ink,
         };
         self.strong(text, color);
@@ -250,7 +256,7 @@ impl Out<'_> {
         if marked {
             self.line.push_str("\x1b[2m");
             let ink = self.col.ink;
-            self.fg(ink);
+            self.tint(ink);
             self.line.push_str(&self.cfg.marker);
             self.line.push_str(RESET);
         }
@@ -301,7 +307,7 @@ impl Out<'_> {
     fn model(&mut self, data: &Data) {
         self.line.push_str("\x1b[4m");
         let ink = self.col.ink;
-        self.fg(ink);
+        self.tint(ink);
         self.line.push_str(&data.model);
         self.line.push_str(RESET);
         let Some(level) = data.effort.as_deref() else {
@@ -316,7 +322,7 @@ impl Out<'_> {
         let (start, end) = Tone::of(&key).pair(self.col.light);
         self.label(":");
         if self.cfg.effort_flat {
-            self.strong(&word, end);
+            self.strong(&word, Some(end));
             return;
         }
         let chars: Vec<char> = word.chars().collect();
@@ -616,14 +622,14 @@ mod tests {
     fn dark_line() {
         let expected = format!(
             concat!(
-                "[dim][#e8eaed]ª[/][b][#e8eaed]ctx[/] [#96cdff]■[#8bc2fa]■[#7fb8f5]▪[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[/] [b][#e8eaed]60k/200k[/]",
-                " [b][#e8eaed]|[/] [b][#e8eaed]5h[/] [#aa5aaf]■[#b168b6]■[#b876bc]▪[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[/] [b][#e8eaed]36%[/] [b][#e8eaed]1h00m[/]",
-                " [b][#e8eaed]|[/] [b][#e8eaed]7d[/] [#b95555]■[#ba5858]■[#bb5a5a]■[#bc5d5d]■[#bd5f5f]■[#be6262]■[#bf6464]▪[#e2e5ea]■[/] [b][#e8eaed]81%[/] [b][#e8eaed]2d07h[/]",
-                " [b][#e8eaed]|[/] [u][#e8eaed]Opus 4[/][b][#e8eaed]:[/][b][#8290cc]h[b][#8b8fcb]i[b][#938dcb]g[b][#9c8cca]h[/]\n",
-                "[b][#e8eaed]ram[/] [#be823c]■[#c08541]■[#c28947]■[#c38c4c]■[#c59051]■[#c79357]▪[#e2e5ea]■[#e2e5ea]■[/] [b][#e8eaed]12.0/16.0G[/]",
-                " [b][#e8eaed]|[/] [b][#e8eaed]{disk}[/] [#c83c3c]■[#c94040]■[#cb4545]■[#cc4949]■[#cd4e4e]■[#ce5252]■[#d05757]▪[#e2e5ea]■[/] [b][#e8eaed]90%[/]",
-                " [b][#e8eaed]|[/] [b][#e8eaed]cpu[/] [#375a8c]▪[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[/] [b][#e8eaed]12%[/]",
-                " [b][#e8eaed]|[/] [b][#e8eaed]update[/][/]\n",
+                "[dim]ª[/][b]ctx[/] [#96cdff]■[#8bc2fa]■[#7fb8f5]▪[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[/] [b]60k/200k[/]",
+                " [b]|[/] [b]5h[/] [#aa5aaf]■[#b168b6]■[#b876bc]▪[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[/] [b]36%[/] [b]1h00m[/]",
+                " [b]|[/] [b]7d[/] [#b95555]■[#ba5858]■[#bb5a5a]■[#bc5d5d]■[#bd5f5f]■[#be6262]■[#bf6464]▪[#e2e5ea]■[/] [b]81%[/] [b]2d07h[/]",
+                " [b]|[/] [u]Opus 4[/][b]:[/][b][#8290cc]h[b][#8b8fcb]i[b][#938dcb]g[b][#9c8cca]h[/]\n",
+                "[b]ram[/] [#be823c]■[#c08541]■[#c28947]■[#c38c4c]■[#c59051]■[#c79357]▪[#e2e5ea]■[#e2e5ea]■[/] [b]12.0/16.0G[/]",
+                " [b]|[/] [b]{disk}[/] [#c83c3c]■[#c94040]■[#cb4545]■[#cc4949]■[#cd4e4e]■[#ce5252]■[#d05757]▪[#e2e5ea]■[/] [b]90%[/]",
+                " [b]|[/] [b]cpu[/] [#375a8c]▪[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[/] [b]12%[/]",
+                " [b]|[/] [b]update[/][/]\n",
             ),
             disk = DISK
         );
@@ -634,18 +640,47 @@ mod tests {
     fn light_line() {
         let expected = format!(
             concat!(
-                "[dim][#000000]ª[/][b][#000000]ctx[/] [#7db9ff]■[#71abf4]■[#659eea]▪[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[/] [b][#000000]60k/200k[/]",
-                " [b][#000000]|[/] [b][#000000]5h[/] [#aa5aaf]■[#9a519e]■[#8a498d]▪[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[/] [b][#000000]36%[/] [b][#000000]1h00m[/]",
-                " [b][#000000]|[/] [b][#000000]7d[/] [#b95555]■[#b65454]■[#b35252]■[#af5151]■[#ac4f4f]■[#a94e4e]■[#a64c4c]▪[#beb4a5]■[/] [b][#000000]81%[/] [b][#000000]2d07h[/]",
-                " [b][#000000]|[/] [u][#000000]Opus 4[/][b][#000000]:[/][b][#4b5476]h[b][#505376]i[b][#555275]g[b][#5a5175]h[/]\n",
-                "[b][#000000]ram[/] [#be823c]■[#b87e3a]■[#b27a38]■[#ac7636]■[#a67234]■[#a06e33]▪[#beb4a5]■[#beb4a5]■[/] [b][#000000]12.0/16.0G[/]",
-                " [b][#000000]|[/] [b][#000000]{disk}[/] [#c83c3c]■[#c33a3a]■[#be3939]■[#b83737]■[#b33636]■[#ae3434]■[#a93333]▪[#beb4a5]■[/] [b][#000000]90%[/]",
-                " [b][#000000]|[/] [b][#000000]cpu[/] [#375a8c]▪[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[/] [b][#000000]12%[/]",
-                " [b][#000000]|[/] [b][#000000]update[/][/]\n",
+                "[dim]ª[/][b]ctx[/] [#7db9ff]■[#71abf4]■[#659eea]▪[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[/] [b]60k/200k[/]",
+                " [b]|[/] [b]5h[/] [#aa5aaf]■[#9a519e]■[#8a498d]▪[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[/] [b]36%[/] [b]1h00m[/]",
+                " [b]|[/] [b]7d[/] [#b95555]■[#b65454]■[#b35252]■[#af5151]■[#ac4f4f]■[#a94e4e]■[#a64c4c]▪[#beb4a5]■[/] [b]81%[/] [b]2d07h[/]",
+                " [b]|[/] [u]Opus 4[/][b]:[/][b][#4b5476]h[b][#505376]i[b][#555275]g[b][#5a5175]h[/]\n",
+                "[b]ram[/] [#be823c]■[#b87e3a]■[#b27a38]■[#ac7636]■[#a67234]■[#a06e33]▪[#beb4a5]■[#beb4a5]■[/] [b]12.0/16.0G[/]",
+                " [b]|[/] [b]{disk}[/] [#c83c3c]■[#c33a3a]■[#be3939]■[#b83737]■[#b33636]■[#ae3434]■[#a93333]▪[#beb4a5]■[/] [b]90%[/]",
+                " [b]|[/] [b]cpu[/] [#375a8c]▪[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[/] [b]12%[/]",
+                " [b]|[/] [b]update[/][/]\n",
             ),
             disk = DISK
         );
         assert_eq!(line(true, None, &sample()), expected);
+    }
+
+    #[test]
+    fn text_keeps_the_terminal_color_without_ink() {
+        for light in [false, true] {
+            let text = line(light, None, &sample());
+            for word in [
+                "ctx", "60k/200k", "|", "5h", "36%", "1h00m", "ram", "update",
+            ] {
+                assert!(
+                    text.contains(&format!("[b]{}[/]", word)),
+                    "{} {}",
+                    word,
+                    text
+                );
+            }
+            assert!(text.contains("[u]Opus 4[/][b]:[/]"), "{}", text);
+        }
+    }
+
+    #[test]
+    fn ink_colors_the_text_when_it_is_set() {
+        let config = "{\"colors\": {\"ink_dark\": \"#112233\"}}";
+        let text = line(false, Some(config), &sample());
+        assert!(text.contains("[b][#112233]ctx[/]"), "{}", text);
+        assert!(text.contains("[b][#112233]60k/200k[/]"), "{}", text);
+        assert!(text.contains("[u][#112233]Opus 4[/]"), "{}", text);
+        let light = line(true, Some(config), &sample());
+        assert!(light.contains("[b]ctx[/]"), "{}", light);
     }
 
     #[test]
@@ -654,11 +689,11 @@ mod tests {
         assert_eq!(
             levels,
             [
-                "[b][#e8eaed]5h[/] [#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[/] [b][#e8eaed]0%[/] [b][#e8eaed]--[/][/]\n",
-                "[b][#e8eaed]5h[/] [#aa5aaf]■[#af63b3]■[#b46cb8]■[#b876bc]▪[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[/] [b][#e8eaed]50%[/] [b][#e8eaed]--[/][/]\n",
-                "[b][#e8eaed]5h[/] [#c83c5f]■[#ca4163]■[#cb4768]■[#cd4c6c]■[#ce5271]■[#d05775]■[#d15c79]▪[#e2e5ea]■[/] [b][#e8eaed]80%[/] [b][#e8eaed]--[/][/]\n",
-                "[b][#e8eaed]5h[/] [#c83c5f]■[#c94163]■[#cb4567]■[#cc4a6a]■[#cd4f6e]■[#cf5372]■[#d05876]■[#d15c79]▪[/] [b][#d15c79]100%[/] [b][#e8eaed]--[/][/]\n",
-                "[b][#e8eaed]5h[/] [#e2e5ea]■■■■■■■■[/] [b][#e8eaed]--%[/] [b][#e8eaed]--[/][/]\n",
+                "[b]5h[/] [#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[/] [b]0%[/] [b]--[/][/]\n",
+                "[b]5h[/] [#aa5aaf]■[#af63b3]■[#b46cb8]■[#b876bc]▪[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[/] [b]50%[/] [b]--[/][/]\n",
+                "[b]5h[/] [#c83c5f]■[#ca4163]■[#cb4768]■[#cd4c6c]■[#ce5271]■[#d05775]■[#d15c79]▪[#e2e5ea]■[/] [b]80%[/] [b]--[/][/]\n",
+                "[b]5h[/] [#c83c5f]■[#c94163]■[#cb4567]■[#cc4a6a]■[#cd4f6e]■[#cf5372]■[#d05876]■[#d15c79]▪[/] [b][#d15c79]100%[/] [b]--[/][/]\n",
+                "[b]5h[/] [#e2e5ea]■■■■■■■■[/] [b]--%[/] [b]--[/][/]\n",
             ]
         );
     }

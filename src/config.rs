@@ -54,7 +54,7 @@ pub struct Config {
 
 pub struct Colors {
     pub light: bool,
-    pub ink: Rgb,
+    pub ink: Option<Rgb>,
     pub empty: Rgb,
     pub ctx_from: Rgb,
     pub ctx_to: Rgb,
@@ -257,14 +257,15 @@ impl Config {
 
     pub fn colors(&self, light: bool) -> Colors {
         let t = if light { "light" } else { "dark" };
-        let color = |k: &str, def: Rgb| {
+        let custom = |k: &str| {
             let key = alloc::format!("{}_{}", k, t);
-            hex(self.raw.at(&["colors", &key])).unwrap_or(def)
+            hex(self.raw.at(&["colors", &key]))
         };
+        let color = |k: &str, def: Rgb| custom(k).unwrap_or(def);
         if light {
             Colors {
                 light,
-                ink: color("ink", [0.0, 0.0, 0.0]),
+                ink: custom("ink"),
                 empty: color("empty", [190.0, 180.0, 165.0]),
                 ctx_from: color("ctx_from", [125.0, 185.0, 255.0]),
                 ctx_to: color("ctx_to", [40.0, 90.0, 180.0]),
@@ -272,7 +273,7 @@ impl Config {
         } else {
             Colors {
                 light,
-                ink: color("ink", [232.0, 234.0, 237.0]),
+                ink: custom("ink"),
                 empty: color("empty", [226.0, 229.0, 234.0]),
                 ctx_from: color("ctx_from", [150.0, 205.0, 255.0]),
                 ctx_to: color("ctx_to", [70.0, 130.0, 220.0]),

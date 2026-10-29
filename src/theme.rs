@@ -1,4 +1,4 @@
-use crate::config::{background_word, hex, hex_text};
+use crate::config::{hex, hex_text};
 use crate::json::{self, Syntax, Value};
 use crate::os;
 use crate::state::{fingerprint, State};
@@ -7,6 +7,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::cmp::Reverse;
 use places::{var, Places};
+pub use source::{Decision, Source};
 
 #[cfg(test)]
 mod fixtures;
@@ -14,6 +15,7 @@ mod lookup;
 mod names;
 mod paths;
 mod places;
+mod source;
 mod wsl;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -323,7 +325,25 @@ fn host_mode(terminal: Host, files: &[String], context: &Context<'_>) -> Mode {
                 lookup::ghostty_theme(&dirs, name)
             })
         }
-        Host::Other => Mode::System,
+        Host::Other => other_host_mode(),
+    }
+}
+
+fn other_host_mode() -> Mode {
+    if cfg!(windows) {
+        Mode::Dark
+    } else {
+        Mode::System
+    }
+}
+
+fn host_source(terminal: Host) -> Source {
+    match terminal {
+        Host::Vscode => Source::Vscode,
+        Host::Wt => Source::WindowsTerminal,
+        Host::Zed => Source::Zed,
+        Host::Ghostty => Source::Ghostty,
+        Host::Other => Source::Assumed,
     }
 }
 
@@ -351,18 +371,16 @@ pub fn detect_light(
     project: Option<&str>,
     state: &mut State,
 ) -> bool {
+    detect(light_override, project, state).light
+}
+
+pub fn detect(light_override: Option<bool>, project: Option<&str>, state: &mut State) -> Decision {
     state.remove(LEGACY_BACKGROUND_KEY);
-    if let Some(b) = os::env("STATUSLINE_BG")
-        .as_deref()
-        .and_then(background_word)
-    {
-        return b;
-    }
-    if let Some(b) = light_override {
-        return b;
-    }
-    if let Some(b) = os::env("COLORFGBG").as_deref().and_then(colorfgbg) {
-        return b;
+    let background = os::env("STATUSLINE_BG");
+    let colorfgbg = os::env("COLORFGBG");
+    let chosen = Decision::chosen(background.as_deref(), light_override, colorfgbg.as_deref());
+    if let Some(decision) = chosen {
+        return decision;
     }
     let terminal = host();
     let places = Places::current(state);
@@ -380,20 +398,34 @@ pub fn detect_light(
     };
     let stamp = host_stamp(terminal, &files, &context);
     if state.get("bg_stamp") == Some(stamp.as_str()) {
+        let source = state
+            .get("bg_source")
+            .map_or(Source::Saved, Source::from_name);
         match state.get("bg_host") {
-            Some("light") => return true,
-            Some("dark") => return false,
+            Some("light") => {
+                return Decision {
+                    light: true,
+                    source,
+                }
+            }
+            Some("dark") => {
+                return Decision {
+                    light: false,
+                    source,
+                }
+            }
             _ => {}
         }
     }
-    let light = match host_mode(terminal, &files, &context) {
-        Mode::Light => true,
-        Mode::Dark => false,
-        Mode::System => os::os_theme().unwrap_or(false),
+    let (light, source) = match host_mode(terminal, &files, &context) {
+        Mode::Light => (true, host_source(terminal)),
+        Mode::Dark => (false, host_source(terminal)),
+        Mode::System => (os::os_theme().unwrap_or(false), Source::System),
     };
     state.set("bg_host", if light { "light" } else { "dark" });
+    state.set("bg_source", source.name());
     state.set("bg_stamp", &stamp);
-    light
+    Decision { light, source }
 }
 
 #[cfg(test)]

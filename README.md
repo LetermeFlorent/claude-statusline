@@ -52,7 +52,7 @@ Token counts are written as they are below 1000, then in `k`, `M` and `B`, round
 
 A quota bar takes its hue from its level: the normal hue under 30%, the warning hue from 30%, the critical hue from 70%. For the 5-hour quota that is violet, then mauve, then raspberry red; for the 7-day quota, green, then ochre, then red. The machine metrics keep their own hue (teal for RAM, khaki for the disk, blue for the CPU) up to 70%, turn orange above it, then red above 85%.
 
-Within a bar, the squares get slightly lighter from left to right on a dark background, and darker on a light one. The last filled square is smaller (`▪`) to mark the end. Filling is computed to the half square, and any value above zero fills at least one square. When the value reaches 100%, the number is drawn in the color of its bar. Labels and numbers are bold.
+Within a bar, the squares get slightly lighter from left to right on a dark background, and darker on a light one. The last filled square is smaller (`▪`) to mark the end. Filling is computed to the half square, and any value above zero fills at least one square. When the value reaches 100%, the number is drawn in the color of its bar. Labels and numbers are bold and stay in the default color of the terminal, so they read on any background; only the bars follow the detected background. `colors.ink_light` and `colors.ink_dark` color them.
 
 ### When parts are hidden
 
@@ -102,7 +102,7 @@ The terminal is recognized by its environment variables, then its settings are r
 
 Under WSL (`WSL_DISTRO_NAME`), VS Code and Windows Terminal keep their settings on the Windows side. The bar finds the Windows profile through the `/mnt/<drive>/Users/<name>` entry that Windows adds to `PATH`, or else through the folder of `/mnt/c/Users` that holds the Windows Terminal package, keeps that path in the state file and reads the files under it. When no profile turns up, the bar follows the system theme of the distribution, which is dark unless `GTK_THEME` or `gsettings` say otherwise: set `STATUSLINE_BG` to choose.
 
-Other terminals go straight to the system theme.
+Other terminals go straight to the system theme, except on Windows, where the system theme describes apps and not terminals: a terminal the bar does not recognize counts as dark there. `COLORFGBG`, `terminal_background` and `STATUSLINE_BG` still decide first.
 
 ### System theme
 
@@ -114,7 +114,7 @@ Each system has its own source:
 
 When the terminal follows the system (VS Code with `window.autoDetectColorScheme`, a two-variant Windows Terminal scheme, Zed set to `system`, a Ghostty `light:...,dark:...` theme), the system theme settles the question.
 
-The result of steps 4 and 5 is kept in the state file. It is worked out again as soon as one of the settings files listed above, the project's `.vscode/settings.json` included, appears, goes away, or changes size or date, when the bar runs under another Windows Terminal profile (`WT_PROFILE_ID`), or when the system theme changes, so a switch to light mode shows at the next refresh. A settings file kept as a symbolic link, in a dotfiles repository for instance, is followed to its target. Steps 1 to 3 are read on every run. `statusline --theme` prints the background in use.
+The result of steps 4 and 5 is kept in the state file. It is worked out again as soon as one of the settings files listed above, the project's `.vscode/settings.json` included, appears, goes away, or changes size or date, when the bar runs under another Windows Terminal profile (`WT_PROFILE_ID`), or when the system theme changes, so a switch to light mode shows at the next refresh. A settings file kept as a symbolic link, in a dotfiles repository for instance, is followed to its target. Steps 1 to 3 are read on every run. `statusline --theme` prints the background in use, then a second line naming where the choice came from: `STATUSLINE_BG`, `terminal_background`, `COLORFGBG`, the host terminal, the system theme, or the dark default for an unknown terminal on Windows.
 
 ## Settings
 
@@ -142,7 +142,7 @@ It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, 
 | `thresholds.system_warn`, `thresholds.system_hot` | `70`, `85` | percentages above which a machine metric turns to warning, then critical |
 | `palettes.5h.ok`, `.warn`, `.hot` | `#786EC8`, `#AA5AAF`, `#C83C5F` | hues of the 5-hour quota |
 | `palettes.7d.ok`, `.warn`, `.hot` | `#538977`, `#B88143`, `#B95555` | hues of the 7-day quota |
-| `colors.ink_light`, `colors.ink_dark` | `#000000`, `#E8EAED` | text, on a light and on a dark background |
+| `colors.ink_light`, `colors.ink_dark` | not set | color of labels and numbers, on a light and on a dark background; unset, they keep the terminal's default color |
 | `colors.empty_light`, `colors.empty_dark` | `#BEB4A5`, `#E2E5EA` | empty squares |
 | `colors.ctx_from_light`, `colors.ctx_to_light` | `#7DB9FF`, `#285AB4` | context gradient on a light background |
 | `colors.ctx_from_dark`, `colors.ctx_to_dark` | `#96CDFF`, `#4682DC` | context gradient on a dark background |
@@ -167,7 +167,7 @@ The program is installed in `~/.claude/bin`, as `statusline.exe` on Windows and 
 | no argument | reads the Claude Code JSON on standard input, writes the bar and updates the state file. Run by hand in a terminal, it does not wait for input and draws a bar with no data. |
 | `--demo` | sample rendering without Claude Code (Opus 5, effort `max`, context 340k of 1M, 5h at 36%, 7d at 61%), with the real settings, theme and machine metrics. The state file is left alone. |
 | `--bench [n]` | renders the sample `n` times (200 by default) and prints the average time per rendering, then its breakdown: state, config, session, theme, compact, system, render, write. The first rendering starts from an empty state; each one then reads the state the previous one wrote, and writes it back only when it changed. Process startup is not counted. |
-| `--theme` | prints the background in use, `light` or `dark` |
+| `--theme` | prints the background in use, `light` or `dark`, and on a second line where that choice came from |
 | `--check` | lists the mistakes in `statusline.json` with their line and column, and exits with code 1 when there is one (see [Settings](#settings)) |
 | `--install` | writes the `statusLine` block into the `settings.json` of the current account (see [INSTALL.md](INSTALL.md)) |
 | `--uninstall` | removes that block |
