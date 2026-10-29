@@ -6,6 +6,9 @@ use crate::render::printable;
 use alloc::string::String;
 
 type Path = &'static [&'static str];
+type Flag = (Path, fn(&mut Config, bool));
+type Number = (Path, fn(&mut Config, f64));
+type Text = (Path, fn(&mut Config, &str));
 
 fn unit(v: f64) -> f64 {
     num::clamp(v, 0.0, 1.0)
@@ -21,7 +24,7 @@ fn disk_path(config: &mut Config, v: &str) {
     }
 }
 
-const FLAGS: [(Path, fn(&mut Config, bool)); 8] = [
+const FLAGS: [Flag; 8] = [
     (&["bold"], |c, v| c.bold = v),
     (&["cold_cache_marker"], |c, v| c.cold_cache_marker = v),
     (&["segments", "ctx"], |c, v| c.seg_ctx = v),
@@ -32,7 +35,7 @@ const FLAGS: [(Path, fn(&mut Config, bool)); 8] = [
     (&["system", "enabled"], |c, v| c.sys_enabled = v),
 ];
 
-const NUMBERS: [(Path, fn(&mut Config, f64)); 10] = [
+const NUMBERS: [Number; 10] = [
     (&["bar_width"], bar_width),
     (&["gradient", "5h"], |c, v| c.grad_5h = unit(v)),
     (&["gradient", "7d"], |c, v| c.grad_7d = unit(v)),
@@ -45,7 +48,7 @@ const NUMBERS: [(Path, fn(&mut Config, f64)); 10] = [
     (&["thresholds", "system_hot"], |c, v| c.sys_hot = v),
 ];
 
-const TEXTS: [(Path, fn(&mut Config, &str)); 7] = [
+const TEXTS: [Text; 7] = [
     (&["terminal_background"], |c, v| {
         c.light_override = background_word(v)
     }),
