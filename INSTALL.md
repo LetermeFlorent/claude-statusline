@@ -109,7 +109,7 @@ You can also run `git pull` in the cloned folder and run the install script agai
 
 `statusline --uninstall` removes the `statusLine` block of the current account, after a `settings.json.bak-<timestamp>` copy, and writes the file back the same way as `--install`. For another account, set `CLAUDE_CONFIG_DIR` to its folder before running the command. When the account has no `settings.json`, or no `statusLine` block in it, the command says which and changes nothing. A `settings.json` that cannot be read or is not a JSON object is left alone, with exit code 1.
 
-Then delete the program, `~/.claude/bin/statusline` (`statusline.exe` on Windows, with any `statusline.exe.old-*`). If you no longer want them, also delete `~/.claude/statusline.json`, any `statusline.json` in the account folders, the `settings.json.bak-*` copies, and the state folder:
+Then delete the program, `~/.claude/bin/statusline` (`statusline.exe` on Windows), with any `statusline.new*` and `statusline.exe.old-*` an update left next to it. If you no longer want them, also delete `~/.claude/statusline.json`, any `statusline.json` in the account folders, the `settings.json.bak-*` copies, and the state folder:
 
 - Windows: `%LOCALAPPDATA%\claude-statusline`;
 - macOS: `~/Library/Application Support/claude-statusline`;
@@ -119,7 +119,7 @@ Then delete the program, `~/.claude/bin/statusline` (`statusline.exe` on Windows
 
 If the bar disappeared after a move to another PC or another user name, or after syncing `settings.json` between machines, the command in `statusLine` most likely points to a path on the other machine (`C:/Users/<old>/...`), written by a version older than 2.1.0, and Claude Code can no longer find the program. Run `git pull` in the cloned folder, then the install script again: it puts the program back, writes the portable command into the `settings.json` of each account and repairs the global `statusLine` in `~/.claude.json` when it points to a statusline program that no longer exists.
 
-If `update` stays on screen, an update is running or stopped halfway: the marker is ignored after 15 minutes. `statusline --update` run by hand shows where it fails. The network must let `api.github.com` and `github.com` through.
+If `update` stays on screen, an update is still running: the bar shows it only while an update process holds its lock, and drops the marker of one that stopped halfway. `statusline --update` run by hand shows where it fails. The network must let `api.github.com` and `github.com` through.
 
 If Windows blocks the program, run `Unblock-File "$env:USERPROFILE\.claude\bin\statusline.exe"`. The installer already does it, but unblocking can fail. The program has no digital signature, which can trigger a warning from SmartScreen or the antivirus.
 
