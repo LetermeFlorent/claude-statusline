@@ -704,10 +704,6 @@ pub fn hard_link(existing: &str, link: &str) -> bool {
     unsafe { CreateHardLinkW(wide_link.as_ptr(), wide_existing.as_ptr(), null_mut()) != 0 }
 }
 
-pub fn process_id() -> u32 {
-    unsafe { GetCurrentProcessId() }
-}
-
 pub fn stamp(path: &str) -> Option<(u64, i64)> {
     let file = open_existing(path, FILE_READ_ATTRIBUTES, FILE_FLAG_BACKUP_SEMANTICS);
     if file == INVALID {

@@ -27,7 +27,7 @@ impl From<String> for Failure {
 pub type Probe<'a> = &'a dyn Fn(&str, &str) -> Option<String>;
 
 pub fn printed(fresh: &str, flag: &str, dir: &str) -> Option<String> {
-    let output = os::join(dir, &[&format!("check.{}.tmp", os::process_id())]);
+    let output = os::join(dir, &[&format!("check.{}.tmp", os::pid())]);
     let code = os::call_to(fresh, &[flag], dir, CHECK_SECS, &output);
     let text = os::read_text(&output);
     os::remove(&output);

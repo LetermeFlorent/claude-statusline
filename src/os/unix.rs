@@ -122,10 +122,6 @@ pub fn make_executable(path: &str) -> bool {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).is_ok()
 }
 
-pub fn process_id() -> u32 {
-    std::process::id()
-}
-
 const CALL_POLL_MS: u32 = 50;
 
 pub fn call_to(exe: &str, args: &[&str], dir: &str, secs: u32, output: &str) -> Option<i32> {

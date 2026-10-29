@@ -45,7 +45,7 @@ fn install(exe: &str, tag: &str, tools: &Tools) -> Result<(), Failure> {
     let Some(name) = asset() else {
         return Err(String::from(messages::NO_ASSET.text()).into());
     };
-    let id = os::process_id();
+    let id = os::pid();
     let fresh = staging(exe, id);
     let url = tools.origin.download(tag, name);
     let fetched = (tools.fetch)(&url, &fresh, 300) == Some(HTTP_OK) && os::make_executable(&fresh);
