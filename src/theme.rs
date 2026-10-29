@@ -6,18 +6,16 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::cmp::Reverse;
-use places::{var, Places};
+use locate::places::{var, Places};
 pub use source::{Decision, Source};
 
 mod cache;
 #[cfg(test)]
 mod fixtures;
+mod locate;
 mod lookup;
 mod names;
-mod paths;
-mod places;
 mod source;
-mod wsl;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Mode {
@@ -390,7 +388,7 @@ pub fn detect(
     }
     let terminal = host();
     let places = Places::current(state);
-    let order = paths::product_order();
+    let order = locate::paths::product_order();
     let files = host_files(terminal, &places, &order);
     let workspace = project
         .filter(|_| terminal == Host::Vscode)

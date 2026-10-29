@@ -1,4 +1,4 @@
-use super::language::{from_tag, Language, CODE_ENDS};
+use super::{from_tag, Language, CODE_ENDS};
 use alloc::string::String;
 
 const VARIABLES: [&str; 3] = ["LC_ALL", "LC_MESSAGES", "LANG"];

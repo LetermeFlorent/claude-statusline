@@ -1,4 +1,4 @@
-use super::language::Language;
+use super::Language;
 
 pub fn from_language_id(id: u16) -> Language {
     const PRIMARY_LANGUAGE_MASK: u16 = 0x3ff;

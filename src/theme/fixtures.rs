@@ -1,5 +1,6 @@
-use super::places::{Places, Side};
-use super::{host_files, host_mode, wsl, Context, Host, Mode};
+use super::locate::places::{Places, Side};
+use super::locate::wsl;
+use super::{host_files, host_mode, Context, Host, Mode};
 use crate::os;
 use crate::sandbox::Sandbox;
 use std::fs::{self, File};
