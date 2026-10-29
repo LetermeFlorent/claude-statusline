@@ -46,12 +46,16 @@ const NUMBERS: [(Path, fn(&mut Config, f64)); 10] = [
 ];
 
 const TEXTS: [(Path, fn(&mut Config, &str)); 7] = [
-    (&["terminal_background"], |c, v| c.light_override = background_word(v)),
+    (&["terminal_background"], |c, v| {
+        c.light_override = background_word(v)
+    }),
     (&["glyphs", "filled"], |c, v| c.filled = printable(v)),
     (&["glyphs", "empty"], |c, v| c.empty = printable(v)),
     (&["glyphs", "half"], |c, v| c.half = printable(v)),
     (&["auto_compact_marker"], |c, v| c.marker = printable(v)),
-    (&["effort_style"], |c, v| c.effort_flat = by_name(&EFFORT_NAMES, v) == Some(true)),
+    (&["effort_style"], |c, v| {
+        c.effort_flat = by_name(&EFFORT_NAMES, v) == Some(true)
+    }),
     (&["system", "disk_path"], disk_path),
 ];
 
