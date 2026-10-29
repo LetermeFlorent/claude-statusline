@@ -53,13 +53,14 @@ pub fn write_atomic(path: &str, data: &[u8]) -> bool {
     let target = resolved(path);
     let tmp = format!("{}.{}.tmp", target, std::process::id());
     let permissions = std::fs::metadata(&target).ok().map(|m| m.permissions());
+    let _ = std::fs::remove_file(&tmp);
     let swapped = create_private(&tmp, data)
         && permissions.is_none_or(|p| std::fs::set_permissions(&tmp, p).is_ok())
         && std::fs::rename(&tmp, &target).is_ok();
     if !swapped {
         let _ = std::fs::remove_file(&tmp);
     }
-    swapped || write(&target, data)
+    swapped
 }
 
 pub fn remove(path: &str) -> bool {

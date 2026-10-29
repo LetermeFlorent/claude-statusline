@@ -398,7 +398,7 @@ fn install() -> i32 {
         let target = os::claude_dir()
             .map(|d| os::join(&d, &["statusline.json"]))
             .unwrap_or(c);
-        if os::write(&target, TEMPLATE.as_bytes()) {
+        if os::write_atomic(&target, TEMPLATE.as_bytes()) {
             os::out(&messages::CONFIG_WRITTEN.with(&[&target]));
         }
     }

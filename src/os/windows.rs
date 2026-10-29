@@ -54,6 +54,7 @@ extern "system" {
     fn GetFinalPathNameByHandleW(file: Handle, buf: *mut u16, size: u32, flags: u32) -> u32;
     fn MoveFileExW(from: *const u16, to: *const u16, flags: u32) -> i32;
     fn DeleteFileW(name: *const u16) -> i32;
+    fn SetFileInformationByHandle(file: Handle, class: u32, info: *const c_void, size: u32) -> i32;
     fn CreateDirectoryW(name: *const u16, security: *mut c_void) -> i32;
     fn FindFirstFileW(pattern: *const u16, data: *mut FindData) -> Handle;
     fn FindNextFileW(search: Handle, data: *mut FindData) -> i32;
@@ -120,6 +121,13 @@ const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
 const FILE_TYPE_DISK: u32 = 1;
 const FILE_TYPE_CHAR: u32 = 2;
 const MOVEFILE_REPLACE_EXISTING: u32 = 1;
+const DELETE: u32 = 0x0001_0000;
+const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+const FILE_RENAME_INFO_EX: u32 = 22;
+const FILE_RENAME_FLAG_REPLACE_IF_EXISTS: u32 = 1;
+const FILE_RENAME_FLAG_POSIX_SEMANTICS: u32 = 2;
+const RENAME_TRIES: u32 = 3;
+const RENAME_RETRY_MS: u32 = 5;
 const STD_INPUT_HANDLE: u32 = -10i32 as u32;
 const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;
 const STD_ERROR_HANDLE: u32 = -12i32 as u32;
@@ -144,6 +152,14 @@ const CONSOLE_CHUNK_UNITS: usize = 1024;
 const STDIN_SIZE_HINT: usize = 4096;
 const UNIX_EPOCH_TICKS: u64 = 116_444_736_000_000_000;
 const TICKS_PER_SECOND: i64 = 10_000_000;
+
+#[repr(C)]
+struct RenameInfo {
+    flags: u32,
+    root: Handle,
+    name_bytes: u32,
+    name: [u16; 1],
+}
 
 #[repr(C)]
 #[derive(Default)]
@@ -418,13 +434,17 @@ fn resolved(path: &str) -> String {
 pub fn write_atomic(path: &str, data: &[u8]) -> bool {
     let target = resolved(path);
     let tmp = format!("{}.{}.tmp", target, unsafe { GetCurrentProcessId() });
-    if write(&tmp, data) {
-        if rename(&tmp, &target) {
-            return true;
-        }
+    let swapped = write(&tmp, data)
+        && (0..RENAME_TRIES).any(|attempt| {
+            if attempt > 0 {
+                super::sleep(RENAME_RETRY_MS);
+            }
+            rename(&tmp, &target)
+        });
+    if !swapped {
         remove(&tmp);
     }
-    write(&target, data)
+    swapped
 }
 
 pub fn remove(path: &str) -> bool {
@@ -435,7 +455,43 @@ pub fn remove(path: &str) -> bool {
 pub fn rename(from: &str, to: &str) -> bool {
     let (wide_from, wide_to) = (wide_path(from), wide_path(to));
     let flags = MOVEFILE_REPLACE_EXISTING;
-    unsafe { MoveFileExW(wide_from.as_ptr(), wide_to.as_ptr(), flags) != 0 }
+    posix_rename(from, &wide_to)
+        || unsafe { MoveFileExW(wide_from.as_ptr(), wide_to.as_ptr(), flags) != 0 }
+}
+
+fn posix_rename(from: &str, wide_to: &[u16]) -> bool {
+    let flags = FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS;
+    let source = open_existing(from, DELETE, flags);
+    if source == INVALID {
+        return false;
+    }
+    let info = rename_info(wide_to);
+    let size = (info.len() * core::mem::size_of::<u64>()) as u32;
+    let class = FILE_RENAME_INFO_EX;
+    let moved =
+        unsafe { SetFileInformationByHandle(source, class, info.as_ptr().cast(), size) } != 0;
+    unsafe { CloseHandle(source) };
+    moved
+}
+
+fn rename_info(wide_to: &[u16]) -> Vec<u64> {
+    let name = &wide_to[..wide_to.len() - 1];
+    let start = core::mem::offset_of!(RenameInfo, name);
+    let bytes = core::mem::size_of_val(wide_to);
+    let size = core::cmp::max(core::mem::size_of::<RenameInfo>(), start + bytes);
+    let mut info = vec![0u64; size.div_ceil(core::mem::size_of::<u64>())];
+    let header = RenameInfo {
+        flags: FILE_RENAME_FLAG_REPLACE_IF_EXISTS | FILE_RENAME_FLAG_POSIX_SEMANTICS,
+        root: 0,
+        name_bytes: core::mem::size_of_val(name) as u32,
+        name: [0],
+    };
+    unsafe {
+        info.as_mut_ptr().cast::<RenameInfo>().write(header);
+        let into = info.as_mut_ptr().cast::<u8>().add(start).cast::<u16>();
+        core::ptr::copy_nonoverlapping(name.as_ptr(), into, name.len());
+    }
+    info
 }
 
 pub fn create_private(path: &str, data: &[u8]) -> bool {

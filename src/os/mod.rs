@@ -217,6 +217,49 @@ mod tests {
     }
 
     #[test]
+    fn an_open_reader_keeps_its_copy_while_the_file_is_replaced() {
+        use std::io::Read;
+        let sandbox = Sandbox::new("open-reader");
+        let path = sandbox.path("state");
+        std::fs::write(&path, b"old").unwrap();
+        let mut reader = std::fs::File::open(&path).unwrap();
+        assert!(write_atomic(&path, b"new"));
+        let mut seen = Vec::new();
+        reader.read_to_end(&mut seen).unwrap();
+        assert_eq!(seen, b"old");
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
+        assert_eq!(sandbox.files(), ["state"]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_file_held_without_delete_sharing_is_left_whole() {
+        use std::os::windows::fs::OpenOptionsExt;
+        const SHARE_READ_AND_WRITE: u32 = 3;
+        let sandbox = Sandbox::new("held");
+        let path = sandbox.path("state");
+        std::fs::write(&path, b"old").unwrap();
+        let _holder = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(SHARE_READ_AND_WRITE)
+            .open(&path)
+            .unwrap();
+        assert!(!write_atomic(&path, b"new"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"old");
+        assert_eq!(sandbox.files(), ["state"]);
+    }
+
+    #[test]
+    fn a_temp_file_that_cannot_be_made_leaves_the_file_whole() {
+        let sandbox = Sandbox::new("blocked-temp");
+        let path = sandbox.path("state");
+        std::fs::write(&path, b"old").unwrap();
+        std::fs::create_dir(format!("{}.{}.tmp", path, std::process::id())).unwrap();
+        assert!(!write_atomic(&path, b"new"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"old");
+    }
+
+    #[test]
     #[cfg_attr(windows, ignore = "creating a symbolic link needs an elevated token")]
     fn atomic_write_keeps_a_symbolic_link() {
         let sandbox = Sandbox::new("link");
