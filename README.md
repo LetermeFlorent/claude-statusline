@@ -52,7 +52,7 @@ Token counts are written as they are below 1000, then in `k`, `M` and `B`, round
 
 A quota bar takes its hue from its level: the normal hue under 30%, the warning hue from 30%, the critical hue from 70%. For the 5-hour quota that is violet, then mauve, then raspberry red; for the 7-day quota, green, then ochre, then red. The machine metrics keep their own hue (teal for RAM, khaki for the disk, blue for the CPU) up to 70%, turn orange above it, then red above 85%.
 
-Within a bar, the squares get slightly lighter from left to right on a dark background, and darker on a light one. The last filled square is smaller (`▪`) to mark the end. Filling is computed to the half square, and any value above zero fills at least one square. When the value reaches 100%, the number is drawn in the color of its bar. Labels and numbers are bold and stay in the default color of the terminal, so they read on any background; only the bars follow the detected background. `colors.ink_light` and `colors.ink_dark` color them.
+Within a bar, the squares get slightly lighter from left to right on a dark background, and darker on a light one. Filling is computed to the half square: the last filled square takes the small glyph (`▪`) only when it is half full, and a bar at 100% is made of full squares. Any value above zero fills at least one square, half full when the value is under half a square. The full and the empty squares share the `■` glyph by default and differ by color alone; `glyphs.empty` gives the empty ones another glyph. When the value reaches 100%, the number is drawn in the color of its bar. Labels and numbers are bold and stay in the default color of the terminal, so they read on any background; only the bars follow the detected background. `colors.ink_light` and `colors.ink_dark` color them.
 
 ### When parts are hidden
 
@@ -133,7 +133,7 @@ It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, 
 | `terminal_background` | not set | `light`, `clair`, `dark` or `sombre` forces the background |
 | `bar_width` | `8` | squares per bar, from 1 to 40 |
 | `bold` | `true` | `false` drops the bold from labels and numbers |
-| `glyphs.filled`, `glyphs.empty`, `glyphs.half` | `■`, `■`, `▪` | full square, empty square, last filled square |
+| `glyphs.filled`, `glyphs.empty`, `glyphs.half` | `■`, `■`, `▪` | full square, empty square, half-filled last square |
 | `auto_compact_marker` | `ª` | auto-compact threshold marker |
 | `effort_style` | `gradient` | `flat`, in any case, draws the effort in a single hue |
 | `segments.ctx`, `segments.5h`, `segments.7d`, `segments.model` | `true` | `false` hides the segment |

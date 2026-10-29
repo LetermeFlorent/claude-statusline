@@ -6,6 +6,8 @@ use alloc::vec::Vec;
 use core::fmt::Write;
 use core::ops::RangeInclusive;
 
+mod fill;
+
 #[derive(Clone, Copy, Default, Debug, PartialEq)]
 pub struct Quota {
     pub pct: Option<f64>,
@@ -183,14 +185,15 @@ impl Out<'_> {
             self.line.push_str(RESET);
             return None;
         };
-        let filled = cell_count(pct, width);
+        let fill = fill::of(pct, width);
+        let filled = fill.cells;
         let mut last = None;
         for i in 0..width {
             if i < filled {
                 let c = color_at(i, filled);
                 last = Some(c);
                 self.fg(c);
-                let glyph = if i == filled - 1 {
+                let glyph = if fill.half && i == filled - 1 {
                     &self.cfg.half
                 } else {
                     &self.cfg.filled
@@ -390,20 +393,6 @@ impl Out<'_> {
     }
 }
 
-pub fn cell_count(pct: f64, width: usize) -> usize {
-    if !(pct > 0.0) {
-        return 0;
-    }
-    let half_cells = num::round(pct * 2.0 * width as f64 / 100.0);
-    let cells = num::ceil(half_cells / 2.0);
-    let cells = if cells < 1.0 { 1.0 } else { cells };
-    if cells > width as f64 {
-        width
-    } else {
-        cells as usize
-    }
-}
-
 pub fn pct_text(p: Option<f64>) -> String {
     match p {
         Some(p) => format!("{}%", num::round(p) as u64),
@@ -514,9 +503,6 @@ mod tests {
         assert_eq!(reset_text(5000.0, false), "1h23m");
         assert_eq!(reset_text(200000.0, true), "2d07h");
         assert_eq!(reset_text(-5.0, true), "0m");
-        assert_eq!(cell_count(50.0, 8), 4);
-        assert_eq!(cell_count(0.5, 8), 1);
-        assert_eq!(cell_count(150.0, 8), 8);
     }
 
     #[test]
@@ -623,12 +609,12 @@ mod tests {
         let expected = format!(
             concat!(
                 "[dim]ª[/][b]ctx[/] [#96cdff]■[#8bc2fa]■[#7fb8f5]▪[#55595f]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[/] [b]60k/200k[/]",
-                " [b]|[/] [b]5h[/] [#aa5aaf]■[#b168b6]■[#b876bc]▪[#55595f]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[/] [b]36%[/] [b]1h00m[/]",
+                " [b]|[/] [b]5h[/] [#aa5aaf]■[#b168b6]■[#b876bc]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[/] [b]36%[/] [b]1h00m[/]",
                 " [b]|[/] [b]7d[/] [#b95555]■[#ba5858]■[#bb5a5a]■[#bc5d5d]■[#bd5f5f]■[#be6262]■[#bf6464]▪[#55595f]■[/] [b]81%[/] [b]2d07h[/]",
                 " [b]|[/] [u]Opus 4[/][b]:[/][b][#8290cc]h[b][#8b8fcb]i[b][#938dcb]g[b][#9c8cca]h[/]\n",
-                "[b]ram[/] [#be823c]■[#c08541]■[#c28947]■[#c38c4c]■[#c59051]■[#c79357]▪[#55595f]■[#55595f]■[/] [b]12.0/16.0G[/]",
-                " [b]|[/] [b]{disk}[/] [#c83c3c]■[#c94040]■[#cb4545]■[#cc4949]■[#cd4e4e]■[#ce5252]■[#d05757]▪[#55595f]■[/] [b]90%[/]",
-                " [b]|[/] [b]cpu[/] [#375a8c]▪[#55595f]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[/] [b]12%[/]",
+                "[b]ram[/] [#be823c]■[#c08541]■[#c28947]■[#c38c4c]■[#c59051]■[#c79357]■[#55595f]■[#55595f]■[/] [b]12.0/16.0G[/]",
+                " [b]|[/] [b]{disk}[/] [#c83c3c]■[#c94040]■[#cb4545]■[#cc4949]■[#cd4e4e]■[#ce5252]■[#d05757]■[#55595f]■[/] [b]90%[/]",
+                " [b]|[/] [b]cpu[/] [#375a8c]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[/] [b]12%[/]",
                 " [b]|[/] [b]update[/][/]\n",
             ),
             disk = DISK
@@ -641,12 +627,12 @@ mod tests {
         let expected = format!(
             concat!(
                 "[dim]ª[/][b]ctx[/] [#3d8beb]■[#3a84e3]■[#377ddb]▪[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[/] [b]60k/200k[/]",
-                " [b]|[/] [b]5h[/] [#aa5aaf]■[#9a519e]■[#8a498d]▪[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[/] [b]36%[/] [b]1h00m[/]",
+                " [b]|[/] [b]5h[/] [#aa5aaf]■[#9a519e]■[#8a498d]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[/] [b]36%[/] [b]1h00m[/]",
                 " [b]|[/] [b]7d[/] [#b95555]■[#b65454]■[#b35252]■[#af5151]■[#ac4f4f]■[#a94e4e]■[#a64c4c]▪[#c4c8ce]■[/] [b]81%[/] [b]2d07h[/]",
                 " [b]|[/] [u]Opus 4[/][b]:[/][b][#4b5476]h[b][#505376]i[b][#555275]g[b][#5a5175]h[/]\n",
-                "[b]ram[/] [#be823c]■[#b87e3a]■[#b27a38]■[#ac7636]■[#a67234]■[#a06e33]▪[#c4c8ce]■[#c4c8ce]■[/] [b]12.0/16.0G[/]",
-                " [b]|[/] [b]{disk}[/] [#c83c3c]■[#c33a3a]■[#be3939]■[#b83737]■[#b33636]■[#ae3434]■[#a93333]▪[#c4c8ce]■[/] [b]90%[/]",
-                " [b]|[/] [b]cpu[/] [#375a8c]▪[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[/] [b]12%[/]",
+                "[b]ram[/] [#be823c]■[#b87e3a]■[#b27a38]■[#ac7636]■[#a67234]■[#a06e33]■[#c4c8ce]■[#c4c8ce]■[/] [b]12.0/16.0G[/]",
+                " [b]|[/] [b]{disk}[/] [#c83c3c]■[#c33a3a]■[#be3939]■[#b83737]■[#b33636]■[#ae3434]■[#a93333]■[#c4c8ce]■[/] [b]90%[/]",
+                " [b]|[/] [b]cpu[/] [#375a8c]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[/] [b]12%[/]",
                 " [b]|[/] [b]update[/][/]\n",
             ),
             disk = DISK
@@ -690,9 +676,9 @@ mod tests {
             levels,
             [
                 "[b]5h[/] [#55595f]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[/] [b]0%[/] [b]--[/][/]\n",
-                "[b]5h[/] [#aa5aaf]■[#af63b3]■[#b46cb8]■[#b876bc]▪[#55595f]■[#55595f]■[#55595f]■[#55595f]■[/] [b]50%[/] [b]--[/][/]\n",
+                "[b]5h[/] [#aa5aaf]■[#af63b3]■[#b46cb8]■[#b876bc]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[/] [b]50%[/] [b]--[/][/]\n",
                 "[b]5h[/] [#c83c5f]■[#ca4163]■[#cb4768]■[#cd4c6c]■[#ce5271]■[#d05775]■[#d15c79]▪[#55595f]■[/] [b]80%[/] [b]--[/][/]\n",
-                "[b]5h[/] [#c83c5f]■[#c94163]■[#cb4567]■[#cc4a6a]■[#cd4f6e]■[#cf5372]■[#d05876]■[#d15c79]▪[/] [b][#d15c79]100%[/] [b]--[/][/]\n",
+                "[b]5h[/] [#c83c5f]■[#c94163]■[#cb4567]■[#cc4a6a]■[#cd4f6e]■[#cf5372]■[#d05876]■[#d15c79]■[/] [b][#d15c79]100%[/] [b]--[/][/]\n",
                 "[b]5h[/] [#55595f]■■■■■■■■[/] [b]--%[/] [b]--[/][/]\n",
             ]
         );
@@ -712,6 +698,55 @@ mod tests {
         assert!(luminance(dark.empty) < luminance(dark.ctx_to));
         assert!(luminance(light.empty) > luminance(light.ctx_from));
         assert!(luminance(light.empty) > luminance(light.ctx_to));
+    }
+
+    fn ctx_only(pct: f64, config: &str) -> String {
+        let mut data = sample();
+        data.ctx = Ctx {
+            size: Some(1_000_000.0),
+            pct: Some(pct),
+            tokens: Some((pct * 10_000.0) as u64),
+        };
+        data.window = None;
+        data.quotas = None;
+        data.sys.clear();
+        data.updating = false;
+        let only_ctx = "\"segments\": {\"5h\": false, \"7d\": false, \"model\": false}";
+        let text = format!("{{{}, {}}}", only_ctx, config);
+        line(false, Some(&text), &data)
+    }
+
+    fn glyphs(rendered: &str) -> String {
+        let mut out = String::new();
+        let mut inside = false;
+        for c in rendered.chars() {
+            match c {
+                '[' => inside = true,
+                ']' => inside = false,
+                c if !inside => out.push(c),
+                _ => {}
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn the_small_glyph_marks_a_real_half_cell_only() {
+        let dots = "\"glyphs\": {\"empty\": \".\"}";
+        let bar = |pct| glyphs(&ctx_only(pct, dots));
+        assert_eq!(
+            bar(44.0),
+            "ctx \u{25A0}\u{25A0}\u{25A0}\u{25AA}.... 440k/1M\n"
+        );
+        assert_eq!(
+            bar(50.0),
+            "ctx \u{25A0}\u{25A0}\u{25A0}\u{25A0}.... 500k/1M\n"
+        );
+        assert_eq!(
+            bar(100.0),
+            "ctx \u{25A0}\u{25A0}\u{25A0}\u{25A0}\u{25A0}\u{25A0}\u{25A0}\u{25A0} 1M/1M\n"
+        );
+        assert_eq!(bar(6.0), "ctx \u{25AA}....... 60k/1M\n");
     }
 
     #[test]
