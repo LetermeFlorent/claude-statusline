@@ -20,6 +20,7 @@ fn data() -> Data {
             }),
         }),
         spend: None,
+        cache_warm: None,
         model: String::from("Opus 4"),
         effort: None,
         sys: alloc::vec![SysValue {

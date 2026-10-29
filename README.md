@@ -139,6 +139,7 @@ It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, 
 | `bold` | `true` | `false` drops the bold from labels and numbers |
 | `glyphs.filled`, `glyphs.empty`, `glyphs.half` | `■`, `■`, `▪` | full square, empty square, half-filled last square |
 | `auto_compact_marker` | `~` | auto-compact threshold marker, drawn before `ctx` and followed by a space; empty to hide it |
+| `cold_cache_marker` | `false` | `true` adds `cold` (`froid` in French) after the `ctx` text when Claude Code reports `prompt_cache.warm` as `false`, meaning the next request will not reuse the prompt cache |
 | `effort_style` | `gradient` | `flat`, in any case, draws the effort in a single hue |
 | `segments.ctx`, `segments.5h`, `segments.7d`, `segments.spend`, `segments.model` | `true` | `false` hides the segment |
 | `gradient.5h`, `gradient.7d` | `0.55`, `0.3` | how strongly the bar lightens, from 0 to 1 |

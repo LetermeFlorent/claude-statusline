@@ -10,6 +10,7 @@ fn spend_only() -> Data {
         ctx: Ctx::default(),
         window: None,
         quotas: None,
+        cache_warm: None,
         spend: Some(Quota {
             pct: Some(63.0),
             at: Some(NOW + THREE_DAYS + 7200.0),

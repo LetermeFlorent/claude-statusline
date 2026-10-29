@@ -7,6 +7,8 @@ use alloc::vec::Vec;
 use core::fmt::Write;
 use core::ops::RangeInclusive;
 
+#[cfg(test)]
+mod cache;
 pub mod demo;
 mod fill;
 mod fit;
@@ -50,6 +52,7 @@ pub struct Data {
     pub window: Option<u64>,
     pub quotas: Option<Quotas>,
     pub spend: Option<Quota>,
+    pub cache_warm: Option<bool>,
     pub model: String,
     pub effort: Option<String>,
     pub sys: Vec<SysValue>,
@@ -304,6 +307,10 @@ impl Out<'_> {
             _ => pct_text(pct),
         };
         self.value(&text, pct, last);
+        if self.cfg.cold_cache_marker && data.cache_warm == Some(false) {
+            self.line.push(' ');
+            self.label(messages::COLD_CACHE_LABEL.text());
+        }
     }
 
     fn quota(&mut self, window: QuotaWindow, quota: Option<Quota>, now: f64) {
@@ -626,6 +633,7 @@ mod tests {
                 }),
             }),
             spend: None,
+            cache_warm: None,
             model: String::from("Opus 4"),
             effort: Some(String::from("high")),
             sys: alloc::vec![

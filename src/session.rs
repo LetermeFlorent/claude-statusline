@@ -10,6 +10,7 @@ pub struct Session {
     pub ctx: Ctx,
     pub live: Option<(Option<Live>, Option<Live>)>,
     pub spend: Option<Live>,
+    pub cache_warm: Option<bool>,
     pub cwd: Option<String>,
     pub project: Option<String>,
 }
@@ -122,6 +123,7 @@ impl Session {
             } else {
                 None
             },
+            cache_warm: payload.at(&["prompt_cache", "warm"]).and_then(|x| x.bool()),
             spend: live(limits.and_then(|r| r.get("spend_limit"))),
             cwd: payload.get("cwd").and_then(|x| x.str()).map(String::from),
             project: payload
@@ -146,6 +148,16 @@ mod tests {
         assert!(Session::parse("{\"rate_limits\":{\"spend_limit\":null}}")
             .spend
             .is_none());
+    }
+
+    #[test]
+    fn the_prompt_cache_warmth_is_read_when_it_is_a_boolean() {
+        let warm = |text: &str| Session::parse(text).cache_warm;
+        assert_eq!(warm("{\"prompt_cache\":{\"warm\":true}}"), Some(true));
+        assert_eq!(warm("{\"prompt_cache\":{\"warm\":false}}"), Some(false));
+        assert_eq!(warm("{\"prompt_cache\":{\"warm\":1}}"), None);
+        assert_eq!(warm("{\"prompt_cache\":{}}"), None);
+        assert_eq!(warm("{}"), None);
     }
 
     #[test]

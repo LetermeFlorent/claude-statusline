@@ -98,3 +98,13 @@ fn the_spend_segment_is_a_known_key() {
         [(24, String::from("segments.spend"))]
     );
 }
+
+#[test]
+fn the_cold_cache_marker_is_a_known_flag() {
+    assert_eq!(faults("{\"cold_cache_marker\": true}"), []);
+    let wrong = "{\"cold_cache_marker\": \"yes\"}";
+    assert_eq!(
+        expected_paths(wrong),
+        [(23, String::from("cold_cache_marker"))]
+    );
+}

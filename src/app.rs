@@ -348,6 +348,7 @@ fn run_on(
         window,
         quotas,
         spend: session.spend.map(|spend| spend.quota()),
+        cache_warm: session.cache_warm,
         model: session.model,
         effort: session.effort,
         sys,
