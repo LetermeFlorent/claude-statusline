@@ -4,16 +4,15 @@ use crate::sandbox::Sandbox;
 use crate::state::State;
 use std::time::{Duration, SystemTime};
 
-fn written_ago(path: &str, seconds: u64) {
-    let file = std::fs::File::options().write(true).open(path).unwrap();
-    let at = SystemTime::now() - Duration::from_secs(seconds);
-    file.set_modified(at).unwrap();
+fn ago(seconds: u64) -> SystemTime {
+    SystemTime::now() - Duration::from_secs(seconds)
 }
 
-fn parked(path: &str, pid: u32, changes: &str, seconds_ago: u64) -> String {
+fn parked(path: &str, pid: u32, changes: &str, at: SystemTime) -> String {
     let file = format!("{}.{}{}", path, pid, CHANGES_SUFFIX);
     std::fs::write(&file, changes).unwrap();
-    written_ago(&file, seconds_ago);
+    let opened = std::fs::File::options().write(true).open(&file).unwrap();
+    opened.set_modified(at).unwrap();
     file
 }
 
@@ -31,8 +30,8 @@ fn own_change(key: &str, value: &str) -> State {
 fn parked_changes_come_in_the_order_they_were_written() {
     let sandbox = Sandbox::new("parked-order");
     let path = sandbox.path("state");
-    parked(&path, 9, "q5_pct@x 30\n", 20);
-    parked(&path, 10, "q5_pct@x 50\n", 10);
+    parked(&path, 9, "q5_pct@x 30\n", ago(20));
+    parked(&path, 10, "q5_pct@x 50\n", ago(10));
     let order = names(pending_changes(&path));
     assert_eq!(order, ["state.9.changes", "state.10.changes"]);
 }
@@ -41,8 +40,9 @@ fn parked_changes_come_in_the_order_they_were_written() {
 fn parked_changes_written_together_come_in_name_order() {
     let sandbox = Sandbox::new("parked-tie");
     let path = sandbox.path("state");
-    parked(&path, 9, "q5_pct@x 30\n", 10);
-    parked(&path, 10, "q5_pct@x 50\n", 10);
+    let at = ago(10);
+    parked(&path, 9, "q5_pct@x 30\n", at);
+    parked(&path, 10, "q5_pct@x 50\n", at);
     let order = names(pending_changes(&path));
     assert_eq!(order, ["state.10.changes", "state.9.changes"]);
 }
@@ -51,8 +51,8 @@ fn parked_changes_written_together_come_in_name_order() {
 fn the_newest_parked_value_wins_the_merge() {
     let sandbox = Sandbox::new("parked-merge");
     let path = sandbox.path("state");
-    parked(&path, 9, "q5_pct@x 30\n", 20);
-    parked(&path, 10, "q5_pct@x 50\n", 10);
+    parked(&path, 9, "q5_pct@x 30\n", ago(20));
+    parked(&path, 10, "q5_pct@x 50\n", ago(10));
     assert!(save_state_at(&path, &own_change("q_at@y", "1")));
     let saved = read_state(&path).unwrap();
     assert_eq!(saved.get("q5_pct@x"), Some("50"));
@@ -63,7 +63,7 @@ fn the_newest_parked_value_wins_the_merge() {
 fn parking_again_keeps_the_changes_not_merged_yet() {
     let sandbox = Sandbox::new("parked-reuse");
     let path = sandbox.path("state");
-    let own = parked(&path, std::process::id(), "q7_pct@x 10\nq5_pct@x 20\n", 0);
+    let own = parked(&path, std::process::id(), "q7_pct@x 10\nq5_pct@x 20\n", ago(0));
     let Claim::Held(_lock) = os::lock(&format!("{}.lock", path), 0) else {
         panic!("lock not taken");
     };
