@@ -1,13 +1,13 @@
 use super::*;
 use core::cell::Cell;
 
-const SLOTS: usize = 4;
+pub(super) const SLOTS: usize = 4;
 
-fn project(n: usize) -> [String; 3] {
+pub(super) fn project(n: usize) -> [String; 3] {
     [1, 2, 3].map(|part| format!("project{}/file{}", n, part))
 }
 
-fn key_of(files: &[String; 3]) -> String {
+pub(super) fn key_of(files: &[String; 3]) -> String {
     let parts = files.iter().map(String::as_str);
     format!("compact@{}", fingerprint(parts))
 }
@@ -16,7 +16,7 @@ fn text_of(n: usize) -> String {
     plain(&format!("{}", 200_000 + 10_000 * n))
 }
 
-fn render(state: &mut State, n: usize, now: f64, reads: &Cell<usize>) -> Option<u64> {
+pub(super) fn render(state: &mut State, n: usize, now: f64, reads: &Cell<usize>) -> Option<u64> {
     let text = text_of(n);
     let read = |f: &str| {
         reads.set(reads.get() + 1);
@@ -27,7 +27,7 @@ fn render(state: &mut State, n: usize, now: f64, reads: &Cell<usize>) -> Option<
     window(&given, &project(n), state, now, &stat, &read)
 }
 
-fn entries(state: &State) -> usize {
+pub(super) fn entries(state: &State) -> usize {
     state.with_prefix("compact@").count()
 }
 
@@ -115,21 +115,6 @@ fn malformed_entries_of_other_projects_are_dropped() {
     render(&mut state, 0, 1000.0, &Cell::new(0));
     assert!(state.get("compact@zzz").is_none());
     assert_eq!(entries(&state), 1);
-}
-
-#[test]
-fn an_evicted_entry_does_not_come_back_from_the_file() {
-    let mut mine = State::parse("");
-    let reads = Cell::new(0);
-    for n in 0..SLOTS {
-        render(&mut mine, n, 1000.0 + n as f64, &reads);
-    }
-    let on_disk = State::parse(&mine.text());
-    let mut mine = State::parse(&mine.text());
-    render(&mut mine, SLOTS, 1100.0, &reads);
-    let saved = mine.rebased_on(on_disk);
-    assert_eq!(entries(&saved), SLOTS);
-    assert!(saved.get(&key_of(&project(0))).is_none());
 }
 
 #[test]

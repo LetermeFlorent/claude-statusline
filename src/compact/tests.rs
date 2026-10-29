@@ -41,6 +41,7 @@ pub(super) fn per_model(model: &str, value: &str) -> String {
 
 mod cache;
 mod folder;
+mod saved;
 mod switches;
 mod values;
 
