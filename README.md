@@ -27,7 +27,7 @@ cd claude-statusline
 sh install.sh
 ```
 
-Neither script needs the clone to install a released binary: download the script alone from the `main` branch and run it, as [INSTALL.md](INSTALL.md) shows for each system. The checksum check applies the same way, and a release without a `SHA256SUMS` is refused. Compiling, with `-Build` or through `cargo`, needs the sources.
+Neither script needs the clone to install a released binary: download the script alone from the `main` branch and run it, as [INSTALL.md](INSTALL.md) shows for each system. The checksum check applies the same way, and a release without a `SHA256SUMS` is refused. Compiling, with `-Build` or through `cargo`, needs the sources. To remove the bar from every account, run `sh install.sh --uninstall` or `install.ps1 -Uninstall`.
 
 Both scripts set up the bar in `.claude`, in every `.claude-compte*` folder and in every account listed by the multi-account menu ([claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)). `install.ps1` downloads the binary of the latest release and checks its SHA-256 hash, or compiles the sources with `-Build`. `install.sh` compiles when `cargo` is available, and downloads the binary of the latest release, checked the same way, when `cargo` is missing or the build fails.
 

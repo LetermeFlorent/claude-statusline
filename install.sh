@@ -66,9 +66,67 @@ show() {
     fr.account_missing) text="dossier de compte introuvable, ignoré : $2" ;;
     en.done) text="done, restart Claude Code" ;;
     fr.done) text="terminé, relancez Claude Code" ;;
+    en.usage) text="usage: sh install.sh [--uninstall]" ;;
+    fr.usage) text="usage : sh install.sh [--uninstall]" ;;
+    en.no_program) text="program not found: $2. Nothing was changed, remove the statusLine block of each account by hand." ;;
+    fr.no_program) text="programme introuvable : $2. Rien n'a été modifié, retirez à la main le bloc statusLine de chaque compte." ;;
+    en.uninstalled) text="statusLine removed from the accounts, the program and statusline.json are still there" ;;
+    fr.uninstalled) text="statusLine retirée des comptes, le programme et statusline.json sont toujours là" ;;
   esac
   printf '%s\n' "$text"
 }
+
+flag=--install
+case "${1:-}" in
+  "") ;;
+  --uninstall) flag=--uninstall ;;
+  *)
+    show usage >&2
+    exit 2
+    ;;
+esac
+
+ask_language() {
+  asked=$("$bin_dir/statusline" --language 2>/dev/null) || asked=""
+  case "$asked" in
+    fr | en) language=$asked ;;
+  esac
+  STATUSLINE_LANG=$language
+  export STATUSLINE_LANG
+}
+
+seen=""
+install_for() {
+  d=${1%/}
+  [ -d "$d" ] || return 0
+  case "|$seen|" in *"|$d|"*) return 0 ;; esac
+  seen="$seen|$d"
+  CLAUDE_CONFIG_DIR="$d" "$bin_dir/statusline" "$flag" || show account_kept "$d" >&2
+}
+
+each_account() {
+  install_for "$main"
+  for d in "$HOME"/.claude-compte*; do
+    install_for "$d"
+  done
+  reg="$HOME/.claude-accounts.json"
+  if [ -f "$reg" ]; then
+    grep -o '"Dir"[[:space:]]*:[[:space:]]*"[^"]*"' "$reg" | sed 's/.*"\([^"]*\)"$/\1/' | while IFS= read -r rel; do
+      if [ -d "$HOME/$rel" ]; then install_for "$HOME/$rel"; else show account_missing "$HOME/$rel" >&2; fi
+    done
+  fi
+}
+
+if [ "$flag" = --uninstall ]; then
+  if [ ! -x "$bin_dir/statusline" ]; then
+    show no_program "$bin_dir/statusline" >&2
+    exit 1
+  fi
+  ask_language
+  each_account
+  show uninstalled
+  exit 0
+fi
 
 can_build() { [ -f "$here/Cargo.toml" ] && command -v cargo >/dev/null 2>&1; }
 
@@ -106,12 +164,7 @@ fi
 
 chmod 755 "$bin_dir/statusline.new"
 mv -f "$bin_dir/statusline.new" "$bin_dir/statusline"
-asked=$("$bin_dir/statusline" --language 2>/dev/null) || asked=""
-case "$asked" in
-  fr | en) language=$asked ;;
-esac
-STATUSLINE_LANG=$language
-export STATUSLINE_LANG
+ask_language
 show copied "$bin_dir/statusline"
 
 if [ -f "$main/statusline.json" ]; then
@@ -121,23 +174,5 @@ elif [ -f "$here/statusline.json" ]; then
   show config_installed
 fi
 
-seen=""
-install_for() {
-  d=${1%/}
-  [ -d "$d" ] || return 0
-  case "|$seen|" in *"|$d|"*) return 0 ;; esac
-  seen="$seen|$d"
-  CLAUDE_CONFIG_DIR="$d" "$bin_dir/statusline" --install || show account_kept "$d" >&2
-}
-
-install_for "$main"
-for d in "$HOME"/.claude-compte*; do
-  install_for "$d"
-done
-reg="$HOME/.claude-accounts.json"
-if [ -f "$reg" ]; then
-  grep -o '"Dir"[[:space:]]*:[[:space:]]*"[^"]*"' "$reg" | sed 's/.*"\([^"]*\)"$/\1/' | while IFS= read -r rel; do
-    if [ -d "$HOME/$rel" ]; then install_for "$HOME/$rel"; else show account_missing "$HOME/$rel" >&2; fi
-  done
-fi
+each_account
 show done

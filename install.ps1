@@ -1,4 +1,4 @@
-﻿param([switch]$Build)
+﻿param([switch]$Build, [switch]$Uninstall)
 $ErrorActionPreference = "Stop"
 
 function Get-LanguageCode([string]$tag) {
@@ -24,6 +24,8 @@ $texts = @{
   account_missing = "account folder not found, skipped: {0}", "dossier de compte introuvable, ignoré : {0}"
   command_replaced = "command replaced for {0} (was: {1})", "commande remplacée pour {0} (était : {1})"
   done = "done, restart Claude Code", "terminé, relancez Claude Code"
+  no_program = "program not found: {0}. Nothing was changed, remove the statusLine block of each account by hand.", "programme introuvable : {0}. Rien n'a été modifié, retirez à la main le bloc statusLine de chaque compte."
+  uninstalled = "statusLine removed from the accounts, the program and statusline.json are still there", "statusLine retirée des comptes, le programme et statusline.json sont toujours là"
 }
 function Get-Text([string]$key) {
   $text = if ($french) { $texts[$key][1] } else { $texts[$key][0] }
@@ -32,7 +34,6 @@ function Get-Text([string]$key) {
 
 $main = Join-Path $env:USERPROFILE ".claude"
 $binDir = Join-Path $main "bin"
-New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 $exe = Join-Path $binDir "statusline.exe"
 $staged = Join-Path $binDir "statusline.new.exe"
 $releaseUrl = "https://github.com/LetermeFlorent/claude-statusline/releases/latest/download/"
@@ -70,6 +71,54 @@ function Save-ReleaseBinary([string]$destination) {
   }
 }
 
+function Get-Accounts {
+  $dirs = [ordered]@{}
+  $found = @($main) + @(Get-ChildItem -LiteralPath $env:USERPROFILE -Directory -Filter ".claude-compte*" | ForEach-Object { $_.FullName })
+  $reg = Join-Path $env:USERPROFILE ".claude-accounts.json"
+  if (Test-Path -LiteralPath $reg) {
+    try {
+      $list = Get-Content -LiteralPath $reg -Raw -Encoding UTF8 | ConvertFrom-Json
+      foreach ($a in $list) {
+        if (-not $a.Dir) { continue }
+        $listed = Join-Path $env:USERPROFILE $a.Dir
+        if (Test-Path -LiteralPath $listed) { $found += $listed } else { Write-Warning (Get-Text account_missing $listed) }
+      }
+    } catch { Write-Warning (Get-Text registry_unreadable $reg) }
+  }
+  foreach ($d in $found) {
+    if (-not (Test-Path -LiteralPath $d)) { continue }
+    $key = $d.TrimEnd("\", "/").ToLowerInvariant()
+    if (-not $dirs.Contains($key)) { $dirs[$key] = $d }
+  }
+  return @($dirs.Values)
+}
+function Invoke-Accounts([string]$action) {
+  $prev = $env:CLAUDE_CONFIG_DIR
+  $prevLanguage = $env:STATUSLINE_LANG
+  $env:STATUSLINE_LANG = $language
+  try {
+    foreach ($d in Get-Accounts) {
+      $sfile = Join-Path $d "settings.json"
+      $old = Get-StatusCommand $sfile
+      $env:CLAUDE_CONFIG_DIR = $d
+      & $exe $action
+      if ($LASTEXITCODE -ne 0) { Write-Warning (Get-Text account_kept $d); continue }
+      $new = Get-StatusCommand $sfile
+      if ($action -eq "--install" -and $old -and $old -ne $new) { Write-Host (Get-Text command_replaced $d $old) }
+    }
+  } finally { $env:CLAUDE_CONFIG_DIR = $prev; $env:STATUSLINE_LANG = $prevLanguage }
+}
+
+if ($Uninstall) {
+  if (-not (Test-Path -LiteralPath $exe)) { throw (Get-Text no_program $exe) }
+  $asked = Get-BinaryLanguage $exe
+  if ($asked) { $language = $asked; $french = $language -eq "fr" }
+  Invoke-Accounts "--uninstall"
+  Write-Host (Get-Text uninstalled)
+  return
+}
+
+New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 if ($Build) {
   if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot "Cargo.toml"))) { throw (Get-Text no_sources) }
   Push-Location $PSScriptRoot
@@ -110,38 +159,5 @@ $conf = Join-Path $main "statusline.json"
 $template = Join-Path $PSScriptRoot "statusline.json"
 if (Test-Path -LiteralPath $conf) { Write-Host (Get-Text config_kept) }
 elseif (Test-Path -LiteralPath $template) { Copy-Item -LiteralPath $template -Destination $conf; Write-Host (Get-Text config_installed) }
-
-$dirs = [ordered]@{}
-$found = @($main) + @(Get-ChildItem -LiteralPath $env:USERPROFILE -Directory -Filter ".claude-compte*" | ForEach-Object { $_.FullName })
-$reg = Join-Path $env:USERPROFILE ".claude-accounts.json"
-if (Test-Path -LiteralPath $reg) {
-  try {
-    $list = Get-Content -LiteralPath $reg -Raw -Encoding UTF8 | ConvertFrom-Json
-    foreach ($a in $list) {
-      if (-not $a.Dir) { continue }
-      $listed = Join-Path $env:USERPROFILE $a.Dir
-      if (Test-Path -LiteralPath $listed) { $found += $listed } else { Write-Warning (Get-Text account_missing $listed) }
-    }
-  } catch { Write-Warning (Get-Text registry_unreadable $reg) }
-}
-foreach ($d in $found) {
-  if (-not (Test-Path -LiteralPath $d)) { continue }
-  $key = $d.TrimEnd("\", "/").ToLowerInvariant()
-  if (-not $dirs.Contains($key)) { $dirs[$key] = $d }
-}
-
-$prev = $env:CLAUDE_CONFIG_DIR
-$prevLanguage = $env:STATUSLINE_LANG
-$env:STATUSLINE_LANG = $language
-try {
-  foreach ($d in $dirs.Values) {
-    $sfile = Join-Path $d "settings.json"
-    $old = Get-StatusCommand $sfile
-    $env:CLAUDE_CONFIG_DIR = $d
-    & $exe --install
-    if ($LASTEXITCODE -ne 0) { Write-Warning (Get-Text account_kept $d); continue }
-    $new = Get-StatusCommand $sfile
-    if ($old -and $old -ne $new) { Write-Host (Get-Text command_replaced $d $old) }
-  }
-} finally { $env:CLAUDE_CONFIG_DIR = $prev; $env:STATUSLINE_LANG = $prevLanguage }
+Invoke-Accounts "--install"
 Write-Host (Get-Text done)

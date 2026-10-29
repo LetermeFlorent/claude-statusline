@@ -125,6 +125,8 @@ You can also run `git pull` in the cloned folder and run the install script agai
 
 ## Uninstalling
 
+To remove the bar from every account at once, run the install script with its uninstall option: `sh install.sh --uninstall` on Linux and macOS, `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall` on Windows. The script goes through the same accounts as the install (`.claude`, every `.claude-compte*` folder and every `Dir` of the registry, a missing folder giving a warning) and runs `statusline --uninstall` for each one, with the backup and the checks described below. It needs the program in `~/.claude/bin`: without it, the script says so and changes nothing. It downloads nothing and deletes no file.
+
 `statusline --uninstall` removes the `statusLine` block of the current account, after a `settings.json.bak-<timestamp>` copy, and writes the file back the same way as `--install`. For another account, set `CLAUDE_CONFIG_DIR` to its folder before running the command. When the account has no `settings.json`, or no `statusLine` block in it, the command says which and changes nothing. A `settings.json` that cannot be read or is not a JSON object is left alone, with exit code 1.
 
 Then delete the program, `~/.claude/bin/statusline` (`statusline.exe` on Windows), with any `statusline.new*` and `statusline.exe.old-*` an update left next to it. If you no longer want them, also delete `~/.claude/statusline.json`, any `statusline.json` in the account folders, the `settings.json.bak-*` copies, and the state folder:
