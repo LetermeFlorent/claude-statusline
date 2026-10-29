@@ -303,17 +303,25 @@ mod sys {
         Some(crate::os::linux::cgroup::narrow(host, &read_str))
     }
 
+    const GSETTINGS_LIMIT: std::time::Duration = std::time::Duration::from_secs(1);
+
     fn gsettings(key: &str) -> Option<String> {
-        let output = std::process::Command::new("gsettings")
+        use std::process::{Command, Stdio};
+        let mut child = Command::new("gsettings")
             .args(["get", "org.gnome.desktop.interface", key])
-            .stderr(std::process::Stdio::null())
-            .output()
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
             .ok()?;
-        if !output.status.success() {
+        let status = crate::os::finish(&mut child, GSETTINGS_LIMIT)?;
+        if !status.success() {
             return None;
         }
+        let mut text = Vec::new();
+        child.stdout.take()?.read_to_end(&mut text).ok()?;
         Some(
-            String::from_utf8_lossy(&output.stdout)
+            String::from_utf8_lossy(&text)
                 .trim()
                 .trim_matches('\'')
                 .to_lowercase(),
