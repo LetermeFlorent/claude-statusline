@@ -56,12 +56,12 @@ fn effort_style_ignores_case() {
 }
 
 #[test]
-fn automatic_updates_stay_off_unless_turned_on() {
+fn automatic_updates_stay_on_unless_turned_off() {
     let auto_update = |text: &str| Config::parse(Some(text)).auto_update;
-    assert!(!Config::parse(None).auto_update);
-    assert!(!auto_update("{}"));
+    assert!(Config::parse(None).auto_update);
+    assert!(auto_update("{}"));
     assert!(!auto_update("{\"auto_update\": false}"));
-    assert!(!auto_update("{\"auto_update\": \"yes\"}"));
+    assert!(auto_update("{\"auto_update\": \"yes\"}"));
     assert!(auto_update("{\"auto_update\": true}"));
 }
 

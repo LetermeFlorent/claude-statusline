@@ -41,7 +41,7 @@ impl Config {
             sys_enabled: true,
             metrics: listed_metrics(raw.at(&["system", "metrics"])),
             disk_path: String::from(DEFAULT_DISK),
-            auto_update: raw.get("auto_update").and_then(|v| v.bool()) == Some(true),
+            auto_update: raw.get("auto_update").and_then(|v| v.bool()) != Some(false),
         }
     }
 
