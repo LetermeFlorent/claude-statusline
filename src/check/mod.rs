@@ -15,10 +15,11 @@ use alloc::vec::Vec;
 use schema::Kind;
 use walk::Fault;
 
+const FAILED_EXIT: i32 = 1;
+
 pub fn run(path: Option<String>) -> i32 {
     let Some(path) = path else {
-        os::err(messages::NO_HOME.text());
-        return 1;
+        return os::fail(messages::NO_HOME.text(), FAILED_EXIT);
     };
     let text = match os::read_checked(&path, os::MAX_READ_BYTES) {
         Contents::Bytes(raw) => String::from_utf8_lossy(&raw).into_owned(),
@@ -27,8 +28,8 @@ pub fn run(path: Option<String>) -> i32 {
             return 0;
         }
         Contents::Unreadable => {
-            os::err(&messages::CHECK_UNREADABLE.with(&[&path]));
-            return 1;
+            let message = messages::CHECK_UNREADABLE.with(&[&path]);
+            return os::fail(&message, FAILED_EXIT);
         }
     };
     let found = problems(&text);
