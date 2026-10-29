@@ -140,7 +140,7 @@ const DRIVE_ROOT_INDEX: usize = 2;
 const MAX_BUFFER_UNITS: u32 = 1 << 20;
 const READ_CHUNK_BYTES: usize = 64 << 10;
 const MAX_WRITE_BYTES: usize = 1 << 30;
-const CONSOLE_CHUNK_UNITS: usize = 8192;
+const CONSOLE_CHUNK_UNITS: usize = 1024;
 const STDIN_SIZE_HINT: usize = 4096;
 const UNIX_EPOCH_TICKS: u64 = 116_444_736_000_000_000;
 const TICKS_PER_SECOND: i64 = 10_000_000;
@@ -506,20 +506,41 @@ pub fn stdin() -> Option<String> {
     Some(String::from_utf8_lossy(&data).into_owned())
 }
 
-fn write_console(console: Handle, s: &str) {
-    let units: Vec<u16> = s.encode_utf16().collect();
+fn write_console_units(console: Handle, units: &[u16]) -> bool {
     let mut done = 0usize;
     while done < units.len() {
         let mut written = 0u32;
-        let len = core::cmp::min(units.len() - done, CONSOLE_CHUNK_UNITS) as u32;
+        let len = (units.len() - done) as u32;
         let text = unsafe { units.as_ptr().add(done) };
         if unsafe { WriteConsoleW(console, text, len, &mut written, null_mut()) } == 0
             || written == 0
         {
-            return;
+            return false;
         }
         done += written as usize;
     }
+    true
+}
+
+fn in_utf16_chunks(s: &str, buffer: &mut [u16], write: &mut dyn FnMut(&[u16]) -> bool) -> bool {
+    let mut filled = 0usize;
+    for c in s.chars() {
+        if filled + c.len_utf16() > buffer.len() {
+            if !write(&buffer[..filled]) {
+                return false;
+            }
+            filled = 0;
+        }
+        filled += c.encode_utf16(&mut buffer[filled..]).len();
+    }
+    filled == 0 || write(&buffer[..filled])
+}
+
+fn write_console(console: Handle, s: &str) {
+    let mut units = [0u16; CONSOLE_CHUNK_UNITS];
+    in_utf16_chunks(s, &mut units, &mut |chunk| {
+        write_console_units(console, chunk)
+    });
 }
 
 fn put(which: u32, s: &str) {
@@ -779,9 +800,38 @@ mod rt {
 
 #[cfg(test)]
 mod tests {
-    use super::{verbatim, DiskPerformance};
+    use super::{in_utf16_chunks, verbatim, DiskPerformance};
     use crate::state::State;
     use alloc::string::String;
+    use alloc::vec::Vec;
+
+    #[test]
+    fn console_text_is_cut_between_characters() {
+        const HIGH_SURROGATES: core::ops::RangeInclusive<u16> = 0xD800..=0xDBFF;
+        let text = "a\u{10348}bc\u{e9}\u{10348}\u{10348}d";
+        let mut buffer = [0u16; 3];
+        let mut chunks: Vec<Vec<u16>> = Vec::new();
+        assert!(in_utf16_chunks(text, &mut buffer, &mut |chunk| {
+            chunks.push(chunk.to_vec());
+            true
+        }));
+        assert_eq!(chunks.concat(), text.encode_utf16().collect::<Vec<u16>>());
+        for chunk in &chunks {
+            assert!(!chunk.is_empty() && chunk.len() <= buffer.len());
+            assert!(!HIGH_SURROGATES.contains(chunk.last().unwrap()));
+        }
+    }
+
+    #[test]
+    fn a_failed_console_write_stops_the_text() {
+        let mut calls = 0;
+        let written = in_utf16_chunks("abcdef", &mut [0u16; 2], &mut |_| {
+            calls += 1;
+            false
+        });
+        assert!(!written);
+        assert_eq!(calls, 1);
+    }
 
     #[test]
     fn long_paths_take_the_verbatim_prefix_of_their_kind() {
