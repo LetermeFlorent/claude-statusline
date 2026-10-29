@@ -42,6 +42,7 @@ pub const SETTINGS: Keys = &[
             ("ctx", Kind::Flag),
             ("5h", Kind::Flag),
             ("7d", Kind::Flag),
+            ("spend", Kind::Flag),
             ("model", Kind::Flag),
         ]),
     ),

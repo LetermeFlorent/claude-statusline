@@ -19,6 +19,7 @@ fn data() -> Data {
                 at: Some(NOW + WEEK_RESET_SECS),
             }),
         }),
+        spend: None,
         model: String::from("Opus 4"),
         effort: None,
         sys: alloc::vec![SysValue {

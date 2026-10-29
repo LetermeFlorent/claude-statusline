@@ -13,6 +13,7 @@ pub const BENCH_SYSTEM: Text = Text::new("system", "système");
 pub const BENCH_RENDER: Text = Text::new("render", "rendu");
 pub const BENCH_WRITE: Text = Text::new("write", "écriture");
 pub const SEVEN_DAY_LABEL: Text = Text::new("7d", "7j");
+pub const SPEND_LABEL: Text = Text::new("spend", "dépense");
 pub const UPDATE_LABEL: Text = Text::new("update", "maj");
 pub const RESET_DAYS: Text = Text::new("{}d{}h", "{}j{}h");
 pub const RESET_HOURS: Text = Text::new("{}h{}m", "{}h{}min");
@@ -98,7 +99,7 @@ pub const UPDATE_RUNNING: Text = Text::new(
 pub const PANICKED: Text = Text::new("internal error at {}\n", "erreur interne dans {}\n");
 
 #[cfg(test)]
-pub const ALL: [&Text; 44] = [
+pub const ALL: [&Text; 45] = [
     &BENCH_SUMMARY,
     &BENCH_STATE,
     &BENCH_CONFIG,
@@ -109,6 +110,7 @@ pub const ALL: [&Text; 44] = [
     &BENCH_RENDER,
     &BENCH_WRITE,
     &SEVEN_DAY_LABEL,
+    &SPEND_LABEL,
     &UPDATE_LABEL,
     &RESET_DAYS,
     &RESET_HOURS,

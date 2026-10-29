@@ -347,6 +347,7 @@ fn run_on(
         ctx: session.ctx,
         window,
         quotas,
+        spend: session.spend.map(|spend| spend.quota()),
         model: session.model,
         effort: session.effort,
         sys,

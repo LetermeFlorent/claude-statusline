@@ -13,6 +13,8 @@ mod fit;
 #[cfg(test)]
 mod french;
 mod palette;
+#[cfg(test)]
+mod spend;
 mod terminal;
 
 use fit::Layout;
@@ -47,6 +49,7 @@ pub struct Data {
     pub ctx: Ctx,
     pub window: Option<u64>,
     pub quotas: Option<Quotas>,
+    pub spend: Option<Quota>,
     pub model: String,
     pub effort: Option<String>,
     pub sys: Vec<SysValue>,
@@ -123,6 +126,7 @@ impl Tone {
 enum QuotaWindow {
     FiveHour,
     SevenDay,
+    Spend,
 }
 
 impl QuotaWindow {
@@ -130,6 +134,7 @@ impl QuotaWindow {
         match self {
             QuotaWindow::FiveHour => "5h",
             QuotaWindow::SevenDay => messages::SEVEN_DAY_LABEL.text(),
+            QuotaWindow::Spend => messages::SPEND_LABEL.text(),
         }
     }
 }
@@ -303,7 +308,7 @@ impl Out<'_> {
 
     fn quota(&mut self, window: QuotaWindow, quota: Option<Quota>, now: f64) {
         let (palette, gradient) = match window {
-            QuotaWindow::FiveHour => (self.cfg.pal_5h, self.cfg.grad_5h),
+            QuotaWindow::FiveHour | QuotaWindow::Spend => (self.cfg.pal_5h, self.cfg.grad_5h),
             QuotaWindow::SevenDay => (self.cfg.pal_7d, self.cfg.grad_7d),
         };
         let quota = quota.unwrap_or_default();
@@ -322,7 +327,7 @@ impl Out<'_> {
         }
         if let Some(at) = quota.at {
             self.line.push(' ');
-            self.label(&reset_text(at - now, window == QuotaWindow::SevenDay));
+            self.label(&reset_text(at - now, window != QuotaWindow::FiveHour));
         } else if window == QuotaWindow::FiveHour {
             self.line.push(' ');
             self.label("--");
@@ -495,6 +500,11 @@ pub fn render(cfg: &Config, col: &Colors, data: &Data, now: f64, term: &Terminal
     }
 }
 
+fn has_windows(data: &Data) -> bool {
+    data.quotas
+        .is_some_and(|q| q.five_hour.is_some() || q.seven_day.is_some())
+}
+
 fn draw(cfg: &Config, col: &Colors, data: &Data, now: f64, layout: Layout, depth: Depth) -> String {
     let mut out = Out {
         line: String::with_capacity(LINE_CAPACITY),
@@ -517,6 +527,10 @@ fn draw(cfg: &Config, col: &Colors, data: &Data, now: f64, layout: Layout, depth
             out.sep(&mut first);
             out.quota(QuotaWindow::SevenDay, quotas.seven_day, now);
         }
+    }
+    if let Some(spend) = data.spend.filter(|_| cfg.seg_spend && !has_windows(data)) {
+        out.sep(&mut first);
+        out.quota(QuotaWindow::Spend, Some(spend), now);
     }
     if cfg.seg_model {
         out.sep(&mut first);
@@ -611,6 +625,7 @@ mod tests {
                     at: Some(NOW + 200_000.0),
                 }),
             }),
+            spend: None,
             model: String::from("Opus 4"),
             effort: Some(String::from("high")),
             sys: alloc::vec![

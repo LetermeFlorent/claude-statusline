@@ -9,6 +9,7 @@ pub struct Session {
     pub effort: Option<String>,
     pub ctx: Ctx,
     pub live: Option<(Option<Live>, Option<Live>)>,
+    pub spend: Option<Live>,
     pub cwd: Option<String>,
     pub project: Option<String>,
 }
@@ -121,6 +122,7 @@ impl Session {
             } else {
                 None
             },
+            spend: live(limits.and_then(|r| r.get("spend_limit"))),
             cwd: payload.get("cwd").and_then(|x| x.str()).map(String::from),
             project: payload
                 .at(&["workspace", "project_dir"])
@@ -133,6 +135,18 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_spend_limit_is_read_next_to_the_windows() {
+        let text = "{\"rate_limits\":{\"spend_limit\":{\"used_percentage\":63.5,\"resets_at\":1800000000,\"used_usd\":3.1}}}";
+        let session = Session::parse(text);
+        assert!(session.live.is_none());
+        let spend = session.spend.unwrap();
+        assert_eq!((spend.pct, spend.at), (Some(63.5), Some(1.8e9)));
+        assert!(Session::parse("{\"rate_limits\":{\"spend_limit\":null}}")
+            .spend
+            .is_none());
+    }
 
     #[test]
     fn reads_model_effort_tokens_and_rate_limits() {
@@ -165,6 +179,7 @@ mod tests {
         assert_eq!(tokens_for("[1]"), Some(0));
         assert_eq!(tokens_for("null"), None);
         assert!(Session::parse("{\"rate_limits\":{}}").live.is_none());
+        assert!(Session::parse("{\"rate_limits\":{}}").spend.is_none());
         assert!(Session::parse("{\"rate_limits\":{\"five_hour\":null}}")
             .live
             .is_some());
