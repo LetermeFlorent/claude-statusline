@@ -31,7 +31,7 @@ cd claude-statusline
 sh install.sh
 ```
 
-Neither script needs the clone to install a released binary: download the script alone from the `main` branch and run it, as [INSTALL.md](INSTALL.md) shows for each system. The checksum check applies the same way, and a release without a `SHA256SUMS` is refused. Compiling, with `-Build` or through `cargo`, needs the sources. To upgrade, run the same script again: [INSTALL.md](INSTALL.md#upgrading-from-an-older-version) has the commands and the changes to expect from an older version. To remove the bar from every account, run `sh install.sh --uninstall` or `install.ps1 -Uninstall`.
+Neither script needs the clone to install a released binary: download the script alone from the `main` branch and run it, as [INSTALL.md](INSTALL.md) shows for each system. The signature and checksum checks apply the same way, and a release without a signed manifest is refused. Compiling, with `-Build` or through `cargo`, needs the sources. To upgrade, run the same script again: [INSTALL.md](INSTALL.md#upgrading-from-an-older-version) has the commands and the changes to expect from an older version. To remove the bar from every account, run `sh install.sh --uninstall` or `install.ps1 -Uninstall`.
 
 The program lands in `~/.claude/bin`, which is not on the `PATH`. Where this document writes `statusline --theme`, run `~/.claude/bin/statusline --theme` (`statusline.exe` on Windows).
 
@@ -242,7 +242,7 @@ gh attestation verify statusline-linux-x86_64 --repo LetermeFlorent/claude-statu
 
 On Linux, `sha256sum -c SHA256SUMS --ignore-missing` also compares the binaries in the folder with the list.
 
-`install.ps1` and `install.sh` download the file for their system from the latest release, along with `SHA256SUMS`, and refuse a binary whose hash is missing from the list or differs from it.
+`install.ps1` and `install.sh` download the file for their system from the latest release, along with its signed `release-manifest` and `release-manifest.sig`. They check the signature with `ssh-keygen` against the release key embedded in the script, take the expected SHA-256 hash from the manifest, and refuse a binary whose hash is missing from it or differs from it. A missing or invalid signature is refused too. When `ssh-keygen` is missing or too old to verify signatures (the script tests it on an embedded sample signature first), the script prints a warning and checks the SHA-256 hash only.
 
 ## Size and speed
 
