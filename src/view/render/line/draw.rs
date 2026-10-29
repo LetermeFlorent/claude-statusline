@@ -13,7 +13,7 @@ fn has_windows(data: &Data) -> bool {
         .is_some_and(|q| q.five_hour.is_some() || q.seven_day.is_some())
 }
 
-pub(in crate::render) fn draw(
+pub(in crate::view::render) fn draw(
     cfg: &Config,
     col: &Colors,
     data: &Data,

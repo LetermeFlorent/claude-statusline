@@ -5,7 +5,7 @@ use crate::settings::{self, Removal};
 use alloc::string::String;
 use alloc::vec::Vec;
 
-pub(in crate::app) fn store(path: &str, text: &str) -> Result<(), String> {
+pub(in crate::cli::app) fn store(path: &str, text: &str) -> Result<(), String> {
     if os::write_atomic(path, text.as_bytes()) {
         Ok(())
     } else {
@@ -13,7 +13,7 @@ pub(in crate::app) fn store(path: &str, text: &str) -> Result<(), String> {
     }
 }
 
-pub(in crate::app) fn replace(path: &str, raw: &[u8], text: &str) -> Result<String, String> {
+pub(in crate::cli::app) fn replace(path: &str, raw: &[u8], text: &str) -> Result<String, String> {
     let saved =
         backup::save(path, raw, os::now()).map_err(|name| messages::CANNOT_WRITE.with(&[&name]))?;
     let told = messages::BACKUP.with(&[&saved]);
@@ -23,7 +23,7 @@ pub(in crate::app) fn replace(path: &str, raw: &[u8], text: &str) -> Result<Stri
     }
 }
 
-pub(in crate::app) fn settings_bytes(path: &str) -> Result<Option<Vec<u8>>, String> {
+pub(in crate::cli::app) fn settings_bytes(path: &str) -> Result<Option<Vec<u8>>, String> {
     match os::read_checked(path, os::MAX_READ_BYTES) {
         Contents::Missing => Ok(None),
         Contents::Bytes(raw) => Ok(Some(raw)),
@@ -31,7 +31,7 @@ pub(in crate::app) fn settings_bytes(path: &str) -> Result<Option<Vec<u8>>, Stri
     }
 }
 
-pub(in crate::app) fn add_line(path: &str, command: &str) -> Result<String, String> {
+pub(in crate::cli::app) fn add_line(path: &str, command: &str) -> Result<String, String> {
     let raw = settings_bytes(path)?;
     let next = settings::with_status_line(raw.as_deref(), command)
         .ok_or_else(|| messages::SETTINGS_INVALID.with(&[path]))?;
@@ -48,7 +48,7 @@ pub(in crate::app) fn add_line(path: &str, command: &str) -> Result<String, Stri
     Ok(told + &messages::INSTALLED.with(&[path]))
 }
 
-pub(in crate::app) fn remove_line(path: &str) -> Result<String, String> {
+pub(in crate::cli::app) fn remove_line(path: &str) -> Result<String, String> {
     let Some(raw) = settings_bytes(path)? else {
         return Ok(messages::NO_SETTINGS.with(&[path]));
     };

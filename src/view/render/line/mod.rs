@@ -8,7 +8,7 @@ mod tone;
 
 pub(super) use draw::draw;
 #[cfg(test)]
-pub(in crate::render) use system::GIB;
+pub(in crate::view::render) use system::GIB;
 
 use crate::config::{Colors, Config, Rgb};
 use crate::num;

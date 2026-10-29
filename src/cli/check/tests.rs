@@ -24,7 +24,7 @@ fn expected_paths(text: &str) -> Vec<(usize, String)> {
 
 #[test]
 fn the_sample_settings_have_no_problem() {
-    assert_eq!(faults(include_str!("../../statusline.json")), []);
+    assert_eq!(faults(include_str!("../../../statusline.json")), []);
     let loose = "// x\n{\"bar_width\": null, \"system\": {\"metrics\": [\" Dsk\"]},}";
     assert_eq!(faults(loose), []);
 }
