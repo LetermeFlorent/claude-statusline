@@ -247,7 +247,7 @@ impl Config {
             pal_cpu: palette(
                 &raw,
                 &["system", "colors", "cpu"],
-                [55.0, 90.0, 140.0],
+                [79.0, 127.0, 196.0],
                 WARN_SYS,
                 HOT_SYS,
             ),

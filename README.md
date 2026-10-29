@@ -151,7 +151,7 @@ It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, 
 | `system.metrics` | `["ram", "io", "cpu"]` | metrics shown, in the order of the list: `ram`, `io` (or `dsk`) and `cpu`, in any case. A name listed twice counts once, and a list with no known name shows all three |
 | `system.gradient` | `0.45` | how strongly the bars of the second line lighten |
 | `system.disk_path` | `C:\` on Windows, `/` elsewhere | disk to watch |
-| `system.colors.ram.ok`, `.dsk.ok`, `.cpu.ok` | `#1E787D`, `#697855`, `#375A8C` | normal hue of each metric |
+| `system.colors.ram.ok`, `.dsk.ok`, `.cpu.ok` | `#1E787D`, `#697855`, `#4F7FC4` | normal hue of each metric |
 | `system.colors.<metric>.warn`, `.hot` | `#BE823C`, `#C83C3C` | warning and critical hues |
 | `auto_update` | `false` | `true` turns on the automatic update check |
 
