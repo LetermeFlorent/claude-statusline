@@ -7,6 +7,11 @@ use core::fmt::Write;
 use core::ops::RangeInclusive;
 
 mod fill;
+mod fit;
+mod terminal;
+
+use fit::Layout;
+pub use terminal::Terminal;
 
 #[derive(Clone, Copy, Default, Debug, PartialEq)]
 pub struct Quota {
@@ -141,6 +146,7 @@ struct Out<'a> {
     line: String,
     cfg: &'a Config,
     col: &'a Colors,
+    layout: Layout,
 }
 
 impl Out<'_> {
@@ -177,7 +183,7 @@ impl Out<'_> {
     }
 
     fn bar(&mut self, pct: Option<f64>, color_at: &dyn Fn(usize, usize) -> Rgb) -> Option<Rgb> {
-        let width = self.cfg.width;
+        let width = self.layout.width;
         let empty = self.col.empty;
         let Some(pct) = pct else {
             self.fg(empty);
@@ -268,8 +274,8 @@ impl Out<'_> {
         self.label("ctx");
         self.line.push(' ');
         let (from, to) = (self.col.ctx_from, self.col.ctx_to);
-        let span = if self.cfg.width > 1 {
-            (self.cfg.width - 1) as f64
+        let span = if self.layout.width > 1 {
+            (self.layout.width - 1) as f64
         } else {
             1.0
         };
@@ -305,6 +311,9 @@ impl Out<'_> {
         let last = self.gradient_bar(quota.pct, start, gradient);
         self.line.push(' ');
         self.value(&pct_text(quota.pct), quota.pct, last);
+        if !self.layout.resets {
+            return;
+        }
         if let Some(at) = quota.at {
             self.line.push(' ');
             self.label(&reset_text(at - now, window == QuotaWindow::SevenDay));
@@ -320,7 +329,7 @@ impl Out<'_> {
         self.tint(ink);
         self.line.push_str(&data.model);
         self.line.push_str(RESET);
-        let Some(level) = data.effort.as_deref() else {
+        let Some(level) = data.effort.as_deref().filter(|_| self.layout.effort) else {
             return;
         };
         let key = level.to_lowercase();
@@ -456,11 +465,26 @@ pub fn label_text(text: &str) -> String {
     String::from(capped.trim_end())
 }
 
-pub fn render(cfg: &Config, col: &Colors, data: &Data, now: f64) -> String {
+pub fn render(cfg: &Config, col: &Colors, data: &Data, now: f64, term: &Terminal) -> String {
+    let mut layout = Layout::full(cfg.width);
+    loop {
+        let text = draw(cfg, col, data, now, layout);
+        let fits = term
+            .columns
+            .is_none_or(|columns| fit::widest(&text) <= columns);
+        match layout.narrower() {
+            Some(narrower) if !fits => layout = narrower,
+            _ => return text,
+        }
+    }
+}
+
+fn draw(cfg: &Config, col: &Colors, data: &Data, now: f64, layout: Layout) -> String {
     let mut out = Out {
         line: String::with_capacity(LINE_CAPACITY),
         cfg,
         col,
+        layout,
     };
     let mut first = true;
     if cfg.seg_ctx {
@@ -595,7 +619,21 @@ mod tests {
 
     fn line(light: bool, config: Option<&str>, data: &Data) -> String {
         let cfg = Config::parse(config);
-        readable(&render(&cfg, &cfg.colors(light), data, NOW))
+        readable(&render(
+            &cfg,
+            &cfg.colors(light),
+            data,
+            NOW,
+            &Terminal::WIDE,
+        ))
+    }
+
+    fn fitted(columns: usize, config: Option<&str>) -> String {
+        let cfg = Config::parse(config);
+        let term = Terminal {
+            columns: Some(columns),
+        };
+        readable(&render(&cfg, &cfg.colors(false), &sample(), NOW, &term))
     }
 
     fn quota_only(pct: Option<f64>) -> String {
@@ -806,6 +844,38 @@ mod tests {
         assert_eq!(tokens(1_499), "1k");
         assert_eq!(tokens(1_500), "2k");
         assert_eq!(tokens(2_500), "3k");
+    }
+
+    #[test]
+    fn the_line_fits_in_80_columns() {
+        let wide = glyphs(&line(false, None, &sample()));
+        assert!(fit::widest(&wide) > 80, "{}", wide);
+        let narrow = glyphs(&fitted(80, None));
+        assert!(fit::widest(&narrow) <= 80, "{}", narrow);
+    }
+
+    #[test]
+    fn the_reset_times_go_first_then_the_effort_then_the_bar_width() {
+        let text = |columns| glyphs(&fitted(columns, None));
+        let bar = "\u{25A0}".repeat(8);
+        assert!(text(85).contains("1h00"), "{}", text(85));
+        let no_resets = text(84);
+        assert!(!no_resets.contains("1h00"), "{}", no_resets);
+        assert!(no_resets.contains(":high"), "{}", no_resets);
+        let no_effort = text(70);
+        assert!(!no_effort.contains(":high"), "{}", no_effort);
+        assert!(no_effort.contains("Opus 4"), "{}", no_effort);
+        assert!(no_effort.contains(&bar), "{}", no_effort);
+        let narrow = text(60);
+        assert!(!narrow.contains(&bar), "{}", narrow);
+        assert!(fit::widest(&narrow) <= 60, "{}", narrow);
+    }
+
+    #[test]
+    fn a_bar_width_of_4_fits_in_80_columns_with_every_detail() {
+        let text = glyphs(&fitted(80, Some("{\"bar_width\": 4}")));
+        assert!(text.contains("1h00") && text.contains(":high"), "{}", text);
+        assert!(fit::widest(&text) <= 80, "{}", text);
     }
 
     #[test]

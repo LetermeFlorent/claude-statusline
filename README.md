@@ -58,6 +58,8 @@ Within a bar, the squares get slightly lighter from left to right on a dark back
 
 The `5h` and `7d` segments stay hidden as long as no quota is known for the account, neither in the session JSON nor in the state file from the last 10 minutes. The second line disappears when `system.enabled` is `false`, or when the `system.metrics` list holds no known name. Each segment can also be hidden through the `segments` setting; with all four hidden, the first line stays empty. During an update, `update` shows at the end of the second line, or on a line of its own when the second line is turned off.
 
+When `COLUMNS` is set, the bar keeps each line within that many characters. It first drops the reset times of the `5h` and `7d` quotas, then the effort next to the model name, then narrows the bars one square at a time down to a single square. With the default settings the sample line takes 85 columns; with `bar_width` at `4`, it fits in 80 columns with every detail. Without `COLUMNS`, nothing is dropped.
+
 ## 5-hour and 7-day quotas
 
 Claude Code sends the quotas in the session JSON (`rate_limits.five_hour` and `rate_limits.seven_day`, with `used_percentage` and `resets_at`), starting with the first API response. The bar shows them and stores them in the state file under the account's keys.
@@ -213,6 +215,7 @@ The program reads the following variables, all of them optional:
 | `CLAUDE_CONFIG_DIR` | account folder: settings, auto-compact threshold, quota keys, target of `--install` |
 | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | auto-compact threshold |
 | `COLORFGBG` | terminal colors, for the background |
+| `COLUMNS` | width of the terminal: the line drops details to fit in it |
 | `NO_COLOR`, `TERM` | plain text, when `NO_COLOR` is set or `TERM` is `dumb` |
 | `TERM_PROGRAM`, `VSCODE_INJECTION`, `VSCODE_PID`, `WT_SESSION` | host terminal detection |
 | `VSCODE_GIT_ASKPASS_NODE`, `VSCODE_GIT_ASKPASS_MAIN`, `VSCODE_CWD` | which of VS Code and its forks started the terminal |

@@ -334,7 +334,13 @@ fn run_on(input: &str, mut state: State, now: f64, laps: &mut Laps) -> (String, 
         sys,
         updating,
     };
-    let out = render::render(&cfg, &cfg.colors(light), &data, now);
+    let out = render::render(
+        &cfg,
+        &cfg.colors(light),
+        &data,
+        now,
+        &render::Terminal::current(),
+    );
     let out = if plain::wanted(&os::env) {
         plain::strip(&out)
     } else {
