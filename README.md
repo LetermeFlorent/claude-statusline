@@ -195,7 +195,7 @@ The update holds a lock on `update.lock`, in the folder of the state file, for i
 
 The network must let through `api.github.com` (the lookup of the latest release), `github.com` (the download address) and `release-assets.githubusercontent.com`, where GitHub redirects the download of a release asset. The install scripts use `github.com` and that last host too, and `raw.githubusercontent.com` when the script itself is downloaded alone.
 
-Debug builds, and only those, read a loopback address from `STATUSLINE_UPDATE_SERVER` in place of GitHub. The tests use it to run `--update` against a local server.
+Debug builds, and only those, read a loopback address from `STATUSLINE_UPDATE_SERVER` in place of GitHub. They also take the trusted release key from `STATUSLINE_TEST_RELEASE_KEY`, a public key line, in place of the one built in. The tests use both to run `--update` against a local server that signs its own manifest.
 
 ## State file
 

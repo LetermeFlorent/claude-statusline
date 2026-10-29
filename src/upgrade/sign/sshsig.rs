@@ -21,7 +21,9 @@ pub(crate) fn verify(trusted: &[u8; 32], message: &[u8], armored: &[u8]) -> bool
 fn check(trusted: &[u8; 32], message: &[u8], armored: &[u8]) -> Option<()> {
     let decoded = unarmor(armored)?;
     let mut outer = Reader::new(&decoded);
-    (outer.take(MAGIC.len())? == MAGIC && outer.u32()? == VERSION).then_some(())?;
+    if outer.take(MAGIC.len())? != MAGIC || outer.u32()? != VERSION {
+        return None;
+    }
     field(&mut outer, &blob(trusted))?;
     field(&mut outer, NAMESPACE)?;
     field(&mut outer, b"")?;
@@ -30,7 +32,9 @@ fn check(trusted: &[u8; 32], message: &[u8], armored: &[u8]) -> Option<()> {
     field(&mut inner, KEY_TYPE)?;
     let signature = Signature::from_slice(inner.string()?).ok()?;
     (outer.finished() && inner.finished()).then_some(())?;
-    PublicKey::new(*trusted).verify(signed_data(message), &signature).ok()
+    PublicKey::new(*trusted)
+        .verify(signed_data(message), &signature)
+        .ok()
 }
 
 fn field(reader: &mut Reader, expected: &[u8]) -> Option<()> {

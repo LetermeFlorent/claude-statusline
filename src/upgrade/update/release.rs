@@ -3,6 +3,7 @@ use super::verify::Failure;
 use super::Tools;
 use crate::messages;
 use crate::os::{self, Contents};
+use crate::upgrade::sign::key::release_key;
 use crate::upgrade::sign::manifest::asset_sum;
 use crate::upgrade::sign::sha256::sha256;
 use crate::upgrade::sign::sshsig::{verify, MAX_MESSAGE, MAX_SIGNATURE};
@@ -13,6 +14,22 @@ const MANIFEST: &str = "release-manifest";
 const SIGNATURE: &str = "release-manifest.sig";
 const SMALL_SECS: u32 = 60;
 const MAX_BINARY: usize = 64 << 20;
+#[cfg(debug_assertions)]
+const KEY_VARIABLE: &str = "STATUSLINE_TEST_RELEASE_KEY";
+
+#[cfg(debug_assertions)]
+fn test_key() -> Option<[u8; 32]> {
+    os::env(KEY_VARIABLE).and_then(|line| crate::upgrade::sign::key::parse(&line))
+}
+
+#[cfg(not(debug_assertions))]
+fn test_key() -> Option<[u8; 32]> {
+    None
+}
+
+pub fn trusted_key() -> [u8; 32] {
+    test_key().or_else(release_key).unwrap_or_default()
+}
 
 fn small(tools: &Tools, tag: &str, name: &str, to: &str, limit: usize) -> Option<Vec<u8>> {
     let url = tools.origin.download(tag, name);

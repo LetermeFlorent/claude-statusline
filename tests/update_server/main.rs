@@ -1,8 +1,10 @@
 #![cfg(all(debug_assertions, not(target_os = "macos")))]
 
 mod server;
+mod signer;
 
 use server::{serve, RELEASE_PATH};
+use signer::{sign, KEY_VARIABLE};
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
@@ -83,10 +85,13 @@ fn relabelled(version: &str) -> Vec<u8> {
 
 fn update(sandbox: &Sandbox, tag: &str, binary: Vec<u8>) -> (Output, Vec<String>) {
     std::fs::copy(BINARY, sandbox.exe()).unwrap();
-    let (base, asked) = serve(String::from(tag), binary);
+    let release = sign(tag, &binary);
+    let key = release.key.clone();
+    let (base, asked) = serve(String::from(tag), binary, release);
     let output = sandbox
         .command("--update")
         .env("STATUSLINE_UPDATE_SERVER", base)
+        .env(KEY_VARIABLE, key)
         .output()
         .unwrap();
     (output, asked.try_iter().collect())
@@ -105,9 +110,10 @@ fn update_installs_the_release_of_a_local_server() {
     let (output, asked) = update(&sandbox, &tag, relabelled(&version));
     assert_eq!(output.status.code(), Some(0), "{:?}", output);
     assert_eq!(reported(&sandbox), format!("statusline {}\n", version));
-    assert_eq!(asked.len(), 2);
+    assert_eq!(asked.len(), 4);
     assert_eq!(asked[0], RELEASE_PATH);
-    assert!(asked[1].contains(&format!("/releases/download/{}/", tag)));
+    let download = format!("/releases/download/{}/", tag);
+    assert!(asked[1..].iter().all(|path| path.contains(&download)));
 }
 
 #[test]
