@@ -45,6 +45,8 @@ pub struct Data {
 
 const RESET: &str = "\x1b[0m";
 const MAX_TOKENS: u64 = 999_000_000_000;
+const LARGEST_TOKEN_UNIT: f64 = 1e9;
+const TOKEN_UNITS: [(f64, char); 3] = [(1e3, 'k'), (1e6, 'M'), (LARGEST_TOKEN_UNIT, 'B')];
 const MINUTE: i64 = 60;
 const HOUR: i64 = 60 * MINUTE;
 const DAY: i64 = 24 * HOUR;
@@ -407,16 +409,17 @@ pub fn pct_text(p: Option<f64>) -> String {
 
 pub fn tokens(count: u64) -> String {
     let count = count.min(MAX_TOKENS);
-    let amount = count as f64;
     if count < 1000 {
-        format!("{}", count)
-    } else if amount < 1e6 {
-        format!("{:.0}k", amount / 1e3)
-    } else if amount < 1e9 {
-        format!("{:.0}M", amount / 1e6)
-    } else {
-        format!("{:.0}B", amount / 1e9)
+        return format!("{}", count);
     }
+    let amount = count as f64;
+    for (size, unit) in TOKEN_UNITS {
+        let rounded = num::round(amount / size) as u64;
+        if rounded < 1000 || size == LARGEST_TOKEN_UNIT {
+            return format!("{}{}", rounded, unit);
+        }
+    }
+    format!("{}", count)
 }
 
 pub fn reset_text(secs: f64, long: bool) -> String {
@@ -501,7 +504,7 @@ mod tests {
 
     #[test]
     fn labels_shorten_and_cells_stay_within_the_bar() {
-        assert_eq!(tokens(2500), "2k");
+        assert_eq!(tokens(2500), "3k");
         assert_eq!(tokens(3500), "4k");
         assert_eq!(tokens(999), "999");
         assert_eq!(reset_text(59.9, false), "0m");
@@ -791,6 +794,18 @@ mod tests {
         let none = line(false, Some("{\"auto_compact_marker\": \"\"}"), &sample());
         assert!(none.starts_with("[b]ctx[/]"), "{}", none);
         assert!(!text.contains("[dim]"), "{}", text);
+    }
+
+    #[test]
+    fn a_count_close_to_a_million_moves_to_the_next_unit() {
+        assert_eq!(tokens(999_499), "999k");
+        assert_eq!(tokens(999_500), "1M");
+        assert_eq!(tokens(999_999), "1M");
+        assert_eq!(tokens(999_499_999), "999M");
+        assert_eq!(tokens(999_500_000), "1B");
+        assert_eq!(tokens(1_499), "1k");
+        assert_eq!(tokens(1_500), "2k");
+        assert_eq!(tokens(2_500), "3k");
     }
 
     #[test]

@@ -46,7 +46,7 @@ The second line shows three machine metrics:
 
 Disk and CPU are differences between two readings, so they show `--%` on the very first run, after more than a minute without a refresh, after the watched disk changes (a new `disk_path`, or on macOS a disk plugged in or removed), and whenever their source does not answer. Two refreshes less than a second apart show the same percentage, and the second one keeps the earlier reading to compare with. They come from the system counters: `GetSystemTimes` and `IOCTL_DISK_PERFORMANCE` on Windows, `/proc/stat`, `/proc/diskstats` and `/proc/meminfo` on Linux, Mach and IOKit on macOS. The percentage is capped at 100.
 
-Token counts are written as they are below 1000, then in `k`, `M` and `B`, rounded to the unit.
+Token counts are written as they are below 1000, then in `k`, `M` and `B`, rounded to the unit; a count that rounds up to 1000 moves to the next unit (999,500 reads `1M`).
 
 ### Bar colors
 
