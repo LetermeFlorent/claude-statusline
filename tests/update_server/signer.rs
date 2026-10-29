@@ -60,7 +60,7 @@ pub fn sign(tag: &str, binary: &[u8]) -> Signed {
     }
     let mut inner = Vec::new();
     put(&mut inner, KEY_TYPE);
-    put(&mut inner, pair.sk.sign(&signed, None).as_ref());
+    put(&mut inner, pair.sk.sign(signed, None).as_ref());
     let mut key = Vec::new();
     put(&mut key, KEY_TYPE);
     put(&mut key, &pair.pk[..]);

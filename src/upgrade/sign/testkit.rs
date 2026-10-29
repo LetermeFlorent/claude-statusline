@@ -59,7 +59,7 @@ pub(crate) fn sign(namespace: &[u8], message: &[u8]) -> Vec<u8> {
     }
     let mut inner = Vec::new();
     put_string(&mut inner, KEY_TYPE);
-    put_string(&mut inner, pair.sk.sign(&signed, None).as_ref());
+    put_string(&mut inner, pair.sk.sign(signed, None).as_ref());
     let mut blob = b"SSHSIG".to_vec();
     blob.extend_from_slice(&1u32.to_be_bytes());
     let fields: [&[u8]; 5] = [&key::blob(&pair.pk), namespace, b"", b"sha512", &inner];
