@@ -273,6 +273,26 @@ mod tests {
         assert_eq!(sandbox.files(), ["state"]);
     }
 
+    #[test]
+    fn a_reader_racing_the_swaps_always_gets_one_whole_version() {
+        const SWAPS: usize = 300;
+        const VERSIONS: [&[u8]; 2] = [b"q5_pct@a 10\n", b"q5_pct@a 20\nq7_pct@a 30\n"];
+        let sandbox = Sandbox::new("racing-reader");
+        let path = sandbox.path("state");
+        std::fs::write(&path, VERSIONS[0]).unwrap();
+        let target = path.clone();
+        let writer = std::thread::spawn(move || {
+            (0..SWAPS).all(|swap| write_atomic(&target, VERSIONS[swap % 2]))
+        });
+        while !writer.is_finished() {
+            let seen = read(&path);
+            let whole = seen.as_deref().is_some_and(|data| VERSIONS.contains(&data));
+            assert!(whole, "{:?}", seen);
+        }
+        assert!(writer.join().unwrap());
+        assert_eq!(sandbox.files(), ["state"]);
+    }
+
     #[cfg(windows)]
     #[test]
     fn a_file_held_without_delete_sharing_is_left_whole() {

@@ -9,6 +9,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const SESSIONS: usize = 20;
 const ROUNDS: usize = 3;
 const RESET_IN_SECONDS: u64 = 3600;
+const AUTO_UPDATE: &str = "{\"auto_update\": true}";
+const SHARED_KEYS: [&str; 5] = ["bg_host", "bg_stamp", "compact_at", "cpu_at", "update_at"];
 
 impl Home {
     fn state_dir(&self) -> PathBuf {
@@ -20,6 +22,14 @@ impl Home {
             self.0.join("state")
         };
         base.join("claude-statusline")
+    }
+
+    fn check_updates_in_every_account(&self) {
+        for account in 0..SESSIONS {
+            let folder = self.0.join(format!(".claude-a{}", account));
+            std::fs::create_dir_all(&folder).unwrap();
+            std::fs::write(folder.join("statusline.json"), AUTO_UPDATE).unwrap();
+        }
     }
 
     fn refresh_all_at_once(&self, input: &dyn Fn(usize) -> String) -> Vec<Output> {
@@ -63,12 +73,23 @@ fn five_hour_percent(output: &Output) -> Option<String> {
         .map(String::from)
 }
 
+fn whole_bar(shown: &str) -> bool {
+    let lines: Vec<&str> = shown.split_terminator('\n').collect();
+    shown.ends_with('\n')
+        && lines.len() == 2
+        && lines[0].starts_with("ctx ")
+        && lines[0].ends_with(" | Opus")
+        && lines[1].starts_with("ram ")
+        && lines[1].matches(" | ").count() == 2
+}
+
 fn assert_shows(outputs: &[Output], round: usize) {
     for (account, output) in outputs.iter().enumerate() {
         let shown = String::from_utf8_lossy(&output.stdout);
         let errors = String::from_utf8_lossy(&output.stderr);
         assert!(output.status.success(), "account {}: {}", account, errors);
         assert!(errors.is_empty(), "account {}: {}", account, errors);
+        assert!(whole_bar(&shown), "account {}: {:?}", account, shown);
         let expected = format!("{}%", percent(account, round));
         assert_eq!(
             five_hour_percent(output).as_deref(),
@@ -83,6 +104,7 @@ fn assert_shows(outputs: &[Output], round: usize) {
 #[test]
 fn sessions_refreshing_at_once_keep_every_account_quota() {
     let home = Home::new("sessions");
+    home.check_updates_in_every_account();
     let resets = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -111,6 +133,12 @@ fn sessions_refreshing_at_once_keep_every_account_quota() {
             line,
             state
         );
+    }
+    for key in SHARED_KEYS {
+        let kept = state
+            .lines()
+            .any(|line| line.starts_with(&format!("{} ", key)));
+        assert!(kept, "{} lost:\n{}", key, state);
     }
     let leftovers: Vec<String> = std::fs::read_dir(home.state_dir())
         .unwrap()
