@@ -158,7 +158,11 @@ pub fn ticks() -> f64 {
 }
 
 pub fn home() -> Option<String> {
-    env("HOME")
+    env("HOME").or_else(|| {
+        std::env::home_dir()
+            .map(|p| p.to_string_lossy().into_owned())
+            .filter(|h| !h.is_empty())
+    })
 }
 
 pub fn state_dir() -> Option<String> {

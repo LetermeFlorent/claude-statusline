@@ -199,7 +199,7 @@ The counters, the quotas and the detected theme live in a single file, shared by
 
 It is a text file with one `key value` line per entry. It holds the quotas of each account (`q_at@<account>`, `q5_at@<account>`, `q5_pct@<account>`, `q7_at@<account>`, `q7_pct@<account>`), the theme (`bg_host`, `bg_stamp`), the auto-compact threshold (`compact_window`, `compact_key`, `compact_stamp`, `compact_at`), the last disk and CPU readings (`io_source`, `io_clock`, `io_value`, `cpu_source`, `cpu_clock`, `cpu_value`) and the time of the last update check (`update_at`). Unknown keys are kept. The version 1 keys (`bg_at`, and the quotas without an account suffix) are removed on the first run.
 
-The file is written again only when its content changes, through a temporary file that is then renamed, so a reader never finds it half written. With no known home folder (`HOME`, or `USERPROFILE` on Windows), nothing is written. `--bench` writes a `state.bench` file next to it and deletes it at the end.
+The file is written again only when its content changes, through a temporary file that is then renamed, so a reader never finds it half written. With no known home folder, nothing is written: the home folder is `USERPROFILE`, then `HOME`, on Windows, and `HOME`, then the user's entry in the password database, on Linux and macOS. `--bench` writes a `state.bench` file next to it and deletes it at the end.
 
 ## Environment variables
 
