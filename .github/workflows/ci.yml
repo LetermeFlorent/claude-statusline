@@ -5,6 +5,9 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,6 +17,7 @@ env:
 
 jobs:
   build:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     strategy:
       fail-fast: false
       matrix:
@@ -283,6 +287,45 @@ jobs:
         with:
           name: ${{ matrix.asset }}
           path: dist/${{ matrix.asset }}
+
+  toolchain:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        channel: [stable, beta]
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.channel }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: rust toolchain
+        run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --no-self-update --profile minimal
+
+      - name: unit tests
+        env:
+          RUSTFLAGS: ${{ matrix.os == 'windows-latest' && '-Cdebuginfo=0' || '' }}
+        run: cargo test --locked -- --include-ignored
+
+      - name: release build
+        run: cargo build --release --locked
+
+      - name: binary smoke test
+        run: |
+          ext=""
+          [ "$RUNNER_OS" = Windows ] && ext=.exe
+          export HOME="$RUNNER_TEMP/h" USERPROFILE="$RUNNER_TEMP/h" LOCALAPPDATA="$RUNNER_TEMP/h/local" XDG_STATE_HOME="$RUNNER_TEMP/h/state"
+          mkdir -p "$HOME"
+          out=$(target/release/statusline$ext --demo)
+          echo "$out" | grep -q ctx
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
