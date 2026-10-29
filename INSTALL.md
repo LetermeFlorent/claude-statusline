@@ -50,7 +50,7 @@ curl -fsSL https://raw.githubusercontent.com/LetermeFlorent/claude-statusline/ma
 sh install.sh
 ```
 
-Both scripts then download the binary of the latest release and its `SHA256SUMS`, and refuse to install a binary whose hash is missing from the list or differs from it. A release that publishes no `SHA256SUMS` is therefore refused, and the script stops without touching the account. Without a clone there is no `statusline.json` to copy: `--install` writes a short template in the account folder instead. Compiling needs the sources, so `-Build` on Windows stops with a message outside a clone, and `install.sh` goes straight to the download when it finds no `Cargo.toml` next to it.
+Both scripts then download the binary of the latest release and its `SHA256SUMS`, and refuse to install a binary whose hash is missing from the list or differs from it. A release that publishes no `SHA256SUMS` is therefore refused, and the script stops without touching the account. Without a clone there is no `statusline.json` to copy: `--install` writes a short template in the account folder instead. Compiling needs the sources, so `-Build` on Windows stops with a message outside a clone, and `install.sh` goes straight to the download unless the folder next to it is this repository (a `Cargo.toml` naming the `statusline` package and a `src/main.rs`), so a script saved inside another Rust project never builds that project.
 
 ## Installing on Linux or macOS
 
