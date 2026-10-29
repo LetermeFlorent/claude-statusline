@@ -2,8 +2,6 @@
 linker = "rust-lld"
 rustflags = [
     "-C", "link-arg=/NODEFAULTLIB",
-    "-C", "link-arg=/ENTRY:start",
-    "-C", "link-arg=/SUBSYSTEM:CONSOLE",
     "-C", "link-arg=/DEBUG:NONE",
     "-C", "link-arg=/Brepro",
     "-C", "link-arg=/CETCOMPAT",
@@ -13,8 +11,6 @@ rustflags = [
 linker = "rust-lld"
 rustflags = [
     "-C", "link-arg=/NODEFAULTLIB",
-    "-C", "link-arg=/ENTRY:start",
-    "-C", "link-arg=/SUBSYSTEM:CONSOLE",
     "-C", "link-arg=/DEBUG:NONE",
     "-C", "link-arg=/Brepro",
 ]

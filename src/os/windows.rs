@@ -808,7 +808,7 @@ mod rt {
     core::arch::global_asm!(include_str!("windows_aarch64.s"));
 
     #[no_mangle]
-    pub extern "system" fn start() -> ! {
+    pub extern "system" fn mainCRTStartup() -> ! {
         let code = crate::app::main(args());
         unsafe { ExitProcess(code as u32) }
     }

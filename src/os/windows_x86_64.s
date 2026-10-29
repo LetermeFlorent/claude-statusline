@@ -97,3 +97,14 @@ chkstk_last:
     pop rax
     pop rcx
     ret
+.section .text,"xr",discard,strlen
+.globl strlen
+strlen:
+    xor eax, eax
+strlen_loop:
+    cmp byte ptr [rcx + rax], 0
+    je strlen_end
+    inc rax
+    jmp strlen_loop
+strlen_end:
+    ret
