@@ -587,6 +587,7 @@ mod sys {
         #[test]
         fn readings_do_not_pile_up_host_port_references() {
             let port = unsafe { mach_host_self() };
+            assert!(cpu().is_some() && memory().is_some());
             let before = send_references(port);
             for _ in 0..READINGS {
                 assert!(cpu().is_some());
