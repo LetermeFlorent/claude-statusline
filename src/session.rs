@@ -69,6 +69,18 @@ fn usage_tokens(current_usage: Option<&Value>) -> Option<u64> {
     Some(sum)
 }
 
+fn context_tokens(context_window: Option<&Value>) -> Option<u64> {
+    let context_window = context_window?;
+    match context_window.get("current_usage") {
+        None | Some(Value::Null) => context_window
+            .get("total_input_tokens")
+            .and_then(|v| v.num())
+            .filter(|n| *n >= 0.0 && num::is_integral(*n))
+            .map(|n| n as u64),
+        usage => usage_tokens(usage),
+    }
+}
+
 fn live(v: Option<&Value>) -> Option<Live> {
     let v = v.filter(|v| v.is_obj())?;
     Some(Live {
@@ -102,7 +114,7 @@ impl Session {
                 pct: context_window
                     .and_then(|c| c.get("used_percentage"))
                     .and_then(|x| x.num()),
-                tokens: usage_tokens(context_window.and_then(|c| c.get("current_usage"))),
+                tokens: context_tokens(context_window),
             },
             live: if five.is_some() || seven.is_some() {
                 Some((live(five), live(seven)))
@@ -156,6 +168,41 @@ mod tests {
         assert!(Session::parse("{\"rate_limits\":{\"five_hour\":null}}")
             .live
             .is_some());
+    }
+
+    fn tokens_of(context_window: &str) -> Option<u64> {
+        let text = alloc::format!("{{\"context_window\":{}}}", context_window);
+        Session::parse(&text).ctx.tokens
+    }
+
+    #[test]
+    fn total_input_tokens_fills_in_when_current_usage_is_null() {
+        let got = tokens_of("{\"current_usage\":null,\"total_input_tokens\":42000}");
+        assert_eq!(got, Some(42_000));
+    }
+
+    #[test]
+    fn total_input_tokens_fills_in_when_current_usage_is_missing() {
+        assert_eq!(tokens_of("{\"total_input_tokens\":7}"), Some(7));
+    }
+
+    #[test]
+    fn current_usage_wins_over_total_input_tokens() {
+        let got = tokens_of("{\"current_usage\":{\"input_tokens\":5},\"total_input_tokens\":9}");
+        assert_eq!(got, Some(5));
+    }
+
+    #[test]
+    fn unusable_current_usage_does_not_fall_back_to_the_total() {
+        let got = tokens_of("{\"current_usage\":{\"input_tokens\":1.5},\"total_input_tokens\":9}");
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn invalid_total_input_tokens_is_ignored() {
+        assert_eq!(tokens_of("{\"total_input_tokens\":-3}"), None);
+        assert_eq!(tokens_of("{\"total_input_tokens\":2.5}"), None);
+        assert_eq!(tokens_of("{\"total_input_tokens\":\"9\"}"), None);
     }
 
     #[test]
