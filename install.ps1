@@ -14,6 +14,7 @@ $texts = @{
   checksum = "SHA-256 hash missing from SHA256SUMS or different.", "empreinte SHA-256 absente de SHA256SUMS ou différente."
   release_refused = "released binary refused: {0} Run the script again with -Build to compile the sources (Rust required).", "binaire publié refusé : {0} Relancez avec -Build pour compiler les sources (Rust requis)."
   build_failed = "build failed", "échec de la compilation"
+  swap_failed = "program not replaced, the previous one is kept: {0}", "programme non remplacé, le précédent est conservé : {0}"
   copied = "program copied to {0}", "programme copié dans {0}"
   config_kept = "statusline.json already exists, kept", "statusline.json existe déjà, conservé"
   config_installed = "statusline.json installed", "statusline.json installé"
@@ -31,6 +32,7 @@ $main = Join-Path $env:USERPROFILE ".claude"
 $binDir = Join-Path $main "bin"
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 $exe = Join-Path $binDir "statusline.exe"
+$staged = Join-Path $binDir "statusline.new.exe"
 $releaseUrl = "https://github.com/LetermeFlorent/claude-statusline/releases/latest/download/"
 $asset = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "statusline-windows-arm64.exe" } else { "statusline-windows-x86_64.exe" }
 function Get-BinaryLanguage([string]$file) {
@@ -74,16 +76,28 @@ if ($Build) {
   } finally { Pop-Location }
   $src = Join-Path $PSScriptRoot "target\release\statusline.exe"
 } else {
-  $src = $exe + ".download"
+  $src = $staged
   Save-ReleaseBinary $src
 }
 
-if (Test-Path -LiteralPath $exe) {
-  Remove-OldCopies
-  Move-Item -LiteralPath $exe -Destination ($exe + ".old-" + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+$backup = $null
+try {
+  if ($Build) { Copy-Item -LiteralPath $src -Destination $staged -Force }
+  Unblock-File -LiteralPath $staged -ErrorAction SilentlyContinue
+  if (Test-Path -LiteralPath $exe) {
+    Remove-OldCopies
+    $backup = $exe + ".old-" + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    Move-Item -LiteralPath $exe -Destination $backup
+  }
+  Move-Item -LiteralPath $staged -Destination $exe
+} catch {
+  $reason = $_.Exception.Message
+  if ($backup -and -not (Test-Path -LiteralPath $exe) -and (Test-Path -LiteralPath $backup)) {
+    Move-Item -LiteralPath $backup -Destination $exe -ErrorAction SilentlyContinue
+  }
+  Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue
+  throw (Get-Text swap_failed $reason)
 }
-if ($Build) { Copy-Item -LiteralPath $src -Destination $exe } else { Move-Item -LiteralPath $src -Destination $exe }
-Unblock-File -LiteralPath $exe -ErrorAction SilentlyContinue
 Remove-OldCopies
 $asked = Get-BinaryLanguage $exe
 if ($asked) { $language = $asked; $french = $language -eq "fr" }
