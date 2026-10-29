@@ -32,6 +32,10 @@ impl Home {
     }
 
     pub fn session(&self, account: usize) -> Command {
+        self.session_in(&format!(".claude-a{}", account))
+    }
+
+    pub fn session_in(&self, folder: &str) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_statusline"));
         for name in INHERITED {
             command.env_remove(name);
@@ -43,10 +47,7 @@ impl Home {
             .env("APPDATA", self.0.join("roaming"))
             .env("XDG_STATE_HOME", self.0.join("state"))
             .env("XDG_CONFIG_HOME", self.0.join("config"))
-            .env(
-                "CLAUDE_CONFIG_DIR",
-                self.0.join(format!(".claude-a{}", account)),
-            )
+            .env("CLAUDE_CONFIG_DIR", self.0.join(folder))
             .env("NO_COLOR", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

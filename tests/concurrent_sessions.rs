@@ -1,8 +1,8 @@
 mod common;
+mod state_folder;
 
 use common::Home;
 use std::io::Write;
-use std::path::PathBuf;
 use std::process::Output;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -14,17 +14,6 @@ const AUTO_UPDATE: &str = "{\"auto_update\": true}";
 const SHARED_KEYS: [&str; 5] = ["bg_host", "bg_stamp", "compact_at", "cpu_at", "update_at"];
 
 impl Home {
-    fn state_dir(&self) -> PathBuf {
-        let base = if cfg!(windows) {
-            self.0.join("local")
-        } else if cfg!(target_os = "macos") {
-            self.0.join("Library").join("Application Support")
-        } else {
-            self.0.join("state")
-        };
-        base.join("claude-statusline")
-    }
-
     fn check_updates_in_every_account(&self) {
         for account in 0..SESSIONS {
             let folder = self.0.join(format!(".claude-a{}", account));
