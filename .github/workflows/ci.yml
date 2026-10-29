@@ -181,6 +181,43 @@ jobs:
             expect "$english" LANG=C
           fi
 
+      - name: measured values
+        run: |
+          b="dist/${{ matrix.asset }}"
+          export HOME="$RUNNER_TEMP/v" USERPROFILE="$RUNNER_TEMP/v" LOCALAPPDATA="$RUNNER_TEMP/v/local" XDG_STATE_HOME="$RUNNER_TEMP/v/state"
+          mkdir -p "$HOME"
+          escape=$(printf '\033')
+          plain() { LC_ALL=C sed "s/${escape}\[[0-9;]*m//g"; }
+          now=$(date +%s)
+          full='{"model":{"id":"claude-opus-5","display_name":"Opus 5"},"effort":{"level":"max"},"context_window":{"context_window_size":1000000,"used_percentage":34,"current_usage":{"input_tokens":12000,"cache_creation_input_tokens":48000,"cache_read_input_tokens":280000}},"rate_limits":{"five_hour":{"used_percentage":36,"resets_at":'$((now+12600))'},"seven_day":{"used_percentage":61,"resets_at":'$((now+320400))'}}}'
+          short='{"model":{"display_name":"Sonnet"},"context_window":{"context_window_size":200000,"used_percentage":85}}'
+          echo "$full" | "$b" > /dev/null
+          sleep 1
+          out=$(echo "$full" | "$b" | plain)
+          printf '%s\n' "$out"
+          first=$(echo "$out" | head -n 1)
+          last=$(echo "$out" | tail -n 1)
+          echo "$first" | grep -Eq 'ctx .*340k/1M'
+          echo "$first" | grep -Eq '5h .*36% 3h(29|30)m'
+          echo "$first" | grep -Eq '7d .*61% 3d1[67]h'
+          echo "$first" | grep -Eq 'Opus 5:max'
+          ram=$(echo "$last" | sed -En 's/.*ram .* ([0-9]+\.[0-9])\/([0-9]+\.[0-9])G.*/\1 \2/p')
+          [ -n "$ram" ] || { echo "ram value missing"; exit 1; }
+          echo "$last" | grep -Eq 'cpu .* [0-9]+%' || { echo "cpu value missing"; exit 1; }
+          used=${ram% *}
+          total=${ram#* }
+          case "$RUNNER_OS" in
+            Linux) bytes=$(free -b | awk '/^Mem:/ {print $2}') ;;
+            macOS) bytes=$(sysctl -n hw.memsize) ;;
+            *) bytes="" ;;
+          esac
+          if [ -n "$bytes" ]; then
+            awk -v shown="$total" -v bytes="$bytes" 'BEGIN { d = shown - bytes / 1073741824; if (d < 0) d = -d; exit !(d <= 0.05 + 1e-9) }' || { echo "total ram $total does not match $bytes bytes"; exit 1; }
+          fi
+          awk -v used="$used" -v total="$total" 'BEGIN { exit !(used <= total) }'
+          out=$(echo "$short" | "$b" | plain)
+          echo "$out" | head -n 1 | grep -Eq 'ctx .*170k/200k'
+
       - name: memory limit
         if: runner.os == 'Linux'
         run: |
