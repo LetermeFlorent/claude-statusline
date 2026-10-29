@@ -11,6 +11,10 @@ You need Claude Code installed. The rest depends on the system:
 
 The bar sends 24-bit colors when `COLORTERM` is `truecolor` or `24bit` (Windows consoles and Windows Terminal always do), and falls back to 256 colors otherwise. It draws its squares with Unicode characters (`■`, `▪`). Windows Terminal, the VS Code terminal, iTerm2, GNOME Terminal, Konsole, Ghostty and Zed show them with no setup.
 
+The `5h` and `7d` quotas are those of the Claude.ai Pro and Max plans: Claude Code sends no quota for an account without such a plan, and the bar then shows neither.
+
+The program is installed in `~/.claude/bin`, which is not on the `PATH`. Every command of this guide written as `statusline --theme` stands for `~/.claude/bin/statusline --theme`, or `%USERPROFILE%\.claude\bin\statusline.exe --theme` on Windows.
+
 ## Installing on Windows
 
 ```powershell
@@ -25,6 +29,8 @@ The script does four things:
 2. It installs `statusline.json` in `%USERPROFILE%\.claude`, only when that file does not exist yet and the script has one beside it. The other accounts read this same file, unless they have their own in their folder.
 3. It lists the accounts: `.claude`, every `.claude-compte*` folder in the home folder, and every `Dir` in `.claude-accounts.json` (the registry of [claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)), without duplicates. The registry is read as UTF-8, so accented folder names work. An unreadable registry gives a warning, and so does a listed folder that does not exist.
 4. For each account, it runs `statusline.exe --install` with `CLAUDE_CONFIG_DIR` set to the account folder. The command is rewritten in its portable form, `~/.claude/bin/statusline.exe`: any other command, such as a path from an old PC or an old user name, is replaced, and the script says so. The program also repairs the `statusLine` of the account's global file, `.claude.json` in its folder (and `%USERPROFILE%\.claude.json` for `.claude`), when it points to a statusline program that no longer exists; any other command there, such as `npx ccusage statusline`, is left alone. A failure is reported for that account and does not stop the others.
+
+These are the accounts the scripts know about. For any other Claude Code profile, on any system, set `CLAUDE_CONFIG_DIR` to its folder and run `~/.claude/bin/statusline --install`: that is enough. claude-account-menu is an optional integration, not a requirement.
 
 With `-Build`, the script skips the download and compiles the sources (`cargo build --release`, Rust required). This is also the way out when the download fails, or when the release has no `SHA256SUMS`.
 
@@ -117,7 +123,7 @@ A mistake in the file does not show on the bar: invalid JSON brings every settin
 
 ## Updating
 
-Automatic updates are off by default. With `"auto_update": true` in `statusline.json`, the bar looks for a newer release on GitHub at most every 6 hours, installs it in the background and shows `update` during the swap, with no need to restart Claude Code. The "Automatic updates" section of the README has the details.
+Automatic updates are off by default. With `"auto_update": true` in `statusline.json`, the bar looks for a newer release on GitHub at most every 6 hours, installs it in the background (at low priority on Windows, at the normal priority on Linux and macOS) and shows `update` during the swap, with no need to restart Claude Code. The "Automatic updates" section of the README has the details.
 
 `statusline --update` runs the same update by hand and prints the outcome: already up to date, the version change (for example `2.1.0 -> v2.2.0`), or the reason it failed.
 
@@ -139,7 +145,7 @@ Then delete the program, `~/.claude/bin/statusline` (`statusline.exe` on Windows
 
 If the bar disappeared after a move to another PC or another user name, or after syncing `settings.json` between machines, the command in `statusLine` most likely points to a path on the other machine (`C:/Users/<old>/...`), written by a version older than 2.1.0, and Claude Code can no longer find the program. Run `git pull` in the cloned folder, then the install script again: it puts the program back, writes the portable command into the `settings.json` of each account and repairs the global `statusLine` in `~/.claude.json` when it points to a statusline program that no longer exists.
 
-If `update` stays on screen, an update is still running: the bar shows it only while an update process holds its lock, and drops the marker of one that stopped halfway. `statusline --update` run by hand shows where it fails. The network must let `api.github.com` and `github.com` through.
+If `update` stays on screen, an update is still running: the bar shows it only while an update process holds its lock, and drops the marker of one that stopped halfway. `statusline --update` run by hand shows where it fails. The network must let `api.github.com`, `github.com` and `release-assets.githubusercontent.com` through: GitHub redirects the download of a release file to that last host.
 
 If Windows blocks the program, run `Unblock-File "$env:USERPROFILE\.claude\bin\statusline.exe"`. The installer already does it, but unblocking can fail. The program has no digital signature, which can trigger a warning from SmartScreen or the antivirus.
 

@@ -7,7 +7,11 @@ ctx ■■▪■■■■■ 340k/1M | 5h ■■■■■■■■ 36% 3h29m | 7
 ram ■■■■■■■■ 11.3/15.3G | C: ▪■■■■■■■ 2% | cpu ▪■■■■■■■ 8%
 ```
 
-It is a small Rust program with no dependencies. Claude Code runs it every 3 seconds through the `statusLine` setting: it reads the session JSON on standard input, writes the bar on standard output and exits after a little over a millisecond of work. On Windows the binary does without the C runtime and weighs about 220 KB. It can update itself from the GitHub releases, an option that is off by default.
+It is a small Rust program with no dependencies. Claude Code runs it every 3 seconds through the `statusLine` setting: it reads the session JSON on standard input, writes the bar on standard output and exits. A refresh takes a few milliseconds, most of it process start-up, and the binary weighs from 200 to 700 KB depending on the system: [Size and speed](#size-and-speed) gives the figures and says what each one measures. The program can update itself from the GitHub releases, an option that is off by default. When the bar does not show or shows something odd, start with the [troubleshooting list](INSTALL.md#troubleshooting).
+
+## Platforms and requirements
+
+Released binaries exist for Windows 10 or later (x86_64 and arm64), Linux (x86_64 and arm64, static) and macOS (Apple silicon and Intel). Other Unix systems build from the sources but show no machine metrics (see [Limits](#limits)). You need Claude Code, and Rust only to compile the program yourself. The terminal has to draw the Unicode squares `■` and `▪`, or take the ASCII set shown in [INSTALL.md](INSTALL.md#configuring-the-look); 24-bit colors are used when the terminal announces them, 256 colors otherwise. The `5h` and `7d` quotas are those of the Claude.ai Pro and Max plans, see [5-hour and 7-day quotas](#5-hour-and-7-day-quotas).
 
 ## Install
 
@@ -29,13 +33,15 @@ sh install.sh
 
 Neither script needs the clone to install a released binary: download the script alone from the `main` branch and run it, as [INSTALL.md](INSTALL.md) shows for each system. The checksum check applies the same way, and a release without a `SHA256SUMS` is refused. Compiling, with `-Build` or through `cargo`, needs the sources. To remove the bar from every account, run `sh install.sh --uninstall` or `install.ps1 -Uninstall`.
 
-Both scripts set up the bar in `.claude`, in every `.claude-compte*` folder and in every account listed by the multi-account menu ([claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)). `install.ps1` downloads the binary of the latest release and checks its SHA-256 hash, or compiles the sources with `-Build`. `install.sh` compiles when `cargo` is available, and downloads the binary of the latest release, checked the same way, when `cargo` is missing or the build fails.
+The program lands in `~/.claude/bin`, which is not on the `PATH`. Where this document writes `statusline --theme`, run `~/.claude/bin/statusline --theme` (`statusline.exe` on Windows).
+
+Both scripts set up the bar in `.claude`, in every `.claude-compte*` folder and in every account listed by the multi-account menu ([claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)), which is an optional integration. For any other Claude Code profile, set `CLAUDE_CONFIG_DIR` to its folder and run `~/.claude/bin/statusline --install`: nothing else is needed. `install.ps1` downloads the binary of the latest release and checks its SHA-256 hash, or compiles the sources with `-Build`. `install.sh` compiles when `cargo` is available, and downloads the binary of the latest release, checked the same way, when `cargo` is missing or the build fails.
 
 ## What the bar shows
 
 The first line chains four segments separated by `|`, always in this order:
 
-- `ctx`: how full the context is. The text gives the tokens used over the window size (`340k/1M`), the percentage alone when Claude Code does not send both, or `--%` with no data at all. The bar runs from light blue to deep blue, then turns orange from 70% and red from 90%, the same two hues as the machine metrics.
+- `ctx`: how full the context is. The text gives the tokens used over the window size (`340k/1M`), the percentage alone when Claude Code does not send both, or `--%` with no data at all. The bar runs from light blue to deep blue, then turns orange from 70% and red from 90%, the same two hues as the machine metrics (see [Bar colors](#bar-colors)).
 - `5h`: the 5-hour quota as a percentage, then the time left before it resets (`3h29m`, or `45m` under an hour). With no known reset time it shows `--` in that place.
 - `7d`: the weekly quota, with the time before the reset in days and hours past one day (`3d16h`).
 - `spend`: shown in place of `5h` and `7d` when the session JSON holds only `rate_limits.spend_limit`, as it does behind a Claude apps gateway. It reads like a quota: the percentage of the spend limit used, then the time before its period resets (`dépense` in French).
@@ -55,7 +61,9 @@ Token counts are written as they are below 1000, then in `k`, `M` and `B`, round
 
 A quota bar takes its hue from its level: the normal hue under 30%, the warning hue from 30%, the critical hue from 70%. For the 5-hour quota that is violet, then mauve, then raspberry red; for the 7-day quota, green, then ochre, then red. The machine metrics keep their own hue (teal for RAM, khaki for the disk, blue for the CPU) up to 70%, turn orange above it, then red above 85%.
 
-Within a bar, the squares get slightly lighter from left to right on a dark background, and darker on a light one. Filling is computed to the half square: the last filled square takes the small glyph (`▪`) only when it is half full, and a bar at 100% is made of full squares. Any value above zero fills at least one square, half full when the value is under half a square. The full and the empty squares share the `■` glyph by default and differ by color alone; `glyphs.empty` gives the empty ones another glyph. When the value reaches 100%, the number is drawn in the color of its bar. Labels and numbers are bold and stay in the default color of the terminal, so they read on any background; only the bars follow the detected background. `colors.ink_light` and `colors.ink_dark` color them.
+The `ctx` bar is the exception to what follows. Its gradient does not depend on the level: the first square takes the `from` color and the last one the `to` color (`colors.ctx_from_*` and `colors.ctx_to_*`), whatever the fill, and on both backgrounds it runs from a lighter to a deeper blue. From `thresholds.ctx_warn` it takes the orange of the machine metrics, and from `thresholds.ctx_hot` their red, with the gradient strength of `system.gradient`; `gradient.5h` and `gradient.7d` never apply to it.
+
+Within a quota or machine bar, the squares get slightly lighter from left to right on a dark background, and darker on a light one. Filling is computed to the half square: the last filled square takes the small glyph (`▪`) only when it is half full, and a bar at 100% is made of full squares. Any value above zero fills at least one square, half full when the value is under half a square. The full and the empty squares share the `■` glyph by default and differ by color alone; `glyphs.empty` gives the empty ones another glyph. When the value reaches 100%, the number is drawn in the color of its bar. Labels and numbers are bold and stay in the default color of the terminal, so they read on any background; only the bars follow the detected background. `colors.ink_light` and `colors.ink_dark` color them.
 
 ### When parts are hidden
 
@@ -65,7 +73,7 @@ When `COLUMNS` is set, the bar keeps each line within that many characters. It f
 
 ## 5-hour and 7-day quotas
 
-Claude Code sends the quotas in the session JSON (`rate_limits.five_hour` and `rate_limits.seven_day`, with `used_percentage` and `resets_at`), starting with the first API response. The bar shows them and stores them in the state file under the account's keys.
+The quotas are those of the Claude.ai Pro and Max plans. Claude Code sends them only for such an account, and the bar asks nothing from Anthropic itself; the bar is redrawn every 3 seconds, so a new value shows within a few seconds. Claude Code sends the quotas in the session JSON (`rate_limits.five_hour` and `rate_limits.seven_day`, with `used_percentage` and `resets_at`), starting with the first API response. The bar shows them and stores them in the state file under the account's keys.
 
 Before that first response, it reuses the values stored for the same account when they are less than 10 minutes old. A window whose reset time has passed, whether it comes from the session JSON or from the stored values, loses its percentage, which shows as `--%`, and keeps a reset time moved on by whole windows. That time is an estimate: a new 5-hour window only opens with the next message. The 5-hour quota stays at `--%` while the account has no 5-hour window open, that is before its first message.
 
@@ -107,6 +115,8 @@ The terminal is recognized by its environment variables, then its settings are r
 - Ghostty (`TERM_PROGRAM=ghostty`). Its files are read in Ghostty's own order: `config.ghostty` then `config` in `~/.config/ghostty` (`$XDG_CONFIG_HOME/ghostty` when set), then on macOS the same two names in `~/Library/Application Support/com.mitchellh.ghostty`. A later value replaces an earlier one, an empty value clears it, and a file that sets neither key changes nothing. A `background` color decides through its luminance. Otherwise `theme` decides: a `light:...,dark:...` value follows the system, and a name decides by itself, then through the `background` of the theme file of that name, in `~/.config/ghostty/themes` or among the themes shipped with Ghostty (`GHOSTTY_RESOURCES_DIR`). With neither key, the background is dark.
 
 Under WSL (`WSL_DISTRO_NAME`), VS Code and Windows Terminal keep their settings on the Windows side. The bar finds the Windows profile through the `/mnt/<drive>/Users/<name>` entry that Windows adds to `PATH`, or else through the folder of `/mnt/c/Users` that holds the Windows Terminal package, keeps that path in the state file and reads the files under it. When no profile turns up, the bar follows the system theme of the distribution, which is dark unless `GTK_THEME` or `gsettings` say otherwise: set `STATUSLINE_BG` to choose.
+
+Over a VS Code remote connection (SSH, dev container), the terminal runs on the remote machine while VS Code keeps its user settings on the local one, so the bar does not find them. It then sees only the project's `.vscode/settings.json`, if there is one, and otherwise takes the background as dark. On a light theme, set `STATUSLINE_BG` in the shell profile of the remote machine, or `terminal_background` in its `statusline.json`.
 
 Other terminals go straight to the system theme, except on Windows, where the system theme describes apps and not terminals: a terminal the bar does not recognize counts as dark there. `COLORFGBG`, `terminal_background` and `STATUSLINE_BG` still decide first.
 
@@ -192,7 +202,7 @@ All text in and out is UTF-8: the session JSON is read as UTF-8, and anything th
 
 ## Automatic updates
 
-With `"auto_update": true` in `statusline.json`, rendering the bar starts `statusline --update` at most every 6 hours, in the background, with no window and at low priority, and returns without waiting for it. This only happens when the program runs from `~/.claude/bin` and a binary is published for the system. The time of the last check is kept in the state file, under the `update_at` key.
+With `"auto_update": true` in `statusline.json`, rendering the bar starts `statusline --update` at most every 6 hours, in the background, with no window, and returns without waiting for it. On Windows the update runs at low priority; on Linux and macOS it runs at the normal priority, in a process group of its own, because the program does not lower it. This only happens when the program runs from `~/.claude/bin` and a binary is published for the system. The time of the last check is kept in the state file, under the `update_at` key.
 
 `--update` asks the GitHub API for the latest release, through `curl` (on Windows, the `curl.exe` of the system folder). When that release is newer, it downloads the binary for the system next to the program, under a name that carries its process id (`statusline.new-<pid>.exe`, or `statusline.new-<pid>`). It runs that copy with `--version`, which must print the version of the release, then with `--demo`, and only then puts it in place of the old one. On Windows the running program cannot be overwritten, but it can lose one of its names: the update first gives it a second one, `statusline.exe.old-<pid>`, then renames the new file over `statusline.exe` in a single step, so `statusline.exe` exists at every moment. Where hard links are not available, the old program is renamed away first, and put back if the new one cannot take its place.
 
@@ -201,6 +211,8 @@ Each update removes what earlier ones left behind: the `statusline.new*` and `st
 During the download, then for 5 seconds after the swap, the bar shows `update`. The next refresh starts the new program, with no need to restart Claude Code. A failure (network down, missing binary, wrong version, swap refused) leaves the old program in place until the next check.
 
 The update holds a lock on `update.lock`, in the folder of the state file, for its whole run: an open handle on Windows, `flock` on Unix. The system releases it when the process ends, even when it is killed. A second update waits at most 2 seconds for it, then says that an update is already running and stops. The bar shows `update` only while the `updating` marker exists and the lock is held. It checks the lock without waiting, and removes a marker that a stopped update left behind. The automatic check is off by default because nothing signs the downloaded binary yet. `statusline --update` still works by hand.
+
+The network must let through `api.github.com` (the lookup of the latest release), `github.com` (the download address) and `release-assets.githubusercontent.com`, where GitHub redirects the download of a release asset. The install scripts use `github.com` and that last host too, and `raw.githubusercontent.com` when the script itself is downloaded alone.
 
 Debug builds, and only those, read a loopback address from `STATUSLINE_UPDATE_SERVER` in place of GitHub. The tests use it to run `--update` against a local server.
 
@@ -212,9 +224,19 @@ The counters, the quotas and the detected theme live in a single file, shared by
 - macOS: `~/Library/Application Support/claude-statusline/state`;
 - Linux: `$XDG_STATE_HOME/claude-statusline/state`, or else `~/.local/state/claude-statusline/state`.
 
-It is a text file with one `key value` line per entry. It holds the quotas of each account (`q_at@<account>`, `q5_at@<account>`, `q5_pct@<account>`, `q7_at@<account>`, `q7_pct@<account>`), the detected theme (one `bg@<fingerprint of the terminal settings>` entry per terminal and project, the 4 most recently used kept, each holding the time, `light` or `dark` and the source; the single entry keys `bg_host`, `bg_source` and `bg_stamp` of older versions are removed), the auto-compact threshold (one `compact@<fingerprint of the settings files>` entry per project, the 4 most recently checked kept, each holding the check time, the files stamp and the window; the single entry keys `compact_window`, `compact_key`, `compact_stamp` and `compact_at` of older versions are removed), the last disk and CPU readings (`io_source`, `io_clock`, `io_value`, `cpu_source`, `cpu_clock`, `cpu_value`) and the time of the last update check (`update_at`). Unknown keys are kept. The version 1 keys (`bg_at`, and the quotas without an account suffix) are removed on the first run.
+It is a text file in UTF-8. A byte order mark at its start is ignored, and an invalid byte reads as U+FFFD. Each line is one entry, `key value`: the key runs to the first space and the value is the rest of the line, spaces included. A key holds no whitespace and a value no line break, and a line without a space is skipped. The program writes the lines sorted by key, each ended by a line feed, and reads a carriage return before the line feed too. Times are seconds since 1970 and percentages are numbers from 0 to 100. The keys are:
 
-A refresh writes the file again only when its content changes. That is nearly every refresh a second or more after the previous one, since the disk and CPU readings and the `q_at` time of the account move each time; refreshes within the same second mostly write nothing. Each write goes through a temporary file that is then renamed, so a reader never finds it half written. Bars often refresh at the same moment, one per open session. Before writing, each one takes the `state.lock` file next to the state, then reads the file again and applies only the keys it changed itself, so the quotas another session wrote in between are kept. A bar that finds the lock taken leaves its changes in a `state.<process id>.changes` file next to the state, one `key value` line per key it set and a bare `key` line per key it removed, then waits half a second at most. The next bar to hold the lock applies every such file, saves, and deletes them, and every bar reads them along with the state, so a quota written while the lock was taken shows at once and is never lost. On Windows the rename goes through even while another bar is reading the file. When it still fails, because another program holds the file open without sharing it, that refresh writes nothing and the previous file stays whole. A tool that edits the file should follow the same steps: lock `state.lock` (`LockFileEx` on Windows, `flock` on Linux and macOS), read the file, change its own keys, then write a temporary file in the same folder and rename it over `state`, leaving the `.changes` files alone. With no known home folder, nothing is written: the home folder is `USERPROFILE`, then `HOME`, on Windows, and `HOME`, then the user's entry in the password database, on Linux and macOS. `--bench` writes a `state.bench` file next to it and deletes it at the end.
+- `q_at@<account>`: when the quotas of the account were last stored, in whole seconds. Stored quotas more than 10 minutes old are not used.
+- `q5_at@<account>` and `q7_at@<account>`: reset time of the 5-hour and of the 7-day window, as Claude Code sends it.
+- `q5_pct@<account>` and `q7_pct@<account>`: percentage of each window used, as Claude Code sends it.
+- `bg@<fingerprint of the terminal settings>`: the detected theme, one entry per terminal and project, the 4 most recently used kept, holding the time, `light` or `dark`, and the source of the choice.
+- `compact@<fingerprint of the settings files>`: the auto-compact threshold, one entry per project, the 4 most recently checked kept, holding the check time, the files stamp and the window.
+- `io_source`, `io_clock`, `io_value`, `io_at`, `io_pct`, and the same five under the prefix `cpu_`: the last disk and CPU readings. `_clock` and `_value` are the two raw counters, elapsed time and busy time, in the unit of the system source; `_source` tells what was read, `_at` is the time of the reading, with decimals, and `_pct` the percentage worked out from the last two readings.
+- `update_at`: the time of the last update check.
+
+Unknown keys are kept. Version 1 left keys that are no longer read: `bg_at`, `bg_host`, `bg_source` and `bg_stamp`, `compact_window`, `compact_key`, `compact_stamp` and `compact_at`, and the quotas without an account suffix (`q_at`, `q5_at`, `q5_pct`, `q7_at`, `q7_pct`). The theme keys go the next time the theme is looked up, the compact keys the next time the threshold is, and the quota keys the first time Claude Code sends quotas, so an old file keeps them until then.
+
+A refresh writes the file again only when its content changes. That is nearly every refresh a second or more after the previous one, since the disk and CPU readings and the `q_at` time of the account move each time; refreshes within the same second mostly write nothing. Each write goes through a temporary file that is then renamed, so a reader never finds it half written. Bars often refresh at the same moment, one per open session. Before writing, each one takes the `state.lock` file next to the state, then reads the file again and applies only the keys it changed itself, so the quotas another session wrote in between are kept. A bar that finds the lock taken leaves its changes in a `state.<process id>.changes` file next to the state, one `key value` line per key it set and a bare `key` line per key it removed, then waits half a second at most. The next bar to hold the lock applies every such file, saves, and deletes them, and every bar reads them along with the state, so a quota written while the lock was taken shows at once and is never lost. On Windows the rename goes through even while another bar is reading the file. When it still fails, because another program holds the file open without sharing it, that refresh writes nothing and the previous file stays whole. A tool that edits the file should follow the same steps: lock `state.lock` (`LockFileEx` on Windows, `flock` on Linux and macOS), read the file, change its own keys, then write a temporary file in the same folder and rename it over `state`, leaving the `.changes` files alone. With no known home folder, nothing is written: the home folder is `USERPROFILE`, then `HOME`, on Windows, and `HOME`, then the user's entry in the password database, on Linux and macOS. `--bench` writes a copy of its own, `state-bench-<process id>` with its `.lock` file, next to the state and deletes both at the end.
 
 ## Environment variables
 
@@ -275,6 +297,22 @@ gh attestation verify statusline-linux-x86_64 --repo LetermeFlorent/claude-statu
 On Linux, `sha256sum -c SHA256SUMS --ignore-missing` also compares the binaries in the folder with the list.
 
 `install.ps1` and `install.sh` download the file for their system from the latest release, along with `SHA256SUMS`, and refuse a binary whose hash is missing from the list or differs from it.
+
+## Size and speed
+
+Each figure below says what it measures and where. The sizes of the v2.1.1 release assets, in bytes:
+
+| File | Size |
+|---|---|
+| `statusline-windows-x86_64.exe` | 207,360 |
+| `statusline-macos-arm64` | 504,832 |
+| `statusline-macos-x86_64` | 521,632 |
+| `statusline-linux-arm64` | 594,160 |
+| `statusline-linux-x86_64` | 672,496 |
+
+A release build of the sources that follow v2.1.1 comes to 359,424 bytes for Windows x86_64: the program has grown since that release. The Windows binary does without the C runtime.
+
+The time of one refresh, from the start of the process to its exit, was measured at version 2.1.1 as the median over many runs: 1.5 ms on Linux x86_64, 1.7 ms on Linux arm64, 8.7 ms on Windows, 17.1 ms on macOS arm64 and 18.5 ms on macOS x86_64. A later measure on Windows 11 x64, the median of 300 launches, gave 6.2 ms. Most of that is the system starting a process. The work of the program alone, which `statusline --bench 200` reports, is 0.57 ms per render on that Windows PC, with no process start-up counted, and 0.39 ms on a later run of the current sources.
 
 ## Limits
 
