@@ -10,11 +10,6 @@ mod unix;
 #[cfg(not(windows))]
 pub use unix::*;
 #[cfg(windows)]
-#[path = "windows/process/child.rs"]
-mod spawn_windows;
-#[cfg(windows)]
-pub use spawn_windows::*;
-#[cfg(windows)]
 mod windows;
 #[cfg(windows)]
 pub use windows::*;

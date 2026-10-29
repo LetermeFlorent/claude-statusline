@@ -1,40 +1,8 @@
-use super::windows::wide;
-use alloc::string::String;
-use alloc::vec::Vec;
-use core::ffi::c_void;
+use super::child_sys::*;
+use super::cmdline::command_line;
+use crate::os::windows::paths::wide;
+use crate::os::windows::sys::*;
 use core::ptr::null_mut;
-
-type Handle = isize;
-
-#[link(name = "kernel32", kind = "raw-dylib")]
-extern "system" {
-    fn CreateProcessW(
-        app: *const u16,
-        command: *mut u16,
-        process_security: *mut c_void,
-        thread_security: *mut c_void,
-        inherit_handles: i32,
-        flags: u32,
-        environment: *mut c_void,
-        directory: *const u16,
-        startup: *mut StartupInfo,
-        child: *mut ProcessInfo,
-    ) -> i32;
-    fn WaitForSingleObject(handle: Handle, ms: u32) -> u32;
-    fn GetExitCodeProcess(process: Handle, code: *mut u32) -> i32;
-    fn TerminateProcess(process: Handle, code: u32) -> i32;
-    fn CloseHandle(handle: Handle) -> i32;
-    fn Sleep(ms: u32);
-    fn CreateFileW(
-        name: *const u16,
-        access: u32,
-        share: u32,
-        security: *mut c_void,
-        disposition: u32,
-        flags: u32,
-        template: Handle,
-    ) -> Handle;
-}
 
 const NO_WINDOW: u32 = 0x0800_0000;
 const BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
@@ -43,71 +11,7 @@ const SIGNALED: u32 = 0;
 const TIMED_OUT_EXIT_CODE: u32 = 1;
 const MS_PER_SECOND: u32 = 1000;
 const NO_HANDLE: Handle = 0;
-const INVALID: Handle = -1;
 const USE_STD_HANDLES: u32 = 0x100;
-const GENERIC_WRITE: u32 = 0x4000_0000;
-const FILE_SHARE_READ: u32 = 1;
-const CREATE_ALWAYS: u32 = 2;
-const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
-
-#[repr(C)]
-struct SecurityAttributes {
-    size: u32,
-    descriptor: *mut c_void,
-    inherit: i32,
-}
-
-#[repr(C)]
-#[derive(Default)]
-struct StartupInfo {
-    size: u32,
-    texts: [usize; 3],
-    placement: [u32; 7],
-    flags: u32,
-    show: [u16; 2],
-    reserved: usize,
-    handles: [Handle; 3],
-}
-
-#[repr(C)]
-#[derive(Default)]
-struct ProcessInfo {
-    process: Handle,
-    thread: Handle,
-    process_id: u32,
-    thread_id: u32,
-}
-
-fn quote(arg: &str, out: &mut String) {
-    if !arg.is_empty() && !arg.contains([' ', '\t', '"']) {
-        out.push_str(arg);
-        return;
-    }
-    out.push('"');
-    let mut slashes = 0;
-    for c in arg.chars() {
-        if c == '\\' {
-            slashes += 1;
-            continue;
-        }
-        let n = if c == '"' { slashes * 2 + 1 } else { slashes };
-        out.extend(core::iter::repeat_n('\\', n));
-        slashes = 0;
-        out.push(c);
-    }
-    out.extend(core::iter::repeat_n('\\', slashes * 2));
-    out.push('"');
-}
-
-fn command_line(exe: &str, args: &[&str]) -> Vec<u16> {
-    let mut line = String::new();
-    quote(exe, &mut line);
-    for arg in args {
-        line.push(' ');
-        quote(arg, &mut line);
-    }
-    wide(&line)
-}
 
 fn start(exe: &str, args: &[&str], dir: &str, flags: u32, output: Handle) -> Option<ProcessInfo> {
     let app = wide(exe);
