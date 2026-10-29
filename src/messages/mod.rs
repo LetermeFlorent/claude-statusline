@@ -1,6 +1,10 @@
+#[cfg(not(windows))]
+mod apple;
 mod check;
 mod help;
 mod language;
+#[cfg(any(not(windows), test))]
+mod locale;
 mod table;
 
 pub use check::*;

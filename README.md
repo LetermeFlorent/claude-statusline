@@ -180,7 +180,7 @@ The program is installed in `~/.claude/bin`, as `statusline.exe` on Windows and 
 
 Only the first argument is read, along with the count after `--bench`. The exit code is 0 on success, 1 when `--install`, `--uninstall` or `--update` fails, and 2 for a usage error: an unknown argument, printed back with the help, or a `--bench` count that is not a whole number above 0.
 
-The help and the messages follow the system language: French on a system set to French, English on any other. On Windows that is the display language of the user account. On Linux and macOS the first of `LC_ALL`, `LC_MESSAGES` and `LANG` that holds a value decides, and French means a language code of `fr`, as in `fr_FR.UTF-8` or `fr_CA`. The two install scripts follow the same rule.
+The help and the messages follow the system language: French on a system set to French, English on any other. `STATUSLINE_LANG` comes first, with `fr` or `en` in any case. A value that is neither is ignored. Otherwise, on Windows, the display language of the user account decides. On Linux and macOS the first of `LC_ALL`, `LC_MESSAGES` and `LANG` that holds a value decides, and French means a language code of `fr`, as in `fr_FR.UTF-8` or `fr_CA`; a locale of `C` or `POSIX` means English. On Linux, `LANGUAGE` is read before them and its first entry in French or English wins, so `de:fr` gives French. On macOS, when none of the three holds a value, the first language of the system preferences (`AppleLanguages`) that is French or English decides. The two install scripts follow the same rule.
 
 ## Automatic updates
 
@@ -212,6 +212,7 @@ The program reads the following variables, all of them optional:
 |---|---|
 | `STATUSLINE_BG` | forces the background: `light`, `clair`, `dark` or `sombre` |
 | `STATUSLINE_CONFIG` | path of the settings file |
+| `STATUSLINE_LANG` | forces the language of the help and the messages: `fr` or `en` |
 | `CLAUDE_CONFIG_DIR` | account folder: settings, auto-compact threshold, quota keys, target of `--install` |
 | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | auto-compact threshold |
 | `COLORFGBG` | terminal colors, for the background |
