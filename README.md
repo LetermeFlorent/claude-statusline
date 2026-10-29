@@ -7,7 +7,11 @@ ctx ■■▪■■■■■ 340k/1M | 5h ■■■■■■■■ 36% 3h29m | 7
 ram ■■■■■■■■ 11.3/15.3G | C: ▪■■■■■■■ 2% | cpu ▪■■■■■■■ 8%
 ```
 
-It is a small Rust program with no dependencies. Claude Code runs it every 3 seconds through the `statusLine` setting: it reads the session JSON on standard input, writes the bar on standard output and exits after a little over a millisecond of work. On Windows the binary does without the C runtime and weighs about 220 KB. It can update itself from the GitHub releases, an option that is off by default.
+It is a small Rust program with no dependencies. Claude Code runs it every 3 seconds through the `statusLine` setting: it reads the session JSON on standard input, writes the bar on standard output and exits. A refresh takes a few milliseconds, most of it process start-up, and the binary weighs from 200 to 700 KB depending on the system: [Size and speed](#size-and-speed) gives the figures and says what each one measures. The program can update itself from the GitHub releases, an option that is off by default. The technical details (terminal detection, state file format, environment variables, build and CI) are in the [technical reference](docs/reference.md). When the bar does not show or shows something odd, start with the [troubleshooting list](INSTALL.md#troubleshooting).
+
+## Platforms and requirements
+
+Released binaries exist for Windows 10 or later (x86_64 and arm64), Linux (x86_64 and arm64, static) and macOS (Apple silicon and Intel). Other Unix systems build from the sources but show no machine metrics (see [Limits](#limits)). You need Claude Code, and Rust only to compile the program yourself. The terminal has to draw the Unicode squares `■` and `▪`, or take the ASCII set shown in [INSTALL.md](INSTALL.md#configuring-the-look); 24-bit colors are used when the terminal announces them, 256 colors otherwise. The `5h` and `7d` quotas are those of the Claude.ai Pro and Max plans, see [5-hour and 7-day quotas](#5-hour-and-7-day-quotas).
 
 ## Install
 
@@ -27,15 +31,17 @@ cd claude-statusline
 sh install.sh
 ```
 
-Neither script needs the clone to install a released binary: download the script alone from the `main` branch and run it, as [INSTALL.md](INSTALL.md) shows for each system. The checksum check applies the same way, and a release without a `SHA256SUMS` is refused. Compiling, with `-Build` or through `cargo`, needs the sources. To remove the bar from every account, run `sh install.sh --uninstall` or `install.ps1 -Uninstall`.
+Neither script needs the clone to install a released binary: download the script alone from the `main` branch and run it, as [INSTALL.md](INSTALL.md) shows for each system. The checksum check applies the same way, and a release without a `SHA256SUMS` is refused. Compiling, with `-Build` or through `cargo`, needs the sources. To upgrade, run the same script again: [INSTALL.md](INSTALL.md#upgrading-from-an-older-version) has the commands and the changes to expect from an older version. To remove the bar from every account, run `sh install.sh --uninstall` or `install.ps1 -Uninstall`.
 
-Both scripts set up the bar in `.claude`, in every `.claude-compte*` folder and in every account listed by the multi-account menu ([claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)). `install.ps1` downloads the binary of the latest release and checks its SHA-256 hash, or compiles the sources with `-Build`. `install.sh` compiles when `cargo` is available, and downloads the binary of the latest release, checked the same way, when `cargo` is missing or the build fails.
+The program lands in `~/.claude/bin`, which is not on the `PATH`. Where this document writes `statusline --theme`, run `~/.claude/bin/statusline --theme` (`statusline.exe` on Windows).
+
+Both scripts set up the bar in `.claude`, in every `.claude-compte*` folder and in every account listed by the multi-account menu ([claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)), which is an optional integration. For any other Claude Code profile, set `CLAUDE_CONFIG_DIR` to its folder and run `~/.claude/bin/statusline --install`: nothing else is needed. `install.ps1` downloads the binary of the latest release and checks its SHA-256 hash, or compiles the sources with `-Build`. `install.sh` compiles when `cargo` is available, and downloads the binary of the latest release, checked the same way, when `cargo` is missing or the build fails.
 
 ## What the bar shows
 
 The first line chains four segments separated by `|`, always in this order:
 
-- `ctx`: how full the context is. The text gives the tokens used over the window size (`340k/1M`), the percentage alone when Claude Code does not send both, or `--%` with no data at all. The bar runs from light blue to deep blue, then turns orange from 70% and red from 90%, the same two hues as the machine metrics.
+- `ctx`: how full the context is. The text gives the tokens used over the window size (`340k/1M`), the percentage alone when Claude Code does not send both, or `--%` with no data at all. The bar runs from light blue to deep blue, then turns orange from 70% and red from 90%, the same two hues as the machine metrics (see [Bar colors](#bar-colors)).
 - `5h`: the 5-hour quota as a percentage, then the time left before it resets (`3h29m`, or `45m` under an hour). With no known reset time it shows `--` in that place.
 - `7d`: the weekly quota, with the time before the reset in days and hours past one day (`3d16h`).
 - `spend`: shown in place of `5h` and `7d` when the session JSON holds only `rate_limits.spend_limit`, as it does behind a Claude apps gateway. It reads like a quota: the percentage of the spend limit used, then the time before its period resets (`dépense` in French).
@@ -55,7 +61,9 @@ Token counts are written as they are below 1000, then in `k`, `M` and `B`, round
 
 A quota bar takes its hue from its level: the normal hue under 30%, the warning hue from 30%, the critical hue from 70%. For the 5-hour quota that is violet, then mauve, then raspberry red; for the 7-day quota, green, then ochre, then red. The machine metrics keep their own hue (teal for RAM, khaki for the disk, blue for the CPU) up to 70%, turn orange above it, then red above 85%.
 
-Within a bar, the squares get slightly lighter from left to right on a dark background, and darker on a light one. Filling is computed to the half square: the last filled square takes the small glyph (`▪`) only when it is half full, and a bar at 100% is made of full squares. Any value above zero fills at least one square, half full when the value is under half a square. The full and the empty squares share the `■` glyph by default and differ by color alone; `glyphs.empty` gives the empty ones another glyph. When the value reaches 100%, the number is drawn in the color of its bar. Labels and numbers are bold and stay in the default color of the terminal, so they read on any background; only the bars follow the detected background. `colors.ink_light` and `colors.ink_dark` color them.
+The `ctx` bar is the exception to what follows. Its gradient does not depend on the level: the first square takes the `from` color and the last one the `to` color (`colors.ctx_from_*` and `colors.ctx_to_*`), whatever the fill, and on both backgrounds it runs from a lighter to a deeper blue. From `thresholds.ctx_warn` it takes the orange of the machine metrics, and from `thresholds.ctx_hot` their red, with the gradient strength of `system.gradient`; `gradient.5h` and `gradient.7d` never apply to it.
+
+Within a quota or machine bar, the squares get slightly lighter from left to right on a dark background, and darker on a light one. Filling is computed to the half square: the last filled square takes the small glyph (`▪`) only when it is half full, and a bar at 100% is made of full squares. Any value above zero fills at least one square, half full when the value is under half a square. The full and the empty squares share the `■` glyph by default and differ by color alone; `glyphs.empty` gives the empty ones another glyph. When the value reaches 100%, the number is drawn in the color of its bar. Labels and numbers are bold and stay in the default color of the terminal, so they read on any background; only the bars follow the detected background. `colors.ink_light` and `colors.ink_dark` color them.
 
 ### When parts are hidden
 
@@ -65,7 +73,7 @@ When `COLUMNS` is set, the bar keeps each line within that many characters. It f
 
 ## 5-hour and 7-day quotas
 
-Claude Code sends the quotas in the session JSON (`rate_limits.five_hour` and `rate_limits.seven_day`, with `used_percentage` and `resets_at`), starting with the first API response. The bar shows them and stores them in the state file under the account's keys.
+The quotas are those of the Claude.ai Pro and Max plans. Claude Code sends them only for such an account, and the bar asks nothing from Anthropic itself; the bar is redrawn every 3 seconds, so a new value shows within a few seconds. Claude Code sends the quotas in the session JSON (`rate_limits.five_hour` and `rate_limits.seven_day`, with `used_percentage` and `resets_at`), starting with the first API response. The bar shows them and stores them in the state file under the account's keys.
 
 Before that first response, it reuses the values stored for the same account when they are less than 10 minutes old. A window whose reset time has passed, whether it comes from the session JSON or from the stored values, loses its percentage, which shows as `--%`, and keeps a reset time moved on by whole windows. That time is an estimate: a new 5-hour window only opens with the next message. The 5-hour quota stays at `--%` while the account has no 5-hour window open, that is before its first message.
 
@@ -97,30 +105,13 @@ The bar picks its colors from the terminal background. It takes the first answer
 
 `STATUSLINE_BG` and `terminal_background` accept `light` or `clair`, `dark` or `sombre`, in any case. With no answer, the bar assumes a dark background.
 
-### Recognized host terminals
+The terminals the bar recognizes (VS Code and its forks, Windows Terminal, Zed, Ghostty, and WSL), the files it reads for each, and the source of the system theme on each system are described in the [technical reference](docs/reference.md#recognized-host-terminals).
 
-The terminal is recognized by its environment variables, then its settings are read. A theme known by its name alone is light when the name holds `light`, `latte`, `dawn` or `day`, unless the word is part of `moonlight` or `twilight`, and dark when it holds `dark`, `night`, `black`, `moon`, `mocha` or `macchiato`. Any other name is looked up in the theme files of the terminal, as listed below, and counts as dark when none of them has it.
-
-- VS Code and its forks (`TERM_PROGRAM=vscode`, `VSCODE_INJECTION` or `VSCODE_PID`). The user file is `User/settings.json` of Code, Code - Insiders, VSCodium, Cursor or Windsurf, in `%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` or `~/.config` on Linux. The product that started the terminal, found through `VSCODE_GIT_ASKPASS_NODE`, `VSCODE_GIT_ASKPASS_MAIN` or `VSCODE_CWD`, is read first. The `.vscode/settings.json` file of the project open in Claude Code, unless the project sits in a network folder, wins over the user file, key by key. A `terminal.background` color in `workbench.colorCustomizations`, set for the current theme (`"[Theme name]"`) or for all of them, decides through its luminance. Then `"window.autoDetectColorScheme": true` defers to the system theme. Otherwise `workbench.colorTheme` decides by its name, then through the `uiTheme` of the extension that brings it, in `~/.vscode/extensions` or the matching folder of a fork. With no theme set, the background is dark. Settings profiles are not read: only the default profile counts.
-- Windows Terminal (`WT_SESSION`). Its files are the `settings.json` of each Microsoft Store package (stable, Preview, Canary) and the one of the unpackaged install. The bar reads the file that holds the profile named by `WT_PROFILE_ID`, and failing that the one saved last. The profile used is the one named by `WT_PROFILE_ID`, or else the default profile of that file. Its `background` color, or the one in `profiles.defaults`, decides through its luminance. Failing that, its color scheme decides: a scheme with two variants `{ "light", "dark" }` follows the application theme, given by the `theme` key of the file (`light`, `dark`, their `legacy` versions, or a custom theme from `themes` through its `window.applicationTheme`), and else the system; a custom scheme from `schemes` decides through the luminance of its background; among the built-in schemes, `One Half Light`, `Solarized Light` and `Tango Light` are light and the others dark. With no scheme set, it is `Campbell`, which is dark. Fragments, the profiles and schemes that other applications add, are not read.
-- Zed (`TERM_PROGRAM=zed`), in `%APPDATA%\Zed\settings.json` on Windows and `~/.config/zed/settings.json` elsewhere. A string `theme` decides by its name, then through the `appearance` of the theme of that name, in the `themes` folder next to the settings or in an installed extension. An object `theme` follows its `mode` (`light`, `dark`), and `system`, or no setting, defers to the system.
-- Ghostty (`TERM_PROGRAM=ghostty`). Its files are read in Ghostty's own order: `config.ghostty` then `config` in `~/.config/ghostty` (`$XDG_CONFIG_HOME/ghostty` when set), then on macOS the same two names in `~/Library/Application Support/com.mitchellh.ghostty`. A later value replaces an earlier one, an empty value clears it, and a file that sets neither key changes nothing. A `background` color decides through its luminance. Otherwise `theme` decides: a `light:...,dark:...` value follows the system, and a name decides by itself, then through the `background` of the theme file of that name, in `~/.config/ghostty/themes` or among the themes shipped with Ghostty (`GHOSTTY_RESOURCES_DIR`). With neither key, the background is dark.
-
-Under WSL (`WSL_DISTRO_NAME`), VS Code and Windows Terminal keep their settings on the Windows side. The bar finds the Windows profile through the `/mnt/<drive>/Users/<name>` entry that Windows adds to `PATH`, or else through the folder of `/mnt/c/Users` that holds the Windows Terminal package, keeps that path in the state file and reads the files under it. When no profile turns up, the bar follows the system theme of the distribution, which is dark unless `GTK_THEME` or `gsettings` say otherwise: set `STATUSLINE_BG` to choose.
+Over a VS Code remote connection (SSH, dev container), the terminal runs on the remote machine while VS Code keeps its user settings on the local one, so the bar does not find them. It then sees only the project's `.vscode/settings.json`, if there is one, and otherwise takes the background as dark. On a light theme, set `STATUSLINE_BG` in the shell profile of the remote machine, or `terminal_background` in its `statusline.json`.
 
 Other terminals go straight to the system theme, except on Windows, where the system theme describes apps and not terminals: a terminal the bar does not recognize counts as dark there. `COLORFGBG`, `terminal_background` and `STATUSLINE_BG` still decide first.
 
-### System theme
-
-Each system has its own source:
-
-- Windows: the `AppsUseLightTheme` value in the user's registry (apps in light mode). A value that was never set means light mode, as it does for Windows itself.
-- macOS: the `AppleInterfaceStyle` key of `~/Library/Preferences/.GlobalPreferences.plist`. `Dark` gives a dark background, and a missing key a light one.
-- Linux: `GTK_THEME` (dark if it contains `dark`), then on KDE the `BackgroundNormal` color in the `[Colors:Window]` section of `kdeglobals`, then `gsettings`: `color-scheme` (`prefer-dark` or `prefer-light`), and failing that the name in `gtk-theme`. Each `gsettings` call gets one second to answer: one that hangs is stopped, and the background is then taken as dark.
-
-When the terminal follows the system (VS Code with `window.autoDetectColorScheme`, a two-variant Windows Terminal scheme, Zed set to `system`, a Ghostty `light:...,dark:...` theme), the system theme settles the question.
-
-The result of steps 4 and 5 is kept in the state file. It is worked out again as soon as one of the settings files listed above, the project's `.vscode/settings.json` included, appears, goes away, or changes size or date, when the bar runs under another Windows Terminal profile (`WT_PROFILE_ID`), or when the system theme changes, so a switch to light mode shows at the next refresh. A settings file kept as a symbolic link, in a dotfiles repository for instance, is followed to its target. Steps 1 to 3 are read on every run. `statusline --theme` prints the background in use, then a second line naming where the choice came from: `STATUSLINE_BG`, `terminal_background`, `COLORFGBG`, the host terminal, the system theme, or the dark default for an unknown terminal on Windows.
+The result of steps 4 and 5 is kept in the state file. It is worked out again as soon as one of the settings files described in the [technical reference](docs/reference.md#recognized-host-terminals), the project's `.vscode/settings.json` included, appears, goes away, or changes size or date, when the bar runs under another Windows Terminal profile (`WT_PROFILE_ID`), or when the system theme changes, so a switch to light mode shows at the next refresh. A settings file kept as a symbolic link, in a dotfiles repository for instance, is followed to its target. Steps 1 to 3 are read on every run. `statusline --theme` prints the background in use, then a second line naming where the choice came from: `STATUSLINE_BG`, `terminal_background`, `COLORFGBG`, the host terminal, the system theme, or the dark default for an unknown terminal on Windows.
 
 ## Settings
 
@@ -192,7 +183,7 @@ All text in and out is UTF-8: the session JSON is read as UTF-8, and anything th
 
 ## Automatic updates
 
-With `"auto_update": true` in `statusline.json`, rendering the bar starts `statusline --update` at most every 6 hours, in the background, with no window and at low priority, and returns without waiting for it. This only happens when the program runs from `~/.claude/bin` and a binary is published for the system. The time of the last check is kept in the state file, under the `update_at` key.
+With `"auto_update": true` in `statusline.json`, rendering the bar starts `statusline --update` at most every 6 hours, in the background, with no window, and returns without waiting for it. On Windows the update runs at low priority; on Linux and macOS it runs at the normal priority, in a process group of its own, because the program does not lower it. This only happens when the program runs from `~/.claude/bin` and a binary is published for the system. The time of the last check is kept in the state file, under the `update_at` key.
 
 `--update` asks the GitHub API for the latest release, through `curl` (on Windows, the `curl.exe` of the system folder). When that release is newer, it downloads the binary for the system next to the program, under a name that carries its process id (`statusline.new-<pid>.exe`, or `statusline.new-<pid>`). It runs that copy with `--version`, which must print the version of the release, then with `--demo`, and only then puts it in place of the old one. On Windows the running program cannot be overwritten, but it can lose one of its names: the update first gives it a second one, `statusline.exe.old-<pid>`, then renames the new file over `statusline.exe` in a single step, so `statusline.exe` exists at every moment. Where hard links are not available, the old program is renamed away first, and put back if the new one cannot take its place.
 
@@ -201,6 +192,8 @@ Each update removes what earlier ones left behind: the `statusline.new*` and `st
 During the download, then for 5 seconds after the swap, the bar shows `update`. The next refresh starts the new program, with no need to restart Claude Code. A failure (network down, missing binary, wrong version, swap refused) leaves the old program in place until the next check.
 
 The update holds a lock on `update.lock`, in the folder of the state file, for its whole run: an open handle on Windows, `flock` on Unix. The system releases it when the process ends, even when it is killed. A second update waits at most 2 seconds for it, then says that an update is already running and stops. The bar shows `update` only while the `updating` marker exists and the lock is held. It checks the lock without waiting, and removes a marker that a stopped update left behind. The automatic check is off by default because nothing signs the downloaded binary yet. `statusline --update` still works by hand.
+
+The network must let through `api.github.com` (the lookup of the latest release), `github.com` (the download address) and `release-assets.githubusercontent.com`, where GitHub redirects the download of a release asset. The install scripts use `github.com` and that last host too, and `raw.githubusercontent.com` when the script itself is downloaded alone.
 
 Debug builds, and only those, read a loopback address from `STATUSLINE_UPDATE_SERVER` in place of GitHub. The tests use it to run `--update` against a local server.
 
@@ -212,34 +205,11 @@ The counters, the quotas and the detected theme live in a single file, shared by
 - macOS: `~/Library/Application Support/claude-statusline/state`;
 - Linux: `$XDG_STATE_HOME/claude-statusline/state`, or else `~/.local/state/claude-statusline/state`.
 
-It is a text file with one `key value` line per entry. It holds the quotas of each account (`q_at@<account>`, `q5_at@<account>`, `q5_pct@<account>`, `q7_at@<account>`, `q7_pct@<account>`), the detected theme (one `bg@<fingerprint of the terminal settings>` entry per terminal and project, the 4 most recently used kept, each holding the time, `light` or `dark` and the source; the single entry keys `bg_host`, `bg_source` and `bg_stamp` of older versions are removed), the auto-compact threshold (one `compact@<fingerprint of the settings files>` entry per project, the 4 most recently checked kept, each holding the check time, the files stamp and the window; the single entry keys `compact_window`, `compact_key`, `compact_stamp` and `compact_at` of older versions are removed), the last disk and CPU readings (`io_source`, `io_clock`, `io_value`, `cpu_source`, `cpu_clock`, `cpu_value`) and the time of the last update check (`update_at`). Unknown keys are kept. The version 1 keys (`bg_at`, and the quotas without an account suffix) are removed on the first run.
-
-A refresh writes the file again only when its content changes. That is nearly every refresh a second or more after the previous one, since the disk and CPU readings and the `q_at` time of the account move each time; refreshes within the same second mostly write nothing. Each write goes through a temporary file that is then renamed, so a reader never finds it half written. Bars often refresh at the same moment, one per open session. Before writing, each one takes the `state.lock` file next to the state, then reads the file again and applies only the keys it changed itself, so the quotas another session wrote in between are kept. A bar that finds the lock taken leaves its changes in a `state.<process id>.changes` file next to the state, one `key value` line per key it set and a bare `key` line per key it removed, then waits half a second at most. The next bar to hold the lock applies every such file, saves, and deletes them, and every bar reads them along with the state, so a quota written while the lock was taken shows at once and is never lost. On Windows the rename goes through even while another bar is reading the file. When it still fails, because another program holds the file open without sharing it, that refresh writes nothing and the previous file stays whole. A tool that edits the file should follow the same steps: lock `state.lock` (`LockFileEx` on Windows, `flock` on Linux and macOS), read the file, change its own keys, then write a temporary file in the same folder and rename it over `state`, leaving the `.changes` files alone. With no known home folder, nothing is written: the home folder is `USERPROFILE`, then `HOME`, on Windows, and `HOME`, then the user's entry in the password database, on Linux and macOS. `--bench` writes a `state.bench` file next to it and deletes it at the end.
+It is a text file of `key value` lines. Its encoding, its keys with their units and the way it is written, which a tool that edits it has to follow, are described in the [technical reference](docs/reference.md#state-file).
 
 ## Environment variables
 
-The program reads the following variables, all of them optional:
-
-| Variable | Use |
-|---|---|
-| `STATUSLINE_BG` | forces the background: `light`, `clair`, `dark` or `sombre` |
-| `STATUSLINE_CONFIG` | path of the settings file |
-| `STATUSLINE_LANG` | forces the language of the help and the messages: `fr` or `en` |
-| `CLAUDE_CONFIG_DIR` | account folder: settings, auto-compact threshold, quota keys, target of `--install` |
-| `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | auto-compact threshold |
-| `COLORFGBG` | terminal colors, for the background |
-| `COLORTERM` | `truecolor` or `24bit` keeps 24-bit colors; anything else, or nothing, switches to 256 colors |
-| `COLUMNS` | width of the terminal: the line drops details to fit in it |
-| `NO_COLOR`, `TERM` | plain text, when `NO_COLOR` is set or `TERM` is `dumb` |
-| `TERM_PROGRAM`, `VSCODE_INJECTION`, `VSCODE_PID`, `WT_SESSION` | host terminal detection |
-| `VSCODE_GIT_ASKPASS_NODE`, `VSCODE_GIT_ASKPASS_MAIN`, `VSCODE_CWD` | which of VS Code and its forks started the terminal |
-| `WT_PROFILE_ID` | current Windows Terminal profile |
-| `WSL_DISTRO_NAME`, `PATH` | under WSL, where the Windows profile is |
-| `GHOSTTY_RESOURCES_DIR` | themes shipped with Ghostty |
-| `GTK_THEME`, `XDG_CURRENT_DESKTOP` | system theme on Linux |
-| `HOME`, `USERPROFILE`, `LOCALAPPDATA`, `APPDATA`, `XDG_STATE_HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME` | where files are |
-
-An empty variable counts as unset.
+All are optional, and an empty variable counts as unset. The ones to set by hand are `STATUSLINE_BG` (the background, `light` or `dark`), `STATUSLINE_CONFIG` (the settings file), `STATUSLINE_LANG` (`fr` or `en`) and `CLAUDE_CONFIG_DIR` (the account folder). The [technical reference](docs/reference.md#environment-variables) lists every variable the program reads.
 
 ## Building
 
@@ -247,13 +217,11 @@ An empty variable counts as unset.
 cargo build --release
 ```
 
-The binary lands in `target/release`. On Windows, `.cargo/config.toml` links the program with `rust-lld` and without the C runtime, so nothing but Rust is needed. The `x86_64-pc-windows-msvc` and `aarch64-pc-windows-msvc` targets are supported there, and the few C runtime functions the compiler still calls (`memcpy`, `memset`, `__chkstk` and some others) are written in assembly, one file per target in `src/os`. The same file turns on CET protection (`/CETCOMPAT`) on x86_64, replaces the timestamp of the binary with a hash of its content (`/Brepro`) and produces no `.pdb`: two builds of the same code give the same file, whatever the folder. On macOS it passes `-S` to the linker, which then writes no object file path: the UUID of the binary, computed over its content, no longer depends on the build folder. The release profile turns on `lto` and `panic = "abort"`, and strips the symbols.
-
-The tests (`cargo test`) run as they are on Linux and macOS. On Windows they need the Visual Studio C runtime and a `RUSTFLAGS` variable that replaces the link options of the config file, as CI does (`RUSTFLAGS=-Cdebuginfo=0`).
+The binary lands in `target/release`. The linker options, the reproducible build and the way to run the tests are described in the [technical reference](docs/reference.md#building).
 
 ## CI and releases
 
-CI runs on every push to `main`, on every `v*` tag and on every pull request. On each of the six targets it checks the formatting, runs `clippy` and the unit tests, builds in release mode, then tries the binary: version, theme, sample rendering, reading a session JSON, even one holding an invalid UTF-8 byte, benchmark, install then uninstall, install from `~/.claude/bin` with its `~` command, plain text under `NO_COLOR` and `TERM=dumb`, and refusal of an unknown argument or of a bad `--bench` count. On Linux it also reads the memory shown inside a systemd scope capped at 512 MB. It feeds two full sample inputs and reads the measured values from the output once its colors are stripped: `ram` as N.N/N.NG, `cpu` as NN%, and on Linux and macOS a total memory equal to `free -b` or `sysctl hw.memsize`. It runs `--help` and `--demo` in French and in English through `STATUSLINE_LANG`, and through `LANG` on Linux and macOS, and checks that the help text is in the right language. It then runs the installer twice in an empty home folder, `install.sh` on Linux and macOS and `install.ps1 -Build` under both `powershell.exe` and `pwsh` on Windows, in a home folder that holds a `.claude-compte2` account, and compares each `settings.json` with the expected text. On Linux and macOS it also runs `install.sh` with `cargo` off the path, which downloads the latest release and checks its SHA-256 hash, or, while that release publishes no `SHA256SUMS`, checks that the script refuses it and leaves the account untouched. It also checks the ASLR and NX flags of both Windows binaries and the CET flag of the x86_64 one, and that the Linux x86_64 binary is position-independent. A weekly run, which blocks nothing, builds and tests the sources on the stable and beta toolchains of Rust, on Linux and Windows, so that a new compiler breaking the build shows up before a release does.
+CI checks every push to `main`, every `v*` tag and every pull request on six targets: formatting, `clippy`, the tests, a release build and a run of the binary and of the installers. The [technical reference](docs/reference.md#ci) lists each check.
 
 A `v*` tag publishes a release with the binaries below. The tag must match the version in `Cargo.toml` (`v2.1.0` for `2.1.0`), or CI fails before building. The automatic update compares that version with its own.
 
@@ -275,6 +243,22 @@ gh attestation verify statusline-linux-x86_64 --repo LetermeFlorent/claude-statu
 On Linux, `sha256sum -c SHA256SUMS --ignore-missing` also compares the binaries in the folder with the list.
 
 `install.ps1` and `install.sh` download the file for their system from the latest release, along with `SHA256SUMS`, and refuse a binary whose hash is missing from the list or differs from it.
+
+## Size and speed
+
+Each figure below says what it measures and where. The sizes of the v2.1.1 release assets, in bytes:
+
+| File | Size |
+|---|---|
+| `statusline-windows-x86_64.exe` | 207,360 |
+| `statusline-macos-arm64` | 504,832 |
+| `statusline-macos-x86_64` | 521,632 |
+| `statusline-linux-arm64` | 594,160 |
+| `statusline-linux-x86_64` | 672,496 |
+
+A release build of the sources that follow v2.1.1 comes to 359,424 bytes for Windows x86_64: the program has grown since that release. The Windows binary does without the C runtime.
+
+The time of one refresh, from the start of the process to its exit, was measured at version 2.1.1 as the median over many runs: 1.5 ms on Linux x86_64, 1.7 ms on Linux arm64, 8.7 ms on Windows, 17.1 ms on macOS arm64 and 18.5 ms on macOS x86_64. A later measure on Windows 11 x64, the median of 300 launches, gave 6.2 ms. Most of that is the system starting a process. The work of the program alone, which `statusline --bench 200` reports, is 0.57 ms per render on that Windows PC, with no process start-up counted, and 0.39 ms on a later run of the current sources.
 
 ## Limits
 

@@ -10,6 +10,7 @@ pub struct State {
     loaded: Vec<(String, String)>,
 }
 
+const BYTE_ORDER_MARK: char = '\u{feff}';
 const FRESH: f64 = 600.0;
 const SAME_READING: f64 = 1.0;
 const STALE_READING: f64 = 60.0;
@@ -75,6 +76,7 @@ impl State {
             map: Vec::new(),
             loaded: Vec::new(),
         };
+        let text = text.strip_prefix(BYTE_ORDER_MARK).unwrap_or(text);
         for line in text.split('\n') {
             let line = line.strip_suffix('\r').unwrap_or(line);
             if let Some(i) = line.find(' ') {
@@ -364,6 +366,13 @@ mod tests {
         state.set("nul\0", "1");
         state.set("ok", "a b");
         assert_eq!(State::parse(&state.text()).text(), "ok a b\n");
+    }
+
+    #[test]
+    fn a_byte_order_mark_at_the_start_of_the_file_is_ignored() {
+        let state = State::parse("\u{feff}q_at@a 5\nz 1\n");
+        assert_eq!(state.get("q_at@a"), Some("5"));
+        assert_eq!(state.text(), "q_at@a 5\nz 1\n");
     }
 
     #[test]
