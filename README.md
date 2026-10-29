@@ -31,7 +31,7 @@ cd claude-statusline
 sh install.sh
 ```
 
-Neither script needs the clone to install a released binary: download the script alone from the `main` branch and run it, as [INSTALL.md](INSTALL.md) shows for each system. The checksum check applies the same way, and a release without a `SHA256SUMS` is refused. Compiling, with `-Build` or through `cargo`, needs the sources. To remove the bar from every account, run `sh install.sh --uninstall` or `install.ps1 -Uninstall`.
+Neither script needs the clone to install a released binary: download the script alone from the `main` branch and run it, as [INSTALL.md](INSTALL.md) shows for each system. The checksum check applies the same way, and a release without a `SHA256SUMS` is refused. Compiling, with `-Build` or through `cargo`, needs the sources. To upgrade, run the same script again: [INSTALL.md](INSTALL.md#upgrading-from-an-older-version) has the commands and the changes to expect from an older version. To remove the bar from every account, run `sh install.sh --uninstall` or `install.ps1 -Uninstall`.
 
 The program lands in `~/.claude/bin`, which is not on the `PATH`. Where this document writes `statusline --theme`, run `~/.claude/bin/statusline --theme` (`statusline.exe` on Windows).
 

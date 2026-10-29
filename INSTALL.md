@@ -127,7 +127,33 @@ Automatic updates are off by default. With `"auto_update": true` in `statusline.
 
 `statusline --update` runs the same update by hand and prints the outcome: already up to date, the version change (for example `2.1.0 -> v2.2.0`), or the reason it failed.
 
-You can also run `git pull` in the cloned folder and run the install script again. The program is replaced even while a Claude Code session is running. `statusline.json` and the other settings are kept, and each `settings.json` gets a new `.bak-` copy.
+To upgrade with the install script instead, see [Upgrading from an older version](#upgrading-from-an-older-version). The program is replaced even while a Claude Code session is running, and each `settings.json` gets a new `.bak-` copy.
+
+## Upgrading from an older version
+
+The install script is also the upgrade script: it replaces the program and rewrites the `statusLine` command of every account, and it keeps `statusline.json`, the state file and every other setting. Run it again with the commands of your system.
+
+From a clone, on Linux and macOS:
+
+```sh
+cd claude-statusline
+git pull
+sh install.sh
+```
+
+On Windows:
+
+```powershell
+cd claude-statusline
+git pull
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+Without a clone, download the script again as shown under "Installing without a clone" and run it: it fetches the latest release.
+
+A version that already has `--update` can also upgrade itself, with `~/.claude/bin/statusline --update`. If it fails, the scripts above always work.
+
+Three changes may surprise an account installed with a version older than 2.1.1. The command in `settings.json` was an absolute path before 2.1.0: the script replaces it with the portable `~/.claude/bin/statusline` form and says so. Automatic updates were on by default in 2.1.0 and are off now: a `statusline.json` that does not set `auto_update` to `true` no longer checks for releases, and `--update` still works by hand. The state file keeps working, and the keys of version 1 are cleaned up as the bar runs (see the state file section of the README).
 
 ## Uninstalling
 
