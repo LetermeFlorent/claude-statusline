@@ -1,4 +1,3 @@
-use super::Failure;
 use crate::messages;
 use crate::os;
 use crate::update_watch::parts;
@@ -7,7 +6,23 @@ use alloc::string::String;
 
 const CHECK_SECS: u32 = 30;
 const NAME: &str = "statusline ";
+pub const FAILED_EXIT: i32 = 1;
 pub const WRONG_VERSION_EXIT: i32 = 3;
+
+#[derive(Debug, PartialEq)]
+pub struct Failure {
+    pub message: String,
+    pub code: i32,
+}
+
+impl From<String> for Failure {
+    fn from(message: String) -> Failure {
+        Failure {
+            message,
+            code: FAILED_EXIT,
+        }
+    }
+}
 
 pub type Probe<'a> = &'a dyn Fn(&str, &str) -> Option<String>;
 

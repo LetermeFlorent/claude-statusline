@@ -1,7 +1,7 @@
 use super::*;
 use crate::sandbox::Sandbox;
 use core::cell::RefCell;
-use fetch::github;
+use origin::github;
 use verify::WRONG_VERSION_EXIT;
 
 const OLD_BINARY: &[u8] = b"old";
@@ -9,11 +9,11 @@ const WORKING_BINARY: &[u8] = b"statusline 99.0.0\n|demo";
 const FAILING_BINARY: &[u8] = b"crash";
 const OTHER_VERSION_BINARY: &[u8] = b"statusline 98.0.0\n|demo";
 const NO_DEMO_BINARY: &[u8] = b"statusline 99.0.0\n|";
-const EXE_NAME: &str = if cfg!(windows) {
-    "statusline.exe"
-} else {
-    "statusline"
-};
+const RATE_LIMITED_BODY: &[u8] = b"{\"message\": \"API rate limit exceeded\"}";
+#[cfg(windows)]
+const EXE_NAME: &str = "statusline.exe";
+#[cfg(not(windows))]
+const EXE_NAME: &str = "statusline";
 
 fn run_fake(exe: &str, flag: &str) -> Option<String> {
     let body = std::fs::read_to_string(exe).ok()?;
@@ -44,28 +44,20 @@ fn release<'a>(tag: &'a str, binary: &'a [u8]) -> Release<'a> {
 impl Release<'_> {
     fn serve(&self, url: &str, to: &str, _: u32) -> Option<u16> {
         self.asked.borrow_mut().push(String::from(url));
+        let release = format!("{{\"tag_name\": \"{}\"}}", self.tag).into_bytes();
         let asset_url = format!("/download/{}/{}", self.tag, asset().unwrap());
-        let (status, body) = if url.ends_with("/releases/latest") && self.api_status != HTTP_OK {
-            (
-                self.api_status,
-                b"{\"message\": \"API rate limit exceeded\"}".to_vec(),
-            )
-        } else if url.ends_with("/releases/latest") {
-            (
-                HTTP_OK,
-                format!("{{\"tag_name\": \"{}\"}}", self.tag).into_bytes(),
-            )
-        } else if url.ends_with(&asset_url) {
-            (HTTP_OK, self.binary.to_vec())
-        } else {
-            (404, b"Not Found".to_vec())
+        let (status, body) = match (url.ends_with("/releases/latest"), self.api_status) {
+            (true, HTTP_OK) => (HTTP_OK, &release[..]),
+            (true, limited) => (limited, RATE_LIMITED_BODY),
+            _ if url.ends_with(&asset_url) => (HTTP_OK, self.binary),
+            _ => return None,
         };
         std::fs::write(to, body).ok().map(|_| status)
     }
 }
 
-fn failed(message: String) -> Result<Outcome, Failure> {
-    Err(Failure::from(message))
+fn failed(message: &str) -> Result<Outcome, Failure> {
+    Err(Failure::from(String::from(message)))
 }
 
 struct Run {
@@ -84,9 +76,8 @@ fn update(name: &str, release: Release) -> Run {
         fetch: &|u, t, s| release.serve(u, t, s),
         probe: &run_fake,
     };
-    let result = attempt(&sandbox.dir(), &exe, &tools);
     Run {
-        result,
+        result: attempt(&sandbox.dir(), &exe, &tools),
         installed: std::fs::read(&exe).unwrap(),
         files: sandbox.files(),
         asked: release.asked.into_inner().len(),
@@ -114,24 +105,10 @@ fn same_tag_is_already_up_to_date() {
 fn tag_outside_x_y_z_is_refused() {
     for (i, tag) in ["v99.0", "v99.0.0-rc1", "latest"].iter().enumerate() {
         let run = update(&format!("refused-{}", i), release(tag, WORKING_BINARY));
-        assert_eq!(
-            run.result,
-            failed(String::from(messages::NO_RELEASE.text()))
-        );
+        assert_eq!(run.result, failed(messages::NO_RELEASE.text()));
         assert_eq!(run.installed, OLD_BINARY);
         assert_eq!(run.files, [EXE_NAME]);
     }
-}
-
-#[test]
-fn binary_failing_its_version_check_is_not_swapped_in() {
-    let run = update("failing", release("v99.0.0", FAILING_BINARY));
-    assert_eq!(
-        run.result,
-        failed(messages::UPDATE_FAILED.with(&["v99.0.0"]))
-    );
-    assert_eq!(run.installed, OLD_BINARY);
-    assert_eq!(run.files, [EXE_NAME, MARKER]);
 }
 
 #[test]
@@ -145,14 +122,14 @@ fn binary_reporting_another_version_is_refused_with_its_own_code() {
 }
 
 #[test]
-fn binary_failing_its_demo_is_not_swapped_in() {
-    let run = update("no-demo", release("v99.0.0", NO_DEMO_BINARY));
-    assert_eq!(
-        run.result,
-        failed(messages::UPDATE_FAILED.with(&["v99.0.0"]))
-    );
-    assert_eq!(run.installed, OLD_BINARY);
-    assert_eq!(run.files, [EXE_NAME, MARKER]);
+fn binaries_failing_their_version_or_demo_are_not_swapped_in() {
+    for (name, binary) in [("failing", FAILING_BINARY), ("no-demo", NO_DEMO_BINARY)] {
+        let run = update(name, release("v99.0.0", binary));
+        let refused = messages::UPDATE_FAILED.with(&["v99.0.0"]);
+        assert_eq!(run.result, failed(&refused));
+        assert_eq!(run.installed, OLD_BINARY);
+        assert_eq!(run.files, [EXE_NAME, MARKER]);
+    }
 }
 
 #[test]
@@ -165,10 +142,7 @@ fn rate_limited_api_is_reported() {
                 ..release("v99.0.0", OLD_BINARY)
             },
         );
-        assert_eq!(
-            run.result,
-            failed(String::from(messages::RATE_LIMITED.text()))
-        );
+        assert_eq!(run.result, failed(messages::RATE_LIMITED.text()));
         assert_eq!(run.asked, 1);
         assert_eq!(run.files, [EXE_NAME]);
     }

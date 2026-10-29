@@ -1,6 +1,7 @@
 mod fetch;
 mod leftovers;
 mod lock;
+mod origin;
 mod swap;
 #[cfg(test)]
 mod tests;
@@ -10,16 +11,16 @@ use crate::messages;
 use crate::os;
 use crate::update_watch::{asset, newer, MARKER};
 use alloc::string::String;
-use fetch::{curl, latest, origin, Curl, Fetch, Origin, HTTP_OK};
+use fetch::{curl, latest, Curl, Fetch, HTTP_OK};
 use leftovers::{clean_binaries, clean_temp};
+use origin::{origin, Origin};
 use swap::{staging, swap, Swap};
-use verify::{check, printed, Probe};
+use verify::{check, printed, Failure, Probe, FAILED_EXIT};
 
 pub use lock::running;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SHOWN_AFTER_SWAP_MS: u32 = 5000;
-const FAILED_EXIT: i32 = 1;
 #[cfg(windows)]
 const NOT_RESTORED_EXIT: i32 = 4;
 
@@ -27,21 +28,6 @@ const NOT_RESTORED_EXIT: i32 = 4;
 enum Outcome {
     UpToDate,
     Updated(String),
-}
-
-#[derive(Debug, PartialEq)]
-struct Failure {
-    message: String,
-    code: i32,
-}
-
-impl From<String> for Failure {
-    fn from(message: String) -> Failure {
-        Failure {
-            message,
-            code: FAILED_EXIT,
-        }
-    }
 }
 
 struct Tools<'a> {
