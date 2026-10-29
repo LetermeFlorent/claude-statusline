@@ -127,6 +127,9 @@ jobs:
           grep -q '"statusLine"' "$HOME/.claude/settings.json"
           "$b" --uninstall
           if grep -q '"statusLine"' "$HOME/.claude/settings.json"; then exit 1; fi
+          : > "$HOME/.claude/settings.json"
+          "$b" --install
+          grep -q '"statusLine"' "$HOME/.claude/settings.json"
           ext=""
           [ "$RUNNER_OS" = Windows ] && ext=.exe
           mkdir -p "$HOME/.claude/bin"
@@ -146,7 +149,10 @@ jobs:
           "$b" --no-such-flag 2>/dev/null
           [ $? -eq 2 ] || exit 1
           "$b" --bench abc 2>/dev/null
-          [ $? -eq 2 ]
+          [ $? -eq 2 ] || exit 1
+          mkdir -p "$RUNNER_TEMP/u/.claude/settings.json"
+          HOME="$RUNNER_TEMP/u" USERPROFILE="$RUNNER_TEMP/u" "$b" --uninstall 2>/dev/null
+          [ $? -eq 1 ]
 
       - name: memory limit
         if: runner.os == 'Linux'

@@ -19,6 +19,10 @@ pub const SETTINGS_UNREADABLE: Text = Text::new(
     "settings cannot be read, nothing changed: {}\n",
     "réglages illisibles, rien n'est modifié : {}\n",
 );
+pub const SETTINGS_INVALID: Text = Text::new(
+    "settings are not a valid JSON object, nothing changed: {}\n",
+    "réglages invalides, objet JSON attendu, rien n'est modifié : {}\n",
+);
 pub const CANNOT_WRITE: Text = Text::new("cannot write {}\n", "écriture impossible : {}\n");
 pub const BACKUP: Text = Text::new("backup: {}\n", "sauvegarde : {}\n");
 pub const GLOBAL_REPAIRED: Text = Text::new(
@@ -40,8 +44,14 @@ pub const RESTART: Text = Text::new(
     "restart Claude Code to see the bar\n",
     "relancez Claude Code pour voir la barre\n",
 );
-pub const NOTHING_TO_REMOVE: Text =
-    Text::new("no statusLine to remove\n", "aucune statusLine à retirer\n");
+pub const NO_SETTINGS: Text = Text::new(
+    "no settings file, nothing to remove: {}\n",
+    "aucun fichier de réglages, rien à retirer : {}\n",
+);
+pub const NOTHING_TO_REMOVE: Text = Text::new(
+    "no statusLine to remove: {}\n",
+    "aucune statusLine à retirer : {}\n",
+);
 pub const REMOVED: Text = Text::new("statusLine removed from {}\n", "statusLine retirée de {}\n");
 pub const NO_RELEASE: Text = Text::new(
     "latest release not found\n",
@@ -75,7 +85,7 @@ pub const UPDATE_RUNNING: Text = Text::new(
 );
 
 #[cfg(test)]
-pub const ALL: [&Text; 30] = [
+pub const ALL: [&Text; 32] = [
     &BENCH_SUMMARY,
     &BENCH_STATE,
     &BENCH_CONFIG,
@@ -85,6 +95,7 @@ pub const ALL: [&Text; 30] = [
     &UNKNOWN_ARGUMENT,
     &BAD_BENCH_COUNT,
     &SETTINGS_UNREADABLE,
+    &SETTINGS_INVALID,
     &CANNOT_WRITE,
     &BACKUP,
     &GLOBAL_REPAIRED,
@@ -94,6 +105,7 @@ pub const ALL: [&Text; 30] = [
     &INSTALLED,
     &CONFIG_WRITTEN,
     &RESTART,
+    &NO_SETTINGS,
     &NOTHING_TO_REMOVE,
     &REMOVED,
     &NO_RELEASE,

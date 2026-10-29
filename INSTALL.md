@@ -49,7 +49,7 @@ The binary is first written as `statusline.new`, then renamed, so that a bar alr
 - The file is written back with a 2-space indent. Keys keep their order and values keep their exact text; a new `statusLine` block goes at the end.
 - When no `statusline.json` is found, a short template is written in the account folder.
 
-An unreadable `settings.json` (invalid JSON, comments, empty file) is never touched: the command says the settings cannot be read, changes nothing and exits with code 1.
+An empty `settings.json` counts as `{}`. A file that cannot be read, or that is not a JSON object (invalid JSON, comments, an array), is never touched: the command names the problem, changes nothing and exits with code 1.
 
 ## Checking
 
@@ -97,7 +97,7 @@ You can also run `git pull` in the cloned folder and run the install script agai
 
 ## Uninstalling
 
-`statusline --uninstall` removes the `statusLine` block of the current account, after a `settings.json.bak-<timestamp>` copy, and writes the file back the same way as `--install`. For another account, set `CLAUDE_CONFIG_DIR` to its folder before running the command. When the account has no `statusLine` block, the command says so and changes nothing.
+`statusline --uninstall` removes the `statusLine` block of the current account, after a `settings.json.bak-<timestamp>` copy, and writes the file back the same way as `--install`. For another account, set `CLAUDE_CONFIG_DIR` to its folder before running the command. When the account has no `settings.json`, or no `statusLine` block in it, the command says which and changes nothing. A `settings.json` that cannot be read or is not a JSON object is left alone, with exit code 1.
 
 Then delete the program, `~/.claude/bin/statusline` (`statusline.exe` on Windows, with any `statusline.exe.old-*`). If you no longer want them, also delete `~/.claude/statusline.json`, any `statusline.json` in the account folders, the `settings.json.bak-*` copies, and the state folder:
 
