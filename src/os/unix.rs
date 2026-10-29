@@ -471,8 +471,12 @@ mod sys {
         out
     }
 
-    pub fn on_network(_path: &str) -> bool {
-        false
+    fn mounts() -> Vec<(String, bool)> {
+        Vec::new()
+    }
+
+    pub fn on_network(path: &str) -> bool {
+        crate::os::deepest_mount(mounts().into_iter(), path).is_some_and(|local| !local)
     }
 
     const CLOCK_UPTIME_RAW: u32 = 8;
@@ -633,6 +637,14 @@ mod sys {
                 assert!(memory().is_some());
             }
             assert_eq!(send_references(port), before);
+        }
+
+        #[test]
+        fn the_mount_table_holds_the_root_as_a_local_mount() {
+            assert!(mounts().contains(&(String::from("/"), true)));
+            let temp = std::env::temp_dir();
+            assert!(!on_network(&temp.to_string_lossy()));
+            assert!(!on_network("/Users"));
         }
     }
 }

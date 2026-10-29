@@ -1,4 +1,4 @@
-#![cfg(windows)]
+#![cfg(any(windows, target_os = "linux"))]
 
 mod common;
 
@@ -36,6 +36,7 @@ fn assert_rendered(output: &Output) {
     assert!(shown.contains("Opus"), "{}", shown);
 }
 
+#[cfg(windows)]
 #[test]
 fn a_session_on_an_unreachable_share_renders_at_once() {
     const UNREACHABLE_SHARE: &str = r"\\192.0.2.1\share";
@@ -47,6 +48,26 @@ fn a_session_on_an_unreachable_share_renders_at_once() {
         home.session(0).env("TERM_PROGRAM", "vscode"),
         &input(UNREACHABLE_SHARE),
     );
+    assert_rendered(&output);
+    assert!(spent < BOUND, "{:?}", spent);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn a_hung_gsettings_is_given_up_on() {
+    use std::os::unix::fs::PermissionsExt;
+    const HUNG_SCRIPT: &str = "#!/bin/sh\nexec sleep 30\n";
+    const EXECUTABLE: u32 = 0o755;
+    const BOUND: Duration = Duration::from_secs(5);
+    let home = Home::new("gsettings");
+    let tools = home.0.join("tools");
+    std::fs::create_dir_all(&tools).unwrap();
+    let fake = tools.join("gsettings");
+    std::fs::write(&fake, HUNG_SCRIPT).unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(EXECUTABLE)).unwrap();
+    let path = format!("{}:/usr/bin:/bin", tools.display());
+    let local = home.0.to_string_lossy().into_owned();
+    let (output, spent) = render(home.session(0).env("PATH", path), &input(&local));
     assert_rendered(&output);
     assert!(spent < BOUND, "{:?}", spent);
 }
