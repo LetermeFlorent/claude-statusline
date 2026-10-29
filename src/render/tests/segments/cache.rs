@@ -1,6 +1,6 @@
-use super::*;
 use crate::messages;
 use crate::plain;
+use crate::render::*;
 
 const NOW: f64 = 1_000_000.0;
 const MARKER_ON: &str = "{\"cold_cache_marker\": true}";
