@@ -491,7 +491,7 @@ jobs:
               done
             done
             IFS=$oldifs
-            PATH="$nossh" command -v ssh-keygen > /dev/null && exit 1
+            (PATH="$nossh"; hash -r; command -v ssh-keygen > /dev/null) && exit 1
             publish good
             expect="$PWD/dist/${{ matrix.asset }}"
             install_in download-sh yes env STATUSLINE_RELEASE_URL="$url" PATH="$nocargo" sh ./install-signed.sh
