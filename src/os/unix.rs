@@ -219,7 +219,10 @@ fn stamp_text(path: Option<String>) -> String {
 mod sys {
     use super::*;
     use crate::os::linux::disks::{self, Device};
+    use crate::os::linux::mounts;
     use crate::os::{Activity, CPU_SOURCE};
+
+    const MOUNT_TABLE: &str = "/proc/self/mountinfo";
 
     fn read_str(p: &str) -> Option<String> {
         std::fs::read_to_string(p).ok()
@@ -266,12 +269,16 @@ mod sys {
             return Some(device);
         }
         let folder = std::fs::canonicalize(path).ok()?;
-        let mounts = read_str("/proc/self/mountinfo")?;
-        let source = disks::mount_source(&mounts, folder.to_str()?)?;
+        let table = read_str(MOUNT_TABLE)?;
+        let source = mounts::source(&table, folder.to_str()?)?;
         let node = std::fs::metadata(source).ok()?;
         node.file_type()
             .is_block_device()
             .then(|| split_device(node.rdev()))
+    }
+
+    pub fn on_network(path: &str) -> bool {
+        read_str(MOUNT_TABLE).is_some_and(|table| mounts::on_network(&table, path))
     }
 
     fn physical(name: &str) -> bool {
@@ -464,6 +471,10 @@ mod sys {
         out
     }
 
+    pub fn on_network(_path: &str) -> bool {
+        false
+    }
+
     const CLOCK_UPTIME_RAW: u32 = 8;
 
     pub fn disk(_path: &str) -> Option<Activity> {
@@ -636,6 +647,9 @@ mod sys {
     pub fn disk(_path: &str) -> Option<Activity> {
         None
     }
+    pub fn on_network(_path: &str) -> bool {
+        false
+    }
     pub fn memory() -> Option<(f64, f64)> {
         None
     }
@@ -647,4 +661,4 @@ mod sys {
     }
 }
 
-pub use sys::{cpu, disk, memory, os_stamp, os_theme};
+pub use sys::{cpu, disk, memory, on_network, os_stamp, os_theme};

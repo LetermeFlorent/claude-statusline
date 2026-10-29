@@ -152,13 +152,18 @@ fn sample(cfg: &Config, state: &mut State, now: f64) -> Vec<SysValue> {
     out
 }
 
+fn local_only(dir: Option<&str>) -> Option<&str> {
+    dir.filter(|dir| !os::on_network(dir))
+}
+
 fn compact_files(cwd: Option<&str>) -> [String; 3] {
     let main = os::claude_dir()
         .map(|d| os::join(&d, &["settings.json"]))
         .unwrap_or_default();
     let cwd = cwd.map(String::from).or_else(os::cwd);
+    let folder = local_only(cwd.as_deref());
     let project = |f: &str| {
-        cwd.as_deref()
+        folder
             .map(|c| os::join(c, &[".claude", f]))
             .unwrap_or_default()
     };
@@ -191,7 +196,7 @@ fn run(input: &str, now: f64, laps: &mut Laps) -> (String, State, bool) {
     let session = Session::parse(input);
     laps.lap(Stage::Session);
     let mut state = load_state();
-    let project = session.project.as_deref().or(session.cwd.as_deref());
+    let project = local_only(session.project.as_deref().or(session.cwd.as_deref()));
     let light = theme::detect_light(cfg.light_override, project, &mut state);
     let quotas = state.quotas(
         session.live,
@@ -462,7 +467,9 @@ pub fn main(args: Vec<String>) -> i32 {
         Some("--theme") => {
             let cfg = load_config();
             let mut state = load_state();
-            let light = theme::detect_light(cfg.light_override, os::cwd().as_deref(), &mut state);
+            let cwd = os::cwd();
+            let light =
+                theme::detect_light(cfg.light_override, local_only(cwd.as_deref()), &mut state);
             save_state(&state);
             os::out(if light { "light\n" } else { "dark\n" });
             0

@@ -51,6 +51,7 @@ extern "system" {
     fn GetFileSizeEx(file: Handle, size: *mut i64) -> i32;
     fn GetFileInformationByHandle(file: Handle, info: *mut HandleInformation) -> i32;
     fn GetFileAttributesW(name: *const u16) -> u32;
+    fn GetDriveTypeW(root: *const u16) -> u32;
     fn GetFinalPathNameByHandleW(file: Handle, buf: *mut u16, size: u32, flags: u32) -> u32;
     fn MoveFileExW(from: *const u16, to: *const u16, flags: u32) -> i32;
     fn DeleteFileW(name: *const u16) -> i32;
@@ -160,7 +161,9 @@ const VERBATIM_PREFIX: &str = "\\\\?\\";
 const VERBATIM_UNC_PREFIX: &str = "\\\\?\\UNC\\";
 const NT_PREFIX: &str = "\\??\\";
 const UNC_PREFIX: &str = "\\\\";
+const VERBATIM_UNC_NAME: &str = "UNC\\";
 const DRIVE_ROOT_INDEX: usize = 2;
+const DRIVE_REMOTE: u32 = 4;
 const MAX_BUFFER_UNITS: u32 = 1 << 20;
 const READ_CHUNK_BYTES: usize = 64 << 10;
 const MAX_WRITE_BYTES: usize = 1 << 30;
@@ -700,6 +703,36 @@ pub fn exists(path: &str) -> bool {
     unsafe { GetFileAttributesW(wide_path.as_ptr()) != u32::MAX }
 }
 
+fn is_separator(c: char) -> bool {
+    c == '\\' || c == '/'
+}
+
+fn remote_drive(path: &str) -> bool {
+    let mut start = path.chars();
+    match (start.next(), start.next()) {
+        (Some(letter), Some(':')) if letter.is_ascii_alphabetic() => {
+            let root = wide(&format!("{}:\\", letter));
+            unsafe { GetDriveTypeW(root.as_ptr()) == DRIVE_REMOTE }
+        }
+        _ => false,
+    }
+}
+
+pub fn on_network(path: &str) -> bool {
+    let (rest, unc) = match path.strip_prefix(VERBATIM_PREFIX) {
+        Some(rest) => (
+            rest,
+            rest.get(..VERBATIM_UNC_NAME.len())
+                .is_some_and(|name| name.eq_ignore_ascii_case(VERBATIM_UNC_NAME)),
+        ),
+        None => (
+            path,
+            path.starts_with(is_separator) && path[1..].starts_with(is_separator),
+        ),
+    };
+    unc || remote_drive(rest)
+}
+
 pub fn mkdirs(path: &str) -> bool {
     for (i, c) in path.char_indices() {
         if (c == '\\' || c == '/') && i > DRIVE_ROOT_INDEX {
@@ -1052,7 +1085,9 @@ mod rt {
 
 #[cfg(test)]
 mod tests {
-    use super::{in_utf16_chunks, split_command_line, verbatim, DiskPerformance};
+    use super::{
+        in_utf16_chunks, on_network, split_command_line, system_dir, verbatim, DiskPerformance,
+    };
     use crate::state::State;
     use alloc::string::String;
     use alloc::vec::Vec;
@@ -1149,6 +1184,26 @@ mod tests {
         ];
         for (line, expected) in cases {
             assert_eq!(split(line), expected, "{}", line);
+        }
+    }
+
+    #[test]
+    fn shares_are_on_the_network_and_the_system_drive_is_not() {
+        let system = system_dir().unwrap();
+        let verbatim_system = format!(r"\\?\{}", system);
+        let cases = [
+            (r"\\192.0.2.1\share", true),
+            (r"//192.0.2.1/share/project", true),
+            (r"\\?\UNC\192.0.2.1\share", true),
+            (r"\\?\unc\192.0.2.1\share", true),
+            (system.as_str(), false),
+            (verbatim_system.as_str(), false),
+            (r"\project", false),
+            ("project", false),
+            ("", false),
+        ];
+        for (path, expected) in cases {
+            assert_eq!(on_network(path), expected, "{}", path);
         }
     }
 

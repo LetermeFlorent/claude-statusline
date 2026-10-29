@@ -1,33 +1,16 @@
+mod common;
+
+use common::Home;
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Command, Output, Stdio};
+use std::process::Output;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const SESSIONS: usize = 20;
 const ROUNDS: usize = 3;
 const RESET_IN_SECONDS: u64 = 3600;
-const INHERITED: [&str; 9] = [
-    "CLAUDE_CONFIG_DIR",
-    "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
-    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE",
-    "STATUSLINE_CONFIG",
-    "STATUSLINE_BG",
-    "STATUSLINE_LANG",
-    "XDG_STATE_HOME",
-    "XDG_CONFIG_HOME",
-    "NoDefaultCurrentDirectoryInExePath",
-];
-
-struct Home(PathBuf);
 
 impl Home {
-    fn new() -> Home {
-        let root = std::env::temp_dir().join(format!("statusline-sessions-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
-        Home(root)
-    }
-
     fn state_dir(&self) -> PathBuf {
         let base = if cfg!(windows) {
             self.0.join("local")
@@ -37,29 +20,6 @@ impl Home {
             self.0.join("state")
         };
         base.join("claude-statusline")
-    }
-
-    fn session(&self, account: usize) -> Command {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_statusline"));
-        for name in INHERITED {
-            command.env_remove(name);
-        }
-        command
-            .env("HOME", &self.0)
-            .env("USERPROFILE", &self.0)
-            .env("LOCALAPPDATA", self.0.join("local"))
-            .env("APPDATA", self.0.join("roaming"))
-            .env("XDG_STATE_HOME", self.0.join("state"))
-            .env("XDG_CONFIG_HOME", self.0.join("config"))
-            .env(
-                "CLAUDE_CONFIG_DIR",
-                self.0.join(format!(".claude-a{}", account)),
-            )
-            .env("NO_COLOR", "1")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        command
     }
 
     fn refresh_all_at_once(&self, input: &dyn Fn(usize) -> String) -> Vec<Output> {
@@ -74,12 +34,6 @@ impl Home {
             .into_iter()
             .map(|child| child.wait_with_output().unwrap())
             .collect()
-    }
-}
-
-impl Drop for Home {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 
@@ -128,7 +82,7 @@ fn assert_shows(outputs: &[Output], round: usize) {
 
 #[test]
 fn sessions_refreshing_at_once_keep_every_account_quota() {
-    let home = Home::new();
+    let home = Home::new("sessions");
     let resets = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()

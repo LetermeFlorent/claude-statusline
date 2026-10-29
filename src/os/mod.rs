@@ -72,6 +72,22 @@ pub fn file_name(path: &str) -> &str {
     path.rfind([SEP, '/']).map_or(path, |i| &path[i + 1..])
 }
 
+#[cfg(any(target_os = "linux", test))]
+fn mount_holds(point: &str, path: &str) -> bool {
+    point == "/"
+        || path
+            .strip_prefix(point)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+}
+
+#[cfg(any(target_os = "linux", test))]
+pub fn deepest_mount<T>(mounts: impl Iterator<Item = (String, T)>, path: &str) -> Option<T> {
+    mounts
+        .filter(|(point, _)| mount_holds(point, path))
+        .max_by_key(|(point, _)| point.len())
+        .map(|(_, mount)| mount)
+}
+
 pub fn claude_dir() -> Option<String> {
     match env("CLAUDE_CONFIG_DIR") {
         Some(d) if !d.trim().is_empty() => Some(d),
