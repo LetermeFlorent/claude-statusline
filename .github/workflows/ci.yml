@@ -248,6 +248,19 @@ jobs:
             else
               export XDG_STATE_HOME="$root/state"
             fi
+            if [ "$built" = refused ]; then
+              cp "$root/.claude/settings.json" "$root/settings.before"
+              if "$@" > /dev/null 2> "$root/refusal.log"; then
+                echo "install.sh accepted a release without checksums"
+                exit 1
+              fi
+              cat "$root/refusal.log"
+              grep -Eq 'download failed|SHA-256 hash' "$root/refusal.log"
+              test ! -e "$root/.claude/bin/statusline"
+              cmp "$root/settings.before" "$root/.claude/settings.json"
+              test ! -e "$root/.claude-compte2/settings.json"
+              return 0
+            fi
             for run in first second; do
               echo "installer $label, $run run"
               "$@"
@@ -280,7 +293,14 @@ jobs:
               printf '%s' "$PATH"
             )
             PATH="$nocargo" command -v cargo > /dev/null && exit 1
-            install_in release no env PATH="$nocargo" sh install.sh
+            sums="https://github.com/LetermeFlorent/claude-statusline/releases/latest/download/SHA256SUMS"
+            if curl -fsIL --proto =https -o /dev/null "$sums"; then
+              release=no
+            else
+              release=refused
+            fi
+            echo "latest release install: $release"
+            install_in release "$release" env LC_ALL=C PATH="$nocargo" sh install.sh
           fi
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
