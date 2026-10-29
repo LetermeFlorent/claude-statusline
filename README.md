@@ -7,7 +7,7 @@ ctx ■■▪■■■■■ 340k/1M | 5h ■■■■■■■■ 36% 3h29m | 7
 ram ■■■■■■■■ 11.3/15.3G | C: ▪■■■■■■■ 2% | cpu ▪■■■■■■■ 8%
 ```
 
-It is a small Rust program with no runtime dependencies: its only library, used to check the signature of updates, is built into the binary. Claude Code runs it every 3 seconds through the `statusLine` setting: it reads the session JSON on standard input, writes the bar on standard output and exits. A refresh takes a few milliseconds, most of it process start-up, and the binary weighs from 200 to 700 KB depending on the system: [Size and speed](#size-and-speed) gives the figures and says what each one measures. The program can update itself from the GitHub releases, an option that is off by default. The technical details (terminal detection, state file format, environment variables, build and CI) are in the [technical reference](docs/reference.md). When the bar does not show or shows something odd, start with the [troubleshooting list](INSTALL.md#troubleshooting).
+It is a small Rust program with no runtime dependencies: its only library, used to check the signature of updates, is built into the binary. Claude Code runs it every 3 seconds through the `statusLine` setting: it reads the session JSON on standard input, writes the bar on standard output and exits. A refresh takes a few milliseconds, most of it process start-up, and the binary weighs from 200 to 700 KB depending on the system: [Size and speed](#size-and-speed) gives the figures and says what each one measures. The program can update itself from the GitHub releases, an option that is on by default and installs only releases whose signature checks out. The technical details (terminal detection, state file format, environment variables, build and CI) are in the [technical reference](docs/reference.md). When the bar does not show or shows something odd, start with the [troubleshooting list](INSTALL.md#troubleshooting).
 
 ## Platforms and requirements
 
@@ -151,7 +151,7 @@ It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, 
 | `system.disk_path` | `C:\` on Windows, `/` elsewhere | disk to watch |
 | `system.colors.ram.ok`, `.dsk.ok`, `.cpu.ok` | `#1E787D`, `#697855`, `#4F7FC4` | normal hue of each metric |
 | `system.colors.<metric>.warn`, `.hot` | `#BE823C`, `#C83C3C` | warning and critical hues |
-| `auto_update` | `false` | `true` turns on the automatic update check |
+| `auto_update` | `true` | `false` turns off the automatic update check |
 
 Names in `system.metrics` are written in lowercase, and unknown names are ignored. An empty or missing list falls back to the three metrics. The disk color is set under `dsk`, even though the metric is called `io`.
 
@@ -183,7 +183,7 @@ All text in and out is UTF-8: the session JSON is read as UTF-8, and anything th
 
 ## Automatic updates
 
-With `"auto_update": true` in `statusline.json`, rendering the bar starts `statusline --update` at most every 6 hours, in the background, with no window, and returns without waiting for it. On Windows the update runs at low priority; on Linux and macOS it runs at the normal priority, in a process group of its own, because the program does not lower it. This only happens when the program runs from `~/.claude/bin` and a binary is published for the system. The time of the last check is kept in the state file, under the `update_at` key.
+Unless `statusline.json` sets `"auto_update": false`, rendering the bar starts `statusline --update` at most every 6 hours, in the background, with no window, and returns without waiting for it. On Windows the update runs at low priority; on Linux and macOS it runs at the normal priority, in a process group of its own, because the program does not lower it. This only happens when the program runs from `~/.claude/bin` and a binary is published for the system. The time of the last check is kept in the state file, under the `update_at` key.
 
 `--update` asks the GitHub API for the latest release, through `curl` (on Windows, the `curl.exe` of the system folder). When that release is newer, it downloads the binary for the system next to the program, under a name that carries its process id (`statusline.new-<pid>.exe`, or `statusline.new-<pid>`). It runs that copy with `--version`, which must print the version of the release, then with `--demo`, and only then puts it in place of the old one. On Windows the running program cannot be overwritten, but it can lose one of its names: the update first gives it a second one, `statusline.exe.old-<pid>`, then renames the new file over `statusline.exe` in a single step, so `statusline.exe` exists at every moment. Where hard links are not available, the old program is renamed away first, and put back if the new one cannot take its place.
 
@@ -191,7 +191,7 @@ Each update removes what earlier ones left behind: the `statusline.new-<pid>` an
 
 During the download, then for 5 seconds after the swap, the bar shows `update`. The next refresh starts the new program, with no need to restart Claude Code. A failure (network down, missing binary, wrong version, swap refused) leaves the old program in place until the next check.
 
-The update holds a lock on `update.lock`, in the folder of the state file, for its whole run: an open handle on Windows, `flock` on Unix. The system releases it when the process ends, even when it is killed. A second update waits at most 2 seconds for it, then says that an update is already running and stops. The bar shows `update` only while the `updating` marker exists and the lock is held. It checks the lock without waiting, and removes a marker that a stopped update left behind. The automatic check is off by default because nothing signs the downloaded binary yet. `statusline --update` still works by hand.
+The update holds a lock on `update.lock`, in the folder of the state file, for its whole run: an open handle on Windows, `flock` on Unix. The system releases it when the process ends, even when it is killed. A second update waits at most 2 seconds for it, then says that an update is already running and stops. The bar shows `update` only while the `updating` marker exists and the lock is held. It checks the lock without waiting, and removes a marker that a stopped update left behind. Before it runs anything it downloads, the update checks the signature of the release manifest against the key built into the program, then the tag and the SHA-256 of the binary listed in it; any mismatch leaves the installed program as it is. `statusline --update` works by hand as well.
 
 The network must let through `api.github.com` (the lookup of the latest release), `github.com` (the download address) and `release-assets.githubusercontent.com`, where GitHub redirects the download of a release asset. The install scripts use `github.com` and that last host too, and `raw.githubusercontent.com` when the script itself is downloaded alone.
 

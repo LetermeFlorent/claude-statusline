@@ -123,7 +123,7 @@ A mistake in the file does not show on the bar: invalid JSON brings every settin
 
 ## Updating
 
-Automatic updates are off by default. With `"auto_update": true` in `statusline.json`, the bar looks for a newer release on GitHub at most every 6 hours, installs it in the background (at low priority on Windows, at the normal priority on Linux and macOS) and shows `update` during the swap, with no need to restart Claude Code. The "Automatic updates" section of the README has the details.
+Automatic updates are on by default. Unless `statusline.json` sets `"auto_update": false`, the bar looks for a newer release on GitHub at most every 6 hours, installs it in the background (at low priority on Windows, at the normal priority on Linux and macOS) and shows `update` during the swap, with no need to restart Claude Code. The "Automatic updates" section of the README has the details.
 
 `statusline --update` runs the same update by hand and prints the outcome: already up to date, the version change (for example `2.1.0 -> v2.2.0`), or the reason it failed.
 
@@ -153,7 +153,7 @@ Without a clone, download the script again as shown under "Installing without a 
 
 A version that already has `--update` can also upgrade itself, with `~/.claude/bin/statusline --update`. If it fails, the scripts above always work.
 
-Three changes may surprise an account installed with a version older than 2.1.1. The command in `settings.json` was an absolute path before 2.1.0: the script replaces it with the portable `~/.claude/bin/statusline` form and says so. Automatic updates were on by default in 2.1.0 and are off now: a `statusline.json` that does not set `auto_update` to `true` no longer checks for releases, and `--update` still works by hand. The state file keeps working, and the keys of version 1 are cleaned up as the bar runs (see the state file section of the README).
+Three changes may surprise an account installed with a version older than 2.1.1. The command in `settings.json` was an absolute path before 2.1.0: the script replaces it with the portable `~/.claude/bin/statusline` form and says so. Automatic updates were on by default in 2.1.0, off in 2.1.1, and are on again now that releases are signed: set `auto_update` to `false` in `statusline.json` to keep them off, and `--update` still works by hand. The state file keeps working, and the keys of version 1 are cleaned up as the bar runs (see the state file section of the README).
 
 ## Uninstalling
 
