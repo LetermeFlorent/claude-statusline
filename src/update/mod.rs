@@ -4,14 +4,16 @@ mod lock;
 mod swap;
 #[cfg(test)]
 mod tests;
+mod verify;
 
 use crate::messages;
 use crate::os;
 use crate::update_watch::{asset, newer, MARKER};
 use alloc::string::String;
-use fetch::{curl, download_url, latest, Curl, Fetch, HTTP_OK};
+use fetch::{curl, latest, origin, Curl, Fetch, Origin, HTTP_OK};
 use leftovers::{clean_binaries, clean_temp};
 use swap::{staging, swap, Swap};
+use verify::{check, printed, Probe};
 
 pub use lock::running;
 
@@ -42,25 +44,35 @@ impl From<String> for Failure {
     }
 }
 
+struct Tools<'a> {
+    origin: Origin,
+    fetch: Fetch<'a>,
+    probe: Probe<'a>,
+}
+
 fn fail(msg: &str) -> i32 {
     os::err(msg);
     FAILED_EXIT
 }
 
-fn install(dir: &str, exe: &str, tag: &str, fetch: Fetch) -> Result<(), Failure> {
+fn install(exe: &str, tag: &str, tools: &Tools) -> Result<(), Failure> {
     let Some(name) = asset() else {
         return Err(String::from(messages::NO_ASSET.text()).into());
     };
     let id = os::process_id();
     let fresh = staging(exe, id);
-    let ready = fetch(&download_url(tag, name), &fresh, 300) == Some(HTTP_OK)
-        && os::make_executable(&fresh)
-        && os::call(&fresh, &["--version"], dir, 30) == Some(0);
-    match if ready {
-        swap(exe, &fresh, id)
+    let url = tools.origin.download(tag, name);
+    let fetched = (tools.fetch)(&url, &fresh, 300) == Some(HTTP_OK) && os::make_executable(&fresh);
+    let checked = if fetched {
+        check(&fresh, tag, tools.probe)
     } else {
-        Swap::Refused
-    } {
+        Err(messages::UPDATE_FAILED.with(&[tag]).into())
+    };
+    if let Err(failure) = checked {
+        os::remove(&fresh);
+        return Err(failure);
+    }
+    match swap(exe, &fresh, id) {
         Swap::Done => Ok(()),
         Swap::Refused => {
             if os::exists(exe) {
@@ -76,15 +88,15 @@ fn install(dir: &str, exe: &str, tag: &str, fetch: Fetch) -> Result<(), Failure>
     }
 }
 
-fn attempt(dir: &str, exe: &str, fetch: Fetch) -> Result<Outcome, Failure> {
+fn attempt(dir: &str, exe: &str, tools: &Tools) -> Result<Outcome, Failure> {
     clean_binaries(exe);
     clean_temp(dir, os::now());
-    let tag = latest(dir, fetch)?;
+    let tag = latest(dir, &tools.origin, tools.fetch)?;
     if !newer(&tag, VERSION) {
         return Ok(Outcome::UpToDate);
     }
     os::write(&os::join(dir, &[MARKER]), tag.as_bytes());
-    install(dir, exe, &tag, fetch)?;
+    install(exe, &tag, tools)?;
     Ok(Outcome::Updated(tag))
 }
 
@@ -121,10 +133,21 @@ pub fn run() -> i32 {
         }
         Err(msg) => return fail(&msg),
     };
-    let curl = Curl { program, dir: &dir };
+    let origin = origin();
+    let curl = Curl {
+        program,
+        dir: &dir,
+        protocols: origin.protocols,
+    };
     let fetch = |url: &str, to: &str, secs: u32| curl.fetch(url, to, secs);
+    let probe = |fresh: &str, flag: &str| printed(fresh, flag, &dir);
+    let tools = Tools {
+        origin,
+        fetch: &fetch,
+        probe: &probe,
+    };
     let result = match os::exe() {
-        Some(exe) => attempt(&dir, &exe, &fetch),
+        Some(exe) => attempt(&dir, &exe, &tools),
         None => Err(String::from(messages::NO_EXE.text()).into()),
     };
     let code = report(result);

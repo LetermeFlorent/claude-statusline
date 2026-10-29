@@ -9,6 +9,14 @@ const REPO: &str = "LetermeFlorent/claude-statusline";
 pub const HTTP_OK: u16 = 200;
 const RATE_LIMIT_STATUSES: [u16; 2] = [403, 429];
 const HTTPS_ONLY: &str = "=https";
+const GITHUB_API: &str = "https://api.github.com";
+const GITHUB: &str = "https://github.com";
+#[cfg(debug_assertions)]
+const SERVER_VARIABLE: &str = "STATUSLINE_UPDATE_SERVER";
+#[cfg(debug_assertions)]
+const LOCAL_SERVER: &str = "http://127.0.0.1:";
+#[cfg(debug_assertions)]
+const HTTP_ONLY: &str = "=http";
 
 pub type Fetch<'a> = &'a dyn Fn(&str, &str, u32) -> Option<u16>;
 
@@ -33,14 +41,62 @@ fn last_status(headers: &str) -> Option<u16> {
     line.split_whitespace().nth(1)?.parse().ok()
 }
 
-fn curl_args<'a>(limit: &'a str, headers: &'a str, to: &'a str, url: &'a str) -> [&'a str; 13] {
+pub struct Origin {
+    api: String,
+    downloads: String,
+    pub protocols: &'static str,
+}
+
+pub fn github() -> Origin {
+    Origin {
+        api: String::from(GITHUB_API),
+        downloads: String::from(GITHUB),
+        protocols: HTTPS_ONLY,
+    }
+}
+
+#[cfg(not(debug_assertions))]
+pub fn origin() -> Origin {
+    github()
+}
+
+#[cfg(debug_assertions)]
+pub fn origin() -> Origin {
+    match os::env(SERVER_VARIABLE).filter(|base| base.starts_with(LOCAL_SERVER)) {
+        Some(base) => Origin {
+            api: base.clone(),
+            downloads: base,
+            protocols: HTTP_ONLY,
+        },
+        None => github(),
+    }
+}
+
+impl Origin {
+    fn latest(&self) -> String {
+        format!("{}/repos/{}/releases/latest", self.api, REPO)
+    }
+
+    pub fn download(&self, tag: &str, name: &str) -> String {
+        let downloads = &self.downloads;
+        format!("{}/{}/releases/download/{}/{}", downloads, REPO, tag, name)
+    }
+}
+
+fn curl_args<'a>(
+    protocols: &'a str,
+    limit: &'a str,
+    headers: &'a str,
+    to: &'a str,
+    url: &'a str,
+) -> [&'a str; 13] {
     [
         "-q",
         "-sSL",
         "--proto",
-        HTTPS_ONLY,
+        protocols,
         "--proto-redir",
-        HTTPS_ONLY,
+        protocols,
         "--max-time",
         limit,
         "-D",
@@ -54,13 +110,14 @@ fn curl_args<'a>(limit: &'a str, headers: &'a str, to: &'a str, url: &'a str) ->
 pub struct Curl<'a> {
     pub program: String,
     pub dir: &'a str,
+    pub protocols: &'static str,
 }
 
 impl Curl<'_> {
     pub fn fetch(&self, url: &str, to: &str, secs: u32) -> Option<u16> {
         let headers = format!("{}.headers", to);
         let limit = format!("{}", secs);
-        let args = curl_args(&limit, &headers, to, url);
+        let args = curl_args(self.protocols, &limit, &headers, to, url);
         let finished = os::call(&self.program, &args, self.dir, secs + 15) == Some(0);
         let status = os::read_text(&headers).and_then(|h| last_status(&h));
         os::remove(&headers);
@@ -68,10 +125,9 @@ impl Curl<'_> {
     }
 }
 
-pub fn latest(dir: &str, fetch: Fetch) -> Result<String, String> {
+pub fn latest(dir: &str, origin: &Origin, fetch: Fetch) -> Result<String, String> {
     let file = os::join(dir, &["release.json"]);
-    let url = format!("https://api.github.com/repos/{}/releases/latest", REPO);
-    let status = fetch(&url, &file, 30);
+    let status = fetch(&origin.latest(), &file, 30);
     let text = os::read_text(&file);
     os::remove(&file);
     if status.is_some_and(|s| RATE_LIMIT_STATUSES.contains(&s)) {
@@ -83,13 +139,6 @@ pub fn latest(dir: &str, fetch: Fetch) -> Result<String, String> {
         .and_then(|release| release.get("tag_name")?.str().map(String::from))
         .filter(|tag| parts(tag).is_some());
     tag.ok_or_else(|| String::from(messages::NO_RELEASE.text()))
-}
-
-pub fn download_url(tag: &str, name: &str) -> String {
-    format!(
-        "https://github.com/{}/releases/download/{}/{}",
-        REPO, tag, name
-    )
 }
 
 #[cfg(test)]
@@ -123,13 +172,24 @@ mod tests {
             source.replace('\\', "/").trim_start_matches('/')
         );
         let output = std::process::Command::new(curl().unwrap())
-            .args(curl_args("5", &headers, &copy, &url))
+            .args(curl_args(HTTPS_ONLY, "5", &headers, &copy, &url))
             .env("CURL_HOME", sandbox.dir())
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(UNSUPPORTED_PROTOCOL));
         assert!(!os::exists(&trace));
         assert!(!os::exists(&copy));
+    }
+
+    #[test]
+    fn releases_come_from_github_over_https() {
+        let origin = github();
+        let api = "https://api.github.com/repos/LetermeFlorent/claude-statusline/releases/latest";
+        let download =
+            "https://github.com/LetermeFlorent/claude-statusline/releases/download/v9.0.0/a";
+        assert_eq!(origin.latest(), api);
+        assert_eq!(origin.download("v9.0.0", "a"), download);
+        assert_eq!(origin.protocols, HTTPS_ONLY);
     }
 
     #[test]

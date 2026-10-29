@@ -126,6 +126,33 @@ pub fn process_id() -> u32 {
     std::process::id()
 }
 
+const CALL_POLL_MS: u32 = 50;
+
+pub fn call_to(exe: &str, args: &[&str], dir: &str, secs: u32, output: &str) -> Option<i32> {
+    use std::process::{Command, Stdio};
+    let file = std::fs::File::create(output).ok()?;
+    let mut child = Command::new(exe)
+        .args(args)
+        .current_dir(dir)
+        .stdin(Stdio::null())
+        .stdout(file)
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let deadline = ticks() + f64::from(secs);
+    loop {
+        if let Some(status) = child.try_wait().ok()? {
+            return status.code();
+        }
+        if ticks() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+        super::sleep(CALL_POLL_MS);
+    }
+}
+
 pub fn stamp(path: &str) -> Option<(u64, i64)> {
     use std::os::unix::fs::MetadataExt;
     let m = std::fs::metadata(path).ok()?;

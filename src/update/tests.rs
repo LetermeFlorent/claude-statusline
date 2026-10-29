@@ -1,20 +1,27 @@
 use super::*;
 use crate::sandbox::Sandbox;
 use core::cell::RefCell;
+use fetch::github;
+use verify::WRONG_VERSION_EXIT;
 
 const OLD_BINARY: &[u8] = b"old";
-const FAILING_BINARY: &[u8] = b"#!/bin/sh\nexit 3\n";
+const WORKING_BINARY: &[u8] = b"statusline 99.0.0\n|demo";
+const FAILING_BINARY: &[u8] = b"crash";
+const OTHER_VERSION_BINARY: &[u8] = b"statusline 98.0.0\n|demo";
+const NO_DEMO_BINARY: &[u8] = b"statusline 99.0.0\n|";
 const EXE_NAME: &str = if cfg!(windows) {
     "statusline.exe"
 } else {
     "statusline"
 };
 
-fn working_binary() -> Vec<u8> {
-    if cfg!(windows) {
-        std::fs::read(curl().unwrap()).unwrap()
-    } else {
-        b"#!/bin/sh\nexit 0\n".to_vec()
+fn run_fake(exe: &str, flag: &str) -> Option<String> {
+    let body = std::fs::read_to_string(exe).ok()?;
+    let (version, demo) = body.split_once('|')?;
+    match flag {
+        "--version" => Some(String::from(version)),
+        "--demo" => (!demo.is_empty()).then(String::new),
+        _ => None,
     }
 }
 
@@ -72,7 +79,12 @@ fn update(name: &str, release: Release) -> Run {
     let sandbox = Sandbox::new(name);
     let exe = sandbox.path(EXE_NAME);
     std::fs::write(&exe, OLD_BINARY).unwrap();
-    let result = attempt(&sandbox.dir(), &exe, &|u, t, s| release.serve(u, t, s));
+    let tools = Tools {
+        origin: github(),
+        fetch: &|u, t, s| release.serve(u, t, s),
+        probe: &run_fake,
+    };
+    let result = attempt(&sandbox.dir(), &exe, &tools);
     Run {
         result,
         installed: std::fs::read(&exe).unwrap(),
@@ -83,16 +95,15 @@ fn update(name: &str, release: Release) -> Run {
 
 #[test]
 fn newer_tag_is_installed() {
-    let binary = working_binary();
-    let run = update("newer", release("v99.0.0", &binary));
+    let run = update("newer", release("v99.0.0", WORKING_BINARY));
     assert_eq!(run.result, Ok(Outcome::Updated(String::from("v99.0.0"))));
-    assert_eq!(run.installed, binary);
+    assert_eq!(run.installed, WORKING_BINARY);
     assert!(!run.files.iter().any(|f| f.contains(".new")));
 }
 
 #[test]
 fn same_tag_is_already_up_to_date() {
-    let run = update("same", release(&format!("v{}", VERSION), &working_binary()));
+    let run = update("same", release(&format!("v{}", VERSION), WORKING_BINARY));
     assert_eq!(run.result, Ok(Outcome::UpToDate));
     assert_eq!(run.installed, OLD_BINARY);
     assert_eq!(run.asked, 1);
@@ -102,7 +113,7 @@ fn same_tag_is_already_up_to_date() {
 #[test]
 fn tag_outside_x_y_z_is_refused() {
     for (i, tag) in ["v99.0", "v99.0.0-rc1", "latest"].iter().enumerate() {
-        let run = update(&format!("refused-{}", i), release(tag, &working_binary()));
+        let run = update(&format!("refused-{}", i), release(tag, WORKING_BINARY));
         assert_eq!(
             run.result,
             failed(String::from(messages::NO_RELEASE.text()))
@@ -115,6 +126,27 @@ fn tag_outside_x_y_z_is_refused() {
 #[test]
 fn binary_failing_its_version_check_is_not_swapped_in() {
     let run = update("failing", release("v99.0.0", FAILING_BINARY));
+    assert_eq!(
+        run.result,
+        failed(messages::UPDATE_FAILED.with(&["v99.0.0"]))
+    );
+    assert_eq!(run.installed, OLD_BINARY);
+    assert_eq!(run.files, [EXE_NAME, MARKER]);
+}
+
+#[test]
+fn binary_reporting_another_version_is_refused_with_its_own_code() {
+    let run = update("other-version", release("v99.0.0", OTHER_VERSION_BINARY));
+    let message = messages::WRONG_VERSION.with(&["statusline 98.0.0", "v99.0.0"]);
+    let code = WRONG_VERSION_EXIT;
+    assert_eq!(run.result, Err(Failure { message, code }));
+    assert_eq!(run.installed, OLD_BINARY);
+    assert_eq!(run.files, [EXE_NAME, MARKER]);
+}
+
+#[test]
+fn binary_failing_its_demo_is_not_swapped_in() {
+    let run = update("no-demo", release("v99.0.0", NO_DEMO_BINARY));
     assert_eq!(
         run.result,
         failed(messages::UPDATE_FAILED.with(&["v99.0.0"]))
