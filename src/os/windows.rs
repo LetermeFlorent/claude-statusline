@@ -65,6 +65,7 @@ extern "system" {
     fn GetSystemDirectoryW(buf: *mut u16, size: u32) -> u32;
     fn GetUserDefaultUILanguage() -> u16;
     fn GetCurrentDirectoryW(size: u32, buf: *mut u16) -> u32;
+    fn GetFullPathNameW(name: *const u16, size: u32, buf: *mut u16, file: *mut *mut u16) -> u32;
     fn GetCurrentProcessId() -> u32;
     fn GetSystemTimePreciseAsFileTime(time: *mut u64);
     fn QueryPerformanceCounter(count: *mut i64) -> i32;
@@ -130,6 +131,11 @@ const ERROR_SUCCESS: i32 = 0;
 const VOLUME_NAME_DOS: u32 = 0;
 const ERROR_FILE_NOT_FOUND: i32 = 2;
 const MAX_PATH: u32 = 260;
+const LEGACY_PATH_UNITS: usize = 248;
+const VERBATIM_PREFIX: &str = "\\\\?\\";
+const VERBATIM_UNC_PREFIX: &str = "\\\\?\\UNC\\";
+const NT_PREFIX: &str = "\\??\\";
+const UNC_PREFIX: &str = "\\\\";
 const DRIVE_ROOT_INDEX: usize = 2;
 const MAX_BUFFER_UNITS: u32 = 1 << 20;
 const READ_CHUNK_BYTES: usize = 64 << 10;
@@ -234,6 +240,25 @@ pub(super) fn wide(s: &str) -> Vec<u16> {
     v
 }
 
+fn verbatim(full: String) -> String {
+    match full.strip_prefix(UNC_PREFIX) {
+        Some(rest) if rest.starts_with(['?', '.']) => full,
+        Some(rest) => format!("{}{}", VERBATIM_UNC_PREFIX, rest),
+        None => format!("{}{}", VERBATIM_PREFIX, full),
+    }
+}
+
+fn wide_path(path: &str) -> Vec<u16> {
+    let plain = wide(path);
+    let prefixed = path.starts_with(VERBATIM_PREFIX) || path.starts_with(NT_PREFIX);
+    if prefixed || plain.len() < LEGACY_PATH_UNITS {
+        return plain;
+    }
+    let full =
+        with_growing_buffer(&|b, n| unsafe { GetFullPathNameW(plain.as_ptr(), n, b, null_mut()) });
+    full.map_or(plain, |full| wide(&verbatim(full)))
+}
+
 unsafe fn from_ptr(text: *const u16) -> String {
     let mut len = 0;
     while *text.add(len) != 0 {
@@ -282,7 +307,7 @@ pub fn env(name: &str) -> Option<String> {
 }
 
 fn open_existing(path: &str, access: u32, flags: u32) -> Handle {
-    let wide_path = wide(path);
+    let wide_path = wide_path(path);
     unsafe {
         CreateFileW(
             wide_path.as_ptr(),
@@ -347,7 +372,7 @@ fn write_handle(file: Handle, data: &[u8]) -> bool {
 }
 
 fn write_with(path: &str, share: u32, disposition: u32, data: &[u8]) -> bool {
-    let wide_path = wide(path);
+    let wide_path = wide_path(path);
     let file = unsafe {
         CreateFileW(
             wide_path.as_ptr(),
@@ -372,7 +397,7 @@ pub fn write(path: &str, data: &[u8]) -> bool {
 }
 
 fn resolved(path: &str) -> String {
-    let wide_path = wide(path);
+    let wide_path = wide_path(path);
     let attributes = unsafe { GetFileAttributesW(wide_path.as_ptr()) };
     let linked = attributes != u32::MAX && attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0;
     let file = if linked {
@@ -403,12 +428,12 @@ pub fn write_atomic(path: &str, data: &[u8]) -> bool {
 }
 
 pub fn remove(path: &str) -> bool {
-    let wide_path = wide(path);
+    let wide_path = wide_path(path);
     unsafe { DeleteFileW(wide_path.as_ptr()) != 0 }
 }
 
 pub fn rename(from: &str, to: &str) -> bool {
-    let (wide_from, wide_to) = (wide(from), wide(to));
+    let (wide_from, wide_to) = (wide_path(from), wide_path(to));
     let flags = MOVEFILE_REPLACE_EXISTING;
     unsafe { MoveFileExW(wide_from.as_ptr(), wide_to.as_ptr(), flags) != 0 }
 }
@@ -435,25 +460,25 @@ pub fn stamp(path: &str) -> Option<(u64, i64)> {
 }
 
 pub fn exists(path: &str) -> bool {
-    let wide_path = wide(path);
+    let wide_path = wide_path(path);
     unsafe { GetFileAttributesW(wide_path.as_ptr()) != u32::MAX }
 }
 
 pub fn mkdirs(path: &str) -> bool {
     for (i, c) in path.char_indices() {
         if (c == '\\' || c == '/') && i > DRIVE_ROOT_INDEX {
-            let wide_parent = wide(&path[..i]);
+            let wide_parent = wide_path(&path[..i]);
             unsafe { CreateDirectoryW(wide_parent.as_ptr(), null_mut()) };
         }
     }
-    let wide_path = wide(path);
+    let wide_path = wide_path(path);
     unsafe { CreateDirectoryW(wide_path.as_ptr(), null_mut()) };
     exists(path)
 }
 
 pub fn list(dir: &str, prefix: &str) -> Vec<String> {
     let mut out = Vec::new();
-    let pattern = wide(&format!("{}\\{}*", dir, prefix));
+    let pattern = wide_path(&format!("{}\\{}*", dir, prefix));
     let mut data = FindData::new();
     let search = unsafe { FindFirstFileW(pattern.as_ptr(), &mut data) };
     if search == INVALID {
@@ -754,8 +779,25 @@ mod rt {
 
 #[cfg(test)]
 mod tests {
-    use super::DiskPerformance;
+    use super::{verbatim, DiskPerformance};
     use crate::state::State;
+    use alloc::string::String;
+
+    #[test]
+    fn long_paths_take_the_verbatim_prefix_of_their_kind() {
+        let cases = [
+            ("C:\\deep\\settings.json", "\\\\?\\C:\\deep\\settings.json"),
+            (
+                "\\\\server\\share\\a.json",
+                "\\\\?\\UNC\\server\\share\\a.json",
+            ),
+            ("\\\\?\\C:\\deep\\a.json", "\\\\?\\C:\\deep\\a.json"),
+            ("\\\\.\\pipe\\name", "\\\\.\\pipe\\name"),
+        ];
+        for (full, expected) in cases {
+            assert_eq!(verbatim(String::from(full)), expected);
+        }
+    }
 
     #[test]
     fn overlapping_requests_count_the_busy_time_once() {
