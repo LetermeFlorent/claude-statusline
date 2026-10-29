@@ -55,6 +55,7 @@ extern "system" {
     fn GetFinalPathNameByHandleW(file: Handle, buf: *mut u16, size: u32, flags: u32) -> u32;
     fn MoveFileExW(from: *const u16, to: *const u16, flags: u32) -> i32;
     fn DeleteFileW(name: *const u16) -> i32;
+    fn CreateHardLinkW(link: *const u16, existing: *const u16, security: *mut c_void) -> i32;
     fn SetFileInformationByHandle(file: Handle, class: u32, info: *const c_void, size: u32) -> i32;
     fn CreateEventW(security: *mut c_void, manual: i32, initial: i32, name: *const u16) -> Handle;
     fn LockFileEx(
@@ -696,6 +697,15 @@ fn wait_for_lock(file: Handle, event: Handle, wait_ms: u32) -> Option<bool> {
 
 pub fn make_executable(path: &str) -> bool {
     exists(path)
+}
+
+pub fn hard_link(existing: &str, link: &str) -> bool {
+    let (wide_existing, wide_link) = (wide_path(existing), wide_path(link));
+    unsafe { CreateHardLinkW(wide_link.as_ptr(), wide_existing.as_ptr(), null_mut()) != 0 }
+}
+
+pub fn process_id() -> u32 {
+    unsafe { GetCurrentProcessId() }
 }
 
 pub fn stamp(path: &str) -> Option<(u64, i64)> {

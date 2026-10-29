@@ -57,8 +57,12 @@ impl Release<'_> {
     }
 }
 
+fn failed(message: String) -> Result<Outcome, Failure> {
+    Err(Failure::from(message))
+}
+
 struct Run {
-    result: Result<Outcome, String>,
+    result: Result<Outcome, Failure>,
     installed: Vec<u8>,
     files: Vec<String>,
     asked: usize,
@@ -99,7 +103,10 @@ fn same_tag_is_already_up_to_date() {
 fn tag_outside_x_y_z_is_refused() {
     for (i, tag) in ["v99.0", "v99.0.0-rc1", "latest"].iter().enumerate() {
         let run = update(&format!("refused-{}", i), release(tag, &working_binary()));
-        assert_eq!(run.result, Err(String::from(messages::NO_RELEASE.text())));
+        assert_eq!(
+            run.result,
+            failed(String::from(messages::NO_RELEASE.text()))
+        );
         assert_eq!(run.installed, OLD_BINARY);
         assert_eq!(run.files, [EXE_NAME]);
     }
@@ -108,7 +115,10 @@ fn tag_outside_x_y_z_is_refused() {
 #[test]
 fn binary_failing_its_version_check_is_not_swapped_in() {
     let run = update("failing", release("v99.0.0", FAILING_BINARY));
-    assert_eq!(run.result, Err(messages::UPDATE_FAILED.with(&["v99.0.0"])));
+    assert_eq!(
+        run.result,
+        failed(messages::UPDATE_FAILED.with(&["v99.0.0"]))
+    );
     assert_eq!(run.installed, OLD_BINARY);
     assert_eq!(run.files, [EXE_NAME, MARKER]);
 }
@@ -123,7 +133,10 @@ fn rate_limited_api_is_reported() {
                 ..release("v99.0.0", OLD_BINARY)
             },
         );
-        assert_eq!(run.result, Err(String::from(messages::RATE_LIMITED.text())));
+        assert_eq!(
+            run.result,
+            failed(String::from(messages::RATE_LIMITED.text()))
+        );
         assert_eq!(run.asked, 1);
         assert_eq!(run.files, [EXE_NAME]);
     }

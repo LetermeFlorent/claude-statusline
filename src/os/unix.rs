@@ -122,6 +122,10 @@ pub fn make_executable(path: &str) -> bool {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).is_ok()
 }
 
+pub fn process_id() -> u32 {
+    std::process::id()
+}
+
 pub fn stamp(path: &str) -> Option<(u64, i64)> {
     use std::os::unix::fs::MetadataExt;
     let m = std::fs::metadata(path).ok()?;

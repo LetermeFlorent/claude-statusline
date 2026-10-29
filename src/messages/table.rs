@@ -85,9 +85,14 @@ pub const UPDATE_RUNNING: Text = Text::new(
 );
 #[cfg(any(windows, test))]
 pub const PANICKED: Text = Text::new("internal error at {}\n", "erreur interne dans {}\n");
+#[cfg(any(windows, test))]
+pub const NOT_RESTORED: Text = Text::new(
+    "the old program could not be put back: rename {} to {}\n",
+    "l'ancien programme n'a pas pu être remis : renommez {} en {}\n",
+);
 
 #[cfg(test)]
-pub const ALL: [&Text; 33] = [
+pub const ALL: [&Text; 34] = [
     &BENCH_SUMMARY,
     &BENCH_STATE,
     &BENCH_CONFIG,
@@ -121,4 +126,5 @@ pub const ALL: [&Text; 33] = [
     &NO_STATE_DIR,
     &UPDATE_RUNNING,
     &PANICKED,
+    &NOT_RESTORED,
 ];
