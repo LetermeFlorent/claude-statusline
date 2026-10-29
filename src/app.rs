@@ -3,7 +3,7 @@ use crate::check;
 use crate::compact;
 use crate::config::{Config, Metric};
 use crate::global_config::{self, Repair};
-use crate::messages;
+use crate::messages::{self, Text};
 use crate::os::{self, Contents};
 use crate::plain;
 use crate::portable;
@@ -93,14 +93,32 @@ fn load_config() -> Config {
     Config::parse(config_path().and_then(|p| os::read_text(&p)).as_deref())
 }
 
+#[derive(Clone, Copy)]
 enum Stage {
     State,
     Config,
     Session,
+    Theme,
+    Compact,
+    System,
     Render,
+    Write,
 }
 
-const STAGE_COUNT: usize = Stage::Render as usize + 1;
+const STAGE_COUNT: usize = Stage::Write as usize + 1;
+const BENCH_THEME: Text = Text::new("theme", "thème");
+const BENCH_COMPACT: Text = Text::new("compact", "compact");
+const BENCH_SYSTEM: Text = Text::new("system", "système");
+const STAGE_LABELS: [(Stage, &Text); STAGE_COUNT] = [
+    (Stage::State, &messages::BENCH_STATE),
+    (Stage::Config, &messages::BENCH_CONFIG),
+    (Stage::Session, &messages::BENCH_SESSION),
+    (Stage::Theme, &BENCH_THEME),
+    (Stage::Compact, &BENCH_COMPACT),
+    (Stage::System, &BENCH_SYSTEM),
+    (Stage::Render, &messages::BENCH_RENDER),
+    (Stage::Write, &messages::BENCH_WRITE),
+];
 
 struct Laps {
     seconds: [f64; STAGE_COUNT],
@@ -191,18 +209,24 @@ fn read_file(p: &str) -> Option<String> {
 }
 
 fn run(input: &str, now: f64, laps: &mut Laps) -> (String, State, bool) {
+    let state = load_state();
+    laps.lap(Stage::State);
+    run_on(input, state, now, laps)
+}
+
+fn run_on(input: &str, mut state: State, now: f64, laps: &mut Laps) -> (String, State, bool) {
     let cfg = load_config();
     laps.lap(Stage::Config);
     let session = Session::parse(input);
-    laps.lap(Stage::Session);
-    let mut state = load_state();
-    let project = local_only(session.project.as_deref().or(session.cwd.as_deref()));
-    let light = theme::detect_light(cfg.light_override, project, &mut state);
     let quotas = state.quotas(
         session.live,
         now,
         &state::account_tag(&os::claude_dir().unwrap_or_default()),
     );
+    laps.lap(Stage::Session);
+    let project = local_only(session.project.as_deref().or(session.cwd.as_deref()));
+    let light = theme::detect_light(cfg.light_override, project, &mut state);
+    laps.lap(Stage::Theme);
     let window = if cfg.seg_ctx {
         let env = os::env("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
         let files = compact_files(session.cwd.as_deref());
@@ -217,8 +241,9 @@ fn run(input: &str, now: f64, laps: &mut Laps) -> (String, State, bool) {
     } else {
         None
     };
+    laps.lap(Stage::Compact);
     let sys = sample(&cfg, &mut state, now);
-    laps.lap(Stage::State);
+    laps.lap(Stage::System);
     let updating = update_watch::busy(now);
     let data = Data {
         ctx: session.ctx,
@@ -251,41 +276,66 @@ fn demo_input(now: f64) -> String {
     )
 }
 
-fn bench(runs: usize) {
-    let input = demo_input(os::now());
-    let target = state_path().map(|p| format!("{}.bench", p));
+struct Rounds {
+    laps: Laps,
+    bytes: usize,
+    seconds: f64,
+}
+
+fn round(input: &str, target: Option<&str>, laps: &mut Laps) -> usize {
+    laps.last = os::ticks();
+    let state = target
+        .and_then(read_state)
+        .unwrap_or_else(|| State::parse(""));
+    laps.lap(Stage::State);
+    let (out, state, _) = run_on(input, state, os::now(), laps);
+    if let Some(path) = target.filter(|_| state.changed()) {
+        os::write_atomic(path, state.text().as_bytes());
+    }
+    laps.lap(Stage::Write);
+    out.len()
+}
+
+fn rounds(input: &str, target: Option<&str>, runs: usize) -> Rounds {
+    if let Some(path) = target {
+        os::remove(path);
+    }
     let mut laps = Laps::new();
-    let mut write = 0.0;
     let mut bytes = 0;
     let start = os::ticks();
     for _ in 0..runs {
-        laps.last = os::ticks();
-        let (out, state, _) = run(&input, os::now(), &mut laps);
-        bytes = out.len();
-        let write_start = os::ticks();
-        if let Some(path) = &target {
-            os::write_atomic(path, state.text().as_bytes());
-        }
-        write += os::ticks() - write_start;
+        bytes = round(input, target, &mut laps);
     }
-    let total = os::ticks() - start;
+    Rounds {
+        laps,
+        bytes,
+        seconds: os::ticks() - start,
+    }
+}
+
+fn bench(runs: usize) {
+    let input = demo_input(os::now());
+    let target = state_path().map(|p| format!("{}.bench", p));
+    if let Some(d) = target.as_deref().and_then(os::parent) {
+        if !os::exists(d) {
+            os::mkdirs(d);
+        }
+    }
+    let done = rounds(&input, target.as_deref(), runs);
     if let Some(path) = &target {
         os::remove(path);
     }
     let per_run_ms = |seconds: f64| format!("{:.3}", seconds * MS_PER_SECOND / runs as f64);
-    let mut report =
-        messages::BENCH_SUMMARY.with(&[&runs.to_string(), &per_run_ms(total), &bytes.to_string()]);
-    for (label, seconds) in [
-        (messages::BENCH_STATE, laps.spent(Stage::State)),
-        (messages::BENCH_CONFIG, laps.spent(Stage::Config)),
-        (messages::BENCH_SESSION, laps.spent(Stage::Session)),
-        (messages::BENCH_RENDER, laps.spent(Stage::Render)),
-        (messages::BENCH_WRITE, write),
-    ] {
+    let mut report = messages::BENCH_SUMMARY.with(&[
+        &runs.to_string(),
+        &per_run_ms(done.seconds),
+        &done.bytes.to_string(),
+    ]);
+    for (stage, label) in STAGE_LABELS {
         report.push_str(&format!(
             "  {:<10}{} ms\n",
             label.text(),
-            per_run_ms(seconds)
+            per_run_ms(done.laps.spent(stage))
         ));
     }
     os::out(&report);
@@ -554,6 +604,35 @@ mod tests {
     #[test]
     fn the_written_template_passes_the_check() {
         assert!(check::problems(TEMPLATE).is_empty());
+    }
+
+    #[test]
+    fn a_bench_round_carries_the_state_of_the_previous_round() {
+        let sandbox = Sandbox::new("bench-round");
+        let target = sandbox.path("state.bench");
+        std::fs::write(&target, "kept 1\n").unwrap();
+        let input = demo_input(os::now());
+        round(&input, Some(&target), &mut Laps::new());
+        let written = std::fs::read_to_string(&target).unwrap();
+        assert!(written.contains("kept 1\n"), "{}", written);
+        assert_eq!(sandbox.files(), ["state.bench"]);
+    }
+
+    #[test]
+    fn the_bench_starts_from_an_empty_state() {
+        let sandbox = Sandbox::new("bench-empty");
+        let target = sandbox.path("state.bench");
+        std::fs::write(&target, "left 1\n").unwrap();
+        rounds(&demo_input(os::now()), Some(&target), 1);
+        let written = std::fs::read_to_string(&target).unwrap();
+        assert!(!written.contains("left"), "{}", written);
+    }
+
+    #[test]
+    fn each_bench_stage_has_its_own_label() {
+        for (at, (stage, _)) in STAGE_LABELS.into_iter().enumerate() {
+            assert_eq!(stage as usize, at);
+        }
     }
 
     #[test]

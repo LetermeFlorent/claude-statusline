@@ -166,7 +166,7 @@ The program is installed in `~/.claude/bin`, as `statusline.exe` on Windows and 
 |---|---|
 | no argument | reads the Claude Code JSON on standard input, writes the bar and updates the state file. Run by hand in a terminal, it does not wait for input and draws a bar with no data. |
 | `--demo` | sample rendering without Claude Code (Opus 5, effort `max`, context 340k of 1M, 5h at 36%, 7d at 61%), with the real settings, theme and machine metrics. The state file is left alone. |
-| `--bench [n]` | renders the sample `n` times (200 by default) and prints the average time per rendering, then its breakdown: state, config, session, render, write. Process startup is not counted. |
+| `--bench [n]` | renders the sample `n` times (200 by default) and prints the average time per rendering, then its breakdown: state, config, session, theme, compact, system, render, write. The first rendering starts from an empty state; each one then reads the state the previous one wrote, and writes it back only when it changed. Process startup is not counted. |
 | `--theme` | prints the background in use, `light` or `dark` |
 | `--check` | lists the mistakes in `statusline.json` with their line and column, and exits with code 1 when there is one (see [Settings](#settings)) |
 | `--install` | writes the `statusLine` block into the `settings.json` of the current account (see [INSTALL.md](INSTALL.md)) |
