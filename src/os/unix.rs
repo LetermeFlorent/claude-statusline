@@ -1,3 +1,4 @@
+use super::Claim;
 use std::io::{IsTerminal, Read, Write};
 use std::string::String;
 use std::vec::Vec;
@@ -53,7 +54,7 @@ fn resolved(path: &str) -> String {
 
 pub fn write_atomic(path: &str, data: &[u8]) -> bool {
     let target = resolved(path);
-    let tmp = format!("{}.{}.tmp", target, std::process::id());
+    let tmp = format!("{}.{}.tmp", target, pid());
     let permissions = std::fs::metadata(&target).ok().map(|m| m.permissions());
     let _ = std::fs::remove_file(&tmp);
     let swapped = create_private(&tmp, data)
@@ -63,6 +64,10 @@ pub fn write_atomic(path: &str, data: &[u8]) -> bool {
         let _ = std::fs::remove_file(&tmp);
     }
     swapped
+}
+
+pub fn pid() -> u32 {
+    std::process::id()
 }
 
 pub fn remove(path: &str) -> bool {
@@ -88,23 +93,26 @@ pub struct Lock {
     _file: std::fs::File,
 }
 
-pub fn lock(path: &str, wait_ms: u32) -> Option<Lock> {
+pub fn lock(path: &str, wait_ms: u32) -> Claim {
     use std::os::unix::fs::OpenOptionsExt;
-    let file = std::fs::OpenOptions::new()
+    let Ok(file) = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(false)
         .mode(PRIVATE_MODE)
         .open(path)
-        .ok()?;
+    else {
+        return Claim::Unavailable;
+    };
     let deadline = ticks() + f64::from(wait_ms) / MS_PER_SECOND;
     loop {
         match file.try_lock() {
-            Ok(()) => return Some(Lock { _file: file }),
+            Ok(()) => return Claim::Held(Lock { _file: file }),
             Err(std::fs::TryLockError::WouldBlock) if ticks() < deadline => {
                 super::sleep(LOCK_POLL_MS)
             }
-            Err(_) => return None,
+            Err(std::fs::TryLockError::WouldBlock) => return Claim::Busy,
+            Err(_) => return Claim::Unavailable,
         }
     }
 }

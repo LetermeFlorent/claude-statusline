@@ -30,6 +30,12 @@ pub struct Activity {
     pub busy: i64,
 }
 
+pub enum Claim {
+    Held(Lock),
+    Busy,
+    Unavailable,
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Contents {
     Missing,
@@ -329,13 +335,14 @@ mod tests {
         const RELEASE_WAIT_MS: u32 = 1000;
         let sandbox = Sandbox::new("lock");
         let path = sandbox.path("state.lock");
-        let held = lock(&path, 0).unwrap();
+        let held = lock(&path, 0);
+        assert!(matches!(held, Claim::Held(_)));
         let start = std::time::Instant::now();
-        assert!(lock(&path, WAIT_MS).is_none());
+        assert!(matches!(lock(&path, WAIT_MS), Claim::Busy));
         let waited = start.elapsed().as_millis() as u64;
         assert!((SURELY_WAITED_MS..BOUND_MS).contains(&waited), "{}", waited);
         drop(held);
-        assert!(lock(&path, RELEASE_WAIT_MS).is_some());
+        assert!(matches!(lock(&path, RELEASE_WAIT_MS), Claim::Held(_)));
     }
 
     #[test]

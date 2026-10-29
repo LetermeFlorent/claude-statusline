@@ -1,4 +1,4 @@
-use super::{Activity, CPU_SOURCE};
+use super::{Activity, Claim, CPU_SOURCE};
 use alloc::format;
 use alloc::string::String;
 use alloc::vec;
@@ -555,7 +555,7 @@ fn resolved(path: &str) -> String {
 
 pub fn write_atomic(path: &str, data: &[u8]) -> bool {
     let target = resolved(path);
-    let tmp = format!("{}.{}.tmp", target, unsafe { GetCurrentProcessId() });
+    let tmp = format!("{}.{}.tmp", target, pid());
     let swapped = write(&tmp, data)
         && (0..RENAME_TRIES).any(|attempt| {
             if attempt > 0 {
@@ -567,6 +567,10 @@ pub fn write_atomic(path: &str, data: &[u8]) -> bool {
         remove(&tmp);
     }
     swapped
+}
+
+pub fn pid() -> u32 {
+    unsafe { GetCurrentProcessId() }
 }
 
 pub fn remove(path: &str) -> bool {
@@ -631,7 +635,7 @@ impl Drop for Lock {
     }
 }
 
-pub fn lock(path: &str, wait_ms: u32) -> Option<Lock> {
+pub fn lock(path: &str, wait_ms: u32) -> Claim {
     let wide_path = wide_path(path);
     let file = unsafe {
         CreateFileW(
@@ -645,19 +649,23 @@ pub fn lock(path: &str, wait_ms: u32) -> Option<Lock> {
         )
     };
     if file == INVALID {
-        return None;
+        return Claim::Unavailable;
     }
     let held = Lock(file);
     let event = unsafe { CreateEventW(null_mut(), MANUAL_RESET, 0, core::ptr::null()) };
     if event == 0 {
-        return None;
+        return Claim::Unavailable;
     }
     let taken = wait_for_lock(file, event, wait_ms);
     unsafe { CloseHandle(event) };
-    taken.then_some(held)
+    match taken {
+        Some(true) => Claim::Held(held),
+        Some(false) => Claim::Busy,
+        None => Claim::Unavailable,
+    }
 }
 
-fn wait_for_lock(file: Handle, event: Handle, wait_ms: u32) -> bool {
+fn wait_for_lock(file: Handle, event: Handle, wait_ms: u32) -> Option<bool> {
     let mut overlapped = Overlapped {
         event,
         ..Overlapped::default()
@@ -673,16 +681,16 @@ fn wait_for_lock(file: Handle, event: Handle, wait_ms: u32) -> bool {
             &mut overlapped,
         ) != 0
         {
-            return true;
+            return Some(true);
         }
         if GetLastError() != ERROR_IO_PENDING {
-            return false;
+            return None;
         }
         if GetOverlappedResultEx(file, &mut overlapped, &mut moved, wait_ms, 0) != 0 {
-            return true;
+            return Some(true);
         }
         CancelIoEx(file, &mut overlapped);
-        GetOverlappedResultEx(file, &mut overlapped, &mut moved, INFINITE, 0) != 0
+        Some(GetOverlappedResultEx(file, &mut overlapped, &mut moved, INFINITE, 0) != 0)
     }
 }
 

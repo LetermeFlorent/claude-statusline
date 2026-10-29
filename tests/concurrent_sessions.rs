@@ -4,11 +4,12 @@ use common::Home;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Output;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const SESSIONS: usize = 20;
 const ROUNDS: usize = 3;
 const RESET_IN_SECONDS: u64 = 3600;
+const TURNED_AWAY_WITHIN: Duration = Duration::from_secs(10);
 const AUTO_UPDATE: &str = "{\"auto_update\": true}";
 const SHARED_KEYS: [&str; 5] = ["bg_host", "bg_stamp", "compact_at", "cpu_at", "update_at"];
 
@@ -101,22 +102,12 @@ fn assert_shows(outputs: &[Output], round: usize) {
     }
 }
 
-#[test]
-fn sessions_refreshing_at_once_keep_every_account_quota() {
-    let home = Home::new("sessions");
-    home.check_updates_in_every_account();
-    let resets = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-        + RESET_IN_SECONDS;
-    for round in 0..ROUNDS {
-        let live =
-            home.refresh_all_at_once(&|account| input(Some((percent(account, round), resets))));
-        assert_shows(&live, round);
-    }
-    let last = ROUNDS - 1;
-    assert_shows(&home.refresh_all_at_once(&|_| input(None)), last);
+fn reset_time() -> u64 {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+    now.as_secs() + RESET_IN_SECONDS
+}
+
+fn assert_stored(home: &Home, round: usize) -> String {
     let state = std::fs::read_to_string(home.state_dir().join("state")).unwrap();
     assert!(
         state
@@ -126,7 +117,7 @@ fn sessions_refreshing_at_once_keep_every_account_quota() {
         state
     );
     for account in 0..SESSIONS {
-        let line = format!("q5_pct@claude-a{} {}", account, percent(account, last));
+        let line = format!("q5_pct@claude-a{} {}", account, percent(account, round));
         assert!(
             state.lines().any(|kept| kept == line),
             "{} lost:\n{}",
@@ -134,16 +125,56 @@ fn sessions_refreshing_at_once_keep_every_account_quota() {
             state
         );
     }
+    let leftovers: Vec<String> = std::fs::read_dir(home.state_dir())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.ends_with(".tmp") || name.ends_with(".changes"))
+        .collect();
+    assert!(leftovers.is_empty(), "{:?}", leftovers);
+    state
+}
+
+#[test]
+fn sessions_refreshing_at_once_keep_every_account_quota() {
+    let home = Home::new("sessions");
+    home.check_updates_in_every_account();
+    let resets = reset_time();
+    for round in 0..ROUNDS {
+        let live =
+            home.refresh_all_at_once(&|account| input(Some((percent(account, round), resets))));
+        assert_shows(&live, round);
+    }
+    let last = ROUNDS - 1;
+    assert_shows(&home.refresh_all_at_once(&|_| input(None)), last);
+    let state = assert_stored(&home, last);
     for key in SHARED_KEYS {
         let kept = state
             .lines()
             .any(|line| line.starts_with(&format!("{} ", key)));
         assert!(kept, "{} lost:\n{}", key, state);
     }
-    let leftovers: Vec<String> = std::fs::read_dir(home.state_dir())
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .filter(|name| name.ends_with(".tmp"))
-        .collect();
-    assert!(leftovers.is_empty(), "{:?}", leftovers);
+}
+
+#[test]
+fn sessions_turned_away_by_a_held_lock_lose_no_quota() {
+    let home = Home::new("held-lock");
+    std::fs::create_dir_all(home.state_dir()).unwrap();
+    let holder = std::fs::File::create(home.state_dir().join("state.lock")).unwrap();
+    holder.lock().unwrap();
+    let resets = reset_time();
+    let started = Instant::now();
+    let turned_away =
+        home.refresh_all_at_once(&|account| input(Some((percent(account, 0), resets))));
+    let waited = started.elapsed();
+    drop(holder);
+    assert!(waited < TURNED_AWAY_WITHIN, "{:?}", waited);
+    assert_shows(&turned_away, 0);
+    assert_shows(&home.refresh_all_at_once(&|_| input(None)), 0);
+    let mut late = home.session(SESSIONS).spawn().unwrap();
+    let late_input = input(Some((percent(SESSIONS, 0), resets)));
+    let mut stdin = late.stdin.take().unwrap();
+    stdin.write_all(late_input.as_bytes()).unwrap();
+    drop(stdin);
+    assert!(late.wait_with_output().unwrap().status.success());
+    assert_stored(&home, 0);
 }

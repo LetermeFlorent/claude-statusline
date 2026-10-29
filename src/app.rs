@@ -4,7 +4,7 @@ use crate::compact;
 use crate::config::{Config, Metric};
 use crate::global_config::{self, Repair};
 use crate::messages::{self, Text};
-use crate::os::{self, Contents};
+use crate::os::{self, Claim, Contents};
 use crate::plain;
 use crate::portable;
 use crate::render::{self, Data, SysValue};
@@ -36,6 +36,8 @@ const TEMPLATE: &str = "{
 
 const MS_PER_SECOND: f64 = 1000.0;
 const STATE_LOCK_WAIT_MS: u32 = 500;
+const STATE_LOCK_SLICE_MS: u32 = 25;
+const CHANGES_SUFFIX: &str = ".changes";
 const STATE_READ_TRIES: u32 = 4;
 const STATE_READ_RETRY_MS: u32 = 10;
 const DEFAULT_BENCH_RUNS: usize = 200;
@@ -71,10 +73,79 @@ fn read_state(path: &str) -> Option<State> {
     None
 }
 
+fn pending_changes(path: &str) -> Vec<String> {
+    let Some(dir) = os::parent(path) else {
+        return Vec::new();
+    };
+    let prefix = format!("{}.", os::file_name(path));
+    let mut found: Vec<String> = os::list(dir, &prefix)
+        .into_iter()
+        .filter(|name| name.ends_with(CHANGES_SUFFIX))
+        .map(|name| os::join(dir, &[&name]))
+        .collect();
+    found.sort();
+    found
+}
+
+fn read_pending(path: &str) -> Vec<(String, String)> {
+    pending_changes(path)
+        .into_iter()
+        .filter_map(|file| os::read_text(&file).map(|changes| (file, changes)))
+        .collect()
+}
+
+fn with_pending(mut state: State, pending: &[(String, String)]) -> State {
+    for (_, changes) in pending {
+        state.apply(changes);
+    }
+    state
+}
+
 fn load_state() -> State {
-    state_path()
-        .and_then(|p| read_state(&p))
-        .unwrap_or_else(|| State::parse(""))
+    let Some(path) = state_path() else {
+        return State::parse("");
+    };
+    let pending = read_pending(&path);
+    let state = read_state(&path).unwrap_or_else(|| State::parse(""));
+    if pending.is_empty() {
+        return state;
+    }
+    State::parse(&with_pending(state, &pending).text())
+}
+
+fn merge_state(path: &str, own: Option<&State>) -> bool {
+    let pending = read_pending(path);
+    let Some(latest) = read_state(path) else {
+        return own.is_some_and(|state| os::write_atomic(path, state.text().as_bytes()));
+    };
+    let mut merged = with_pending(latest, &pending);
+    if let Some(state) = own {
+        merged.apply(&state.changes());
+    }
+    let written = merged.changed() && os::write_atomic(path, merged.text().as_bytes());
+    if written || !merged.changed() {
+        for (file, _) in &pending {
+            os::remove(file);
+        }
+    }
+    written
+}
+
+fn park_changes(path: &str, lock_path: &str, state: &State) -> bool {
+    let parked = format!("{}.{}{}", path, os::pid(), CHANGES_SUFFIX);
+    if !os::write_atomic(&parked, state.changes().as_bytes()) {
+        return false;
+    }
+    for _ in 0..STATE_LOCK_WAIT_MS / STATE_LOCK_SLICE_MS {
+        if !os::exists(&parked) {
+            break;
+        }
+        if let Claim::Held(_lock) = os::lock(lock_path, STATE_LOCK_SLICE_MS) {
+            merge_state(path, None);
+            break;
+        }
+    }
+    true
 }
 
 fn save_state(state: &State) -> bool {
@@ -89,12 +160,12 @@ fn save_state(state: &State) -> bool {
             os::mkdirs(d);
         }
     }
-    let _lock = os::lock(&format!("{}.lock", path), STATE_LOCK_WAIT_MS);
-    let Some(latest) = read_state(&path) else {
-        return os::write_atomic(&path, state.text().as_bytes());
-    };
-    let saved = state.rebased_on(latest);
-    saved.changed() && os::write_atomic(&path, saved.text().as_bytes())
+    let lock_path = format!("{}.lock", path);
+    let claim = os::lock(&lock_path, 0);
+    if let Claim::Busy = claim {
+        return park_changes(&path, &lock_path, state);
+    }
+    merge_state(&path, Some(state))
 }
 
 fn load_config() -> Config {
