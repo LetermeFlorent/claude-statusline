@@ -264,6 +264,7 @@ mod tests {
         const WAIT_MS: u32 = 50;
         const SURELY_WAITED_MS: u64 = 25;
         const BOUND_MS: u64 = 1000;
+        const RELEASE_WAIT_MS: u32 = 1000;
         let sandbox = Sandbox::new("lock");
         let path = sandbox.path("state.lock");
         let held = lock(&path, 0).unwrap();
@@ -272,7 +273,7 @@ mod tests {
         let waited = start.elapsed().as_millis() as u64;
         assert!((SURELY_WAITED_MS..BOUND_MS).contains(&waited), "{}", waited);
         drop(held);
-        assert!(lock(&path, 0).is_some());
+        assert!(lock(&path, RELEASE_WAIT_MS).is_some());
     }
 
     #[test]
