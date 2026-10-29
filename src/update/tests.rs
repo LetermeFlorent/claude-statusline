@@ -128,23 +128,3 @@ fn rate_limited_api_is_reported() {
         assert_eq!(run.files, [EXE_NAME]);
     }
 }
-
-#[test]
-fn state_folder_that_cannot_be_created_is_an_error() {
-    let sandbox = Sandbox::new("blocked");
-    let blocker = sandbox.0.join("file");
-    std::fs::write(&blocker, b"").unwrap();
-    let dir = blocker.join("state").to_string_lossy().into_owned();
-    assert_eq!(
-        take_lock(&dir),
-        Err(messages::STATE_DIR_FAILED.with(&[&dir]))
-    );
-}
-
-#[test]
-fn second_lock_waits_for_the_first() {
-    let sandbox = Sandbox::new("lock");
-    let dir = sandbox.path("state");
-    assert_eq!(take_lock(&dir), Ok(Some(os::join(&dir, &["update.lock"]))));
-    assert_eq!(take_lock(&dir), Ok(None));
-}

@@ -1,15 +1,17 @@
 mod fetch;
+mod lock;
 mod swap;
 #[cfg(test)]
 mod tests;
 
 use crate::messages;
 use crate::os;
-use crate::state::recent;
-use crate::update_watch::{asset, newer, MARKER, STALE_AFTER};
+use crate::update_watch::{asset, newer, MARKER};
 use alloc::string::String;
 use fetch::{curl, download_url, latest, Curl, Fetch, HTTP_OK};
 use swap::{clean, staging, swap};
+
+pub use lock::running;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SHOWN_AFTER_SWAP_MS: u32 = 5000;
@@ -66,22 +68,6 @@ fn report(result: Result<Outcome, String>) -> i32 {
     }
 }
 
-fn acquire(lock: &str) -> bool {
-    if os::create_private(lock, &[]) {
-        return true;
-    }
-    let stale = os::stamp(lock).is_none_or(|(_, at)| !recent(at as f64, os::now(), STALE_AFTER));
-    stale && os::remove(lock) && os::create_private(lock, &[])
-}
-
-fn take_lock(dir: &str) -> Result<Option<String>, String> {
-    if !os::mkdirs(dir) {
-        return Err(messages::STATE_DIR_FAILED.with(&[dir]));
-    }
-    let lock = os::join(dir, &["update.lock"]);
-    Ok(acquire(&lock).then_some(lock))
-}
-
 pub fn run() -> i32 {
     let Some(dir) = os::state_dir() else {
         return fail(messages::NO_STATE_DIR.text());
@@ -89,7 +75,7 @@ pub fn run() -> i32 {
     let Some(program) = curl() else {
         return fail(messages::CURL_MISSING.text());
     };
-    let lock = match take_lock(&dir) {
+    let _lock = match lock::take(&dir) {
         Ok(Some(lock)) => lock,
         Ok(None) => {
             os::out(messages::UPDATE_RUNNING.text());
@@ -105,6 +91,5 @@ pub fn run() -> i32 {
     };
     let code = report(result);
     os::remove(&os::join(&dir, &[MARKER]));
-    os::remove(&lock);
     code
 }
