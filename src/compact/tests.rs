@@ -39,6 +39,7 @@ pub(super) fn per_model(model: &str, value: &str) -> String {
     )
 }
 
+mod folder;
 mod switches;
 mod values;
 

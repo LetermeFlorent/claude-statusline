@@ -257,12 +257,22 @@ fn local_only(dir: Option<&str>) -> Option<&str> {
     dir.filter(|dir| !os::on_network(dir))
 }
 
-fn compact_files(cwd: Option<&str>) -> [String; 3] {
+fn has_project_settings(folder: &str) -> bool {
+    ["settings.json", "settings.local.json"]
+        .iter()
+        .any(|f| os::stamp(&os::join(folder, &[".claude", f])).is_some())
+}
+
+fn compact_files(cwd: Option<&str>, project_dir: Option<&str>) -> [String; 3] {
     let main = os::claude_dir()
         .map(|d| os::join(&d, &["settings.json"]))
         .unwrap_or_default();
     let cwd = cwd.map(String::from).or_else(os::cwd);
-    let folder = local_only(cwd.as_deref());
+    let folder = compact::files::project_folder(
+        [cwd.as_deref(), project_dir],
+        &|dir| local_only(Some(dir)).is_some(),
+        &has_project_settings,
+    );
     let project = |f: &str| {
         folder
             .map(|c| os::join(c, &[".claude", f]))
@@ -320,7 +330,7 @@ fn run_on(
     laps.lap(Stage::Theme);
     let window = if cfg.seg_ctx {
         let env = os::env("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
-        let files = compact_files(session.cwd.as_deref());
+        let files = compact_files(session.cwd.as_deref(), session.project.as_deref());
         let disable = os::env("DISABLE_AUTO_COMPACT");
         let inputs = compact::Inputs {
             env: env.as_deref(),
