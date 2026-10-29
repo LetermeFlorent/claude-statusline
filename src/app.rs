@@ -323,7 +323,7 @@ fn run_on(
     );
     laps.lap(Stage::Session);
     let project = local_only(session.project.as_deref().or(session.cwd.as_deref()));
-    let light = theme::detect_light(cfg.light_override, project, &mut state);
+    let light = theme::detect_light(cfg.light_override, project, &mut state, now);
     laps.lap(Stage::Theme);
     let window = if cfg.seg_ctx {
         let env = os::env("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
@@ -661,8 +661,8 @@ pub fn main(args: Vec<String>) -> i32 {
             let cfg = load_config();
             let mut state = load_state();
             let cwd = os::cwd();
-            let decision =
-                theme::detect(cfg.light_override, local_only(cwd.as_deref()), &mut state);
+            let project = local_only(cwd.as_deref());
+            let decision = theme::detect(cfg.light_override, project, &mut state, os::now());
             save_state(&state);
             os::out(&decision.report());
             0
