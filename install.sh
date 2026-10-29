@@ -136,6 +136,15 @@ is_repo() {
     END { exit !found }'
 }
 
+is_loopback_release() {
+  case "$1" in
+    http://127.0.0.1:*/) port=${1#http://127.0.0.1:}; port=${port%/} ;;
+    *) return 1 ;;
+  esac
+  case "$port" in '' | *[!0-9]*) return 1 ;; esac
+  [ "${#port}" -le 5 ]
+}
+
 can_build() { is_repo && command -v cargo >/dev/null 2>&1; }
 
 mkdir -p "$bin_dir"
@@ -156,7 +165,13 @@ else
       ;;
   esac
   show downloading "$asset"
-  fetch() { curl -q -fsSL --proto =https --proto-redir =https "$repo/releases/latest/download/$1" -o "$2"; }
+  release_base="$repo/releases/latest/download"
+  release_protocol=https
+  if is_loopback_release "${STATUSLINE_RELEASE_URL:-}"; then
+    release_base="${STATUSLINE_RELEASE_URL%/}"
+    release_protocol=http
+  fi
+  fetch() { curl -q -fsSL --proto "=$release_protocol" --proto-redir "=$release_protocol" "$release_base/$1" -o "$2"; }
   sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi < "$1" | cut -d ' ' -f 1; }
   fetch SHA256SUMS "$staged.sums" && fetch "$asset" "$staged" || {
     rm -f "$staged.sums" "$staged"
