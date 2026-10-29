@@ -33,7 +33,7 @@ Both scripts set up the bar in `.claude`, in every `.claude-compte*` folder and 
 
 The first line chains four segments separated by `|`, always in this order:
 
-- `ctx`: how full the context is. The text gives the tokens used over the window size (`340k/1M`), the percentage alone when Claude Code does not send both, or `--%` with no data at all. The bar runs from light blue to deep blue.
+- `ctx`: how full the context is. The text gives the tokens used over the window size (`340k/1M`), the percentage alone when Claude Code does not send both, or `--%` with no data at all. The bar runs from light blue to deep blue, then turns orange from 70% and red from 90%, the same two hues as the machine metrics.
 - `5h`: the 5-hour quota as a percentage, then the time left before it resets (`3h29m`, or `45m` under an hour). With no known reset time it shows `--` in that place.
 - `7d`: the weekly quota, with the time before the reset in days and hours past one day (`3d16h`).
 - the model, underlined, followed by `:` and the effort level. The effort letters are drawn in a gradient, with a hue of their own for `low`, `medium`, `high`, `xhigh` and `max`, and one shared hue for any other value. `auto` takes the hue of `low`, and `ultracode` shows as `ultracode(+workflows)`. The model name is cut before its first parenthesis: `Opus 4 (1M context)` becomes `Opus 4`.
@@ -138,6 +138,7 @@ It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, 
 | `effort_style` | `gradient` | `flat`, in any case, draws the effort in a single hue |
 | `segments.ctx`, `segments.5h`, `segments.7d`, `segments.model` | `true` | `false` hides the segment |
 | `gradient.5h`, `gradient.7d` | `0.55`, `0.3` | how strongly the bar lightens, from 0 to 1 |
+| `thresholds.ctx_warn`, `thresholds.ctx_hot` | `70`, `90` | percentages from which the context bar turns orange, then red (the blue gradient is kept below) |
 | `thresholds.quota_warn`, `thresholds.quota_hot` | `30`, `70` | percentages from which a quota turns to warning, then critical |
 | `thresholds.system_warn`, `thresholds.system_hot` | `70`, `85` | percentages above which a machine metric turns to warning, then critical |
 | `palettes.5h.ok`, `.warn`, `.hot` | `#786EC8`, `#AA5AAF`, `#C83C5F` | hues of the 5-hour quota |

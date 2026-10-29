@@ -1,4 +1,4 @@
-use crate::config::{Colors, Config, Metric, Rgb};
+use crate::config::{Colors, Config, Metric, Rgb, HOT_SYS, WARN_SYS};
 use crate::num;
 use alloc::format;
 use alloc::string::String;
@@ -271,7 +271,12 @@ impl Out<'_> {
         } else {
             1.0
         };
-        let last = self.bar(pct, &|i, _| rgb(lerp(from, to, i as f64 / span)));
+        let grad = self.cfg.grad_sys;
+        let last = match pct {
+            Some(p) if p >= self.cfg.ctx_hot => self.gradient_bar(pct, HOT_SYS, grad),
+            Some(p) if p >= self.cfg.ctx_warn => self.gradient_bar(pct, WARN_SYS, grad),
+            _ => self.bar(pct, &|i, _| rgb(lerp(from, to, i as f64 / span))),
+        };
         self.line.push(' ');
         let text = match (denom, used) {
             (Some(denom), Some(used)) => {
@@ -747,6 +752,23 @@ mod tests {
             "ctx \u{25A0}\u{25A0}\u{25A0}\u{25A0}\u{25A0}\u{25A0}\u{25A0}\u{25A0} 1M/1M\n"
         );
         assert_eq!(bar(6.0), "ctx \u{25AA}....... 60k/1M\n");
+    }
+
+    #[test]
+    fn the_context_bar_turns_warm_from_70_and_hot_from_90() {
+        let first_cell = |pct: f64, config: &str| {
+            let text = ctx_only(pct, config);
+            let at = text.find("[#").unwrap();
+            String::from(&text[at..at + 9])
+        };
+        assert_eq!(first_cell(69.0, "\"bold\": true"), "[#96cdff]");
+        assert_eq!(first_cell(70.0, "\"bold\": true"), "[#be823c]");
+        assert_eq!(first_cell(89.0, "\"bold\": true"), "[#be823c]");
+        assert_eq!(first_cell(90.0, "\"bold\": true"), "[#c83c3c]");
+        let raised = "\"thresholds\": {\"ctx_warn\": 50, \"ctx_hot\": 60}";
+        assert_eq!(first_cell(49.0, raised), "[#96cdff]");
+        assert_eq!(first_cell(50.0, raised), "[#be823c]");
+        assert_eq!(first_cell(60.0, raised), "[#c83c3c]");
     }
 
     #[test]
