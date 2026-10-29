@@ -1,11 +1,6 @@
 #[cfg(any(target_os = "linux", test))]
 mod linux;
 #[cfg(not(windows))]
-#[path = "unix/child.rs"]
-mod spawn_unix;
-#[cfg(not(windows))]
-pub use spawn_unix::*;
-#[cfg(not(windows))]
 mod unix;
 #[cfg(not(windows))]
 pub use unix::*;
