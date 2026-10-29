@@ -3,6 +3,7 @@ use crate::state::{fingerprint, recent, State};
 use alloc::format;
 use alloc::string::String;
 
+pub mod files;
 mod settings;
 mod size;
 #[cfg(test)]
