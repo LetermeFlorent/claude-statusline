@@ -541,8 +541,7 @@ jobs:
         working-directory: dist
         run: |
           sha256sum statusline-* > SHA256SUMS
-          { printf 'tag %s
-' "$GITHUB_REF_NAME"; cat SHA256SUMS; } > release-manifest
+          { printf 'tag %s\n' "$GITHUB_REF_NAME"; cat SHA256SUMS; } > release-manifest
           cat release-manifest
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
