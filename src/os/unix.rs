@@ -260,18 +260,7 @@ mod sys {
     }
 
     pub fn memory() -> Option<(f64, f64)> {
-        let meminfo = read_str("/proc/meminfo")?;
-        let get = |k: &str| -> Option<f64> {
-            let line = meminfo.lines().find(|l| l.starts_with(k))?;
-            let kb: f64 = line[k.len()..]
-                .trim()
-                .trim_end_matches("kB")
-                .trim()
-                .parse()
-                .ok()?;
-            Some(kb * 1024.0)
-        };
-        let host = (get("MemTotal:")?, get("MemAvailable:")?);
+        let host = crate::os::linux::meminfo::parse(&read_str("/proc/meminfo")?)?;
         Some(crate::os::linux::cgroup::narrow(host, &read_str))
     }
 
