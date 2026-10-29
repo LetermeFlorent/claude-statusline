@@ -37,6 +37,7 @@ $binDir = Join-Path $main "bin"
 $exe = Join-Path $binDir "statusline.exe"
 $staged = Join-Path $binDir ("statusline.install-" + $PID + ".exe")
 $releaseUrl = "https://github.com/LetermeFlorent/claude-statusline/releases/latest/download/"
+if ("$env:STATUSLINE_RELEASE_URL" -cmatch '\Ahttp://127\.0\.0\.1:[0-9]{1,5}/\z') { $releaseUrl = $env:STATUSLINE_RELEASE_URL }
 $asset = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "statusline-windows-arm64.exe" } else { "statusline-windows-x86_64.exe" }
 function Get-BinaryLanguage([string]$file) {
   $saved = $ErrorActionPreference
