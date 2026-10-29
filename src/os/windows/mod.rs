@@ -1091,9 +1091,9 @@ mod rt {
     }
 
     #[cfg(target_arch = "x86_64")]
-    core::arch::global_asm!(include_str!("windows_x86_64.s"));
+    core::arch::global_asm!(include_str!("rt/x86_64.s"));
     #[cfg(target_arch = "aarch64")]
-    core::arch::global_asm!(include_str!("windows_aarch64.s"));
+    core::arch::global_asm!(include_str!("rt/aarch64.s"));
 
     #[no_mangle]
     pub extern "system" fn mainCRTStartup() -> ! {
