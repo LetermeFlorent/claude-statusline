@@ -515,9 +515,11 @@ mod sys {
         };
         let bytes: Vec<u8> = buffer.iter().flat_map(|w| w.to_ne_bytes()).collect();
         bytes
-            .chunks_exact(STATFS_SIZE)
+            .as_chunks::<STATFS_SIZE>()
+            .0
+            .iter()
             .take(filled)
-            .filter_map(mount)
+            .filter_map(|entry| mount(entry))
             .collect()
     }
 
