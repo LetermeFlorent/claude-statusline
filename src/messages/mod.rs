@@ -8,6 +8,8 @@ pub use help::HELP;
 pub use table::*;
 
 use alloc::string::String;
+#[cfg(any(windows, test))]
+use core::fmt;
 use language::Language;
 
 const PLACEHOLDER: &str = "{}";
@@ -28,6 +30,14 @@ impl Text {
 
     pub fn with(&self, values: &[&str]) -> String {
         fill(self.text(), values)
+    }
+
+    #[cfg(any(windows, test))]
+    pub fn write_to(&self, out: &mut dyn fmt::Write, value: &dyn fmt::Display) -> fmt::Result {
+        match self.text().split_once(PLACEHOLDER) {
+            Some((before, after)) => write!(out, "{}{}{}", before, value, after),
+            None => out.write_str(self.text()),
+        }
     }
 
     fn in_language(&self, language: Language) -> &'static str {
@@ -78,6 +88,22 @@ mod tests {
         let text = Text::new("up to date", "à jour");
         assert_eq!(text.in_language(Language::English), "up to date");
         assert_eq!(text.in_language(Language::French), "à jour");
+    }
+
+    #[test]
+    fn the_panic_line_names_the_file_line_and_column() {
+        let location = core::panic::Location::caller();
+        let mut line = String::new();
+        PANICKED.write_to(&mut line, location).unwrap();
+        let place = format!(
+            "{}:{}:{}",
+            location.file(),
+            location.line(),
+            location.column()
+        );
+        assert_eq!(line, PANICKED.with(&[&place]));
+        assert!(line.contains(&place), "{}", line);
+        assert_eq!(line.lines().count(), 1, "{}", line);
     }
 
     #[test]

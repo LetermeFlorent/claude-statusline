@@ -83,9 +83,11 @@ pub const UPDATE_RUNNING: Text = Text::new(
     "an update is already running\n",
     "mise à jour déjà en cours\n",
 );
+#[cfg(any(windows, test))]
+pub const PANICKED: Text = Text::new("internal error at {}\n", "erreur interne dans {}\n");
 
 #[cfg(test)]
-pub const ALL: [&Text; 32] = [
+pub const ALL: [&Text; 33] = [
     &BENCH_SUMMARY,
     &BENCH_STATE,
     &BENCH_CONFIG,
@@ -118,4 +120,5 @@ pub const ALL: [&Text; 32] = [
     &STATE_DIR_FAILED,
     &NO_STATE_DIR,
     &UPDATE_RUNNING,
+    &PANICKED,
 ];

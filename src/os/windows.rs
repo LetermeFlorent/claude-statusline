@@ -729,6 +729,7 @@ pub fn state_dir() -> Option<String> {
 mod rt {
     use super::*;
     use core::alloc::{GlobalAlloc, Layout};
+    use core::sync::atomic::{AtomicBool, Ordering};
 
     #[link(name = "kernel32", kind = "raw-dylib")]
     extern "system" {
@@ -773,8 +774,23 @@ mod rt {
     #[global_allocator]
     static ALLOCATOR: Heap = Heap;
 
+    struct StandardError;
+
+    impl core::fmt::Write for StandardError {
+        fn write_str(&mut self, s: &str) -> core::fmt::Result {
+            err(s);
+            Ok(())
+        }
+    }
+
+    static PANICKING: AtomicBool = AtomicBool::new(false);
+
     #[panic_handler]
-    fn panic(_: &core::panic::PanicInfo) -> ! {
+    fn panic(info: &core::panic::PanicInfo) -> ! {
+        let first = !PANICKING.swap(true, Ordering::Relaxed);
+        if let (true, Some(location)) = (first, info.location()) {
+            let _ = crate::messages::PANICKED.write_to(&mut StandardError, location);
+        }
         unsafe { ExitProcess(PANIC_EXIT_CODE) }
     }
 
