@@ -143,8 +143,8 @@ It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, 
 | `palettes.5h.ok`, `.warn`, `.hot` | `#786EC8`, `#AA5AAF`, `#C83C5F` | hues of the 5-hour quota |
 | `palettes.7d.ok`, `.warn`, `.hot` | `#538977`, `#B88143`, `#B95555` | hues of the 7-day quota |
 | `colors.ink_light`, `colors.ink_dark` | not set | color of labels and numbers, on a light and on a dark background; unset, they keep the terminal's default color |
-| `colors.empty_light`, `colors.empty_dark` | `#BEB4A5`, `#E2E5EA` | empty squares |
-| `colors.ctx_from_light`, `colors.ctx_to_light` | `#7DB9FF`, `#285AB4` | context gradient on a light background |
+| `colors.empty_light`, `colors.empty_dark` | `#C4C8CE`, `#55595F` | empty squares |
+| `colors.ctx_from_light`, `colors.ctx_to_light` | `#3D8BEB`, `#285AB4` | context gradient on a light background |
 | `colors.ctx_from_dark`, `colors.ctx_to_dark` | `#96CDFF`, `#4682DC` | context gradient on a dark background |
 | `system.enabled` | `true` | `false` removes the second line |
 | `system.metrics` | `["ram", "io", "cpu"]` | metrics shown, in the order of the list: `ram`, `io` (or `dsk`) and `cpu`, in any case. A name listed twice counts once, and a list with no known name shows all three |

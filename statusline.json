@@ -7,7 +7,7 @@
   "segments": { "ctx": true, "5h": true, "7d": true, "model": true },
   "gradient": { "5h": 0.55, "7d": 0.3 },
   "colors": {
-    "ctx_from_light": "#7DB9FF",
+    "ctx_from_light": "#3D8BEB",
     "ctx_to_light": "#285AB4",
     "ctx_from_dark": "#96CDFF",
     "ctx_to_dark": "#4682DC"
