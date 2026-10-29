@@ -36,12 +36,14 @@ pub const SETTINGS: Keys = &[
     ),
     ("auto_compact_marker", Kind::Text),
     ("effort_style", Kind::Effort),
+    ("cold_cache_marker", Kind::Flag),
     (
         "segments",
         Kind::Object(&[
             ("ctx", Kind::Flag),
             ("5h", Kind::Flag),
             ("7d", Kind::Flag),
+            ("spend", Kind::Flag),
             ("model", Kind::Flag),
         ]),
     ),
