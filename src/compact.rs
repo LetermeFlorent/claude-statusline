@@ -1,8 +1,10 @@
+use self::cache::Entry;
 use self::settings::Setting;
 use crate::state::{fingerprint, recent, State};
 use alloc::format;
 use alloc::string::String;
 
+mod cache;
 pub mod files;
 mod settings;
 mod size;
@@ -33,13 +35,15 @@ fn lookup(
     stat: &dyn Fn(&str) -> Option<(u64, i64)>,
     read: &dyn Fn(&str) -> Option<String>,
 ) -> Option<Setting> {
-    let cached = state.get("compact_window").and_then(Setting::load);
+    cache::drop_legacy(state);
     let parts = files.iter().map(String::as_str).chain(model);
-    let files_key = fingerprint(parts);
-    let same_files = state.get("compact_key") == Some(files_key.as_str());
-    let checked = state.num("compact_at");
-    if same_files && checked.is_some_and(|at| recent(at, now, RECHECK_AFTER)) {
-        return cached;
+    let key = cache::key(&fingerprint(parts));
+    let cached = cache::load(state, &key);
+    if let Some(entry) = cached
+        .as_ref()
+        .filter(|entry| recent(entry.at as f64, now, RECHECK_AFTER))
+    {
+        return entry.setting;
     }
     let mut stamp = String::new();
     for f in files {
@@ -48,20 +52,15 @@ fn lookup(
             None => stamp.push_str("0;"),
         }
     }
-    let now_s = format!("{}", now as i64);
-    if same_files && state.get("compact_stamp") == Some(stamp.as_str()) {
-        state.set("compact_at", &now_s);
-        return cached;
+    let at = now as i64;
+    if let Some(entry) = cached.filter(|entry| entry.stamp == stamp) {
+        let setting = entry.setting;
+        cache::save(state, &key, &Entry { at, ..entry });
+        return setting;
     }
-    let found = settings::scan(files, model, read);
-    state.set("compact_key", &files_key);
-    state.set("compact_stamp", &stamp);
-    state.set("compact_at", &now_s);
-    match found {
-        Some(setting) => state.set("compact_window", &setting.store()),
-        None => state.remove("compact_window"),
-    }
-    found
+    let setting = settings::scan(files, model, read);
+    cache::save(state, &key, &Entry { at, stamp, setting });
+    setting
 }
 
 pub fn window(

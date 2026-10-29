@@ -39,6 +39,7 @@ pub(super) fn per_model(model: &str, value: &str) -> String {
     )
 }
 
+mod cache;
 mod folder;
 mod switches;
 mod values;
@@ -86,5 +87,6 @@ fn stamp_lists_size_and_date_of_each_file() {
     let mut state = State::parse("");
     let given = inputs(None, Some(BIG));
     window(&given, &files(), &mut state, 1000.0, &stat, &read);
-    assert_eq!(state.get("compact_stamp"), Some("10:20;10:20;0;"));
+    let stored = state.with_prefix("compact@").next().map(|(_, v)| v);
+    assert_eq!(stored, Some("1000 10:20;10:20;0; 300000"));
 }
