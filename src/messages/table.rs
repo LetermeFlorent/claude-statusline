@@ -7,6 +7,9 @@ pub const BENCH_SUMMARY: Text = Text::new(
 pub const BENCH_STATE: Text = Text::new("state", "état");
 pub const BENCH_CONFIG: Text = Text::new("config", "config");
 pub const BENCH_SESSION: Text = Text::new("session", "session");
+pub const BENCH_THEME: Text = Text::new("theme", "thème");
+pub const BENCH_COMPACT: Text = Text::new("compact", "compact");
+pub const BENCH_SYSTEM: Text = Text::new("system", "système");
 pub const BENCH_RENDER: Text = Text::new("render", "rendu");
 pub const BENCH_WRITE: Text = Text::new("write", "écriture");
 pub const UNKNOWN_ARGUMENT: Text =
@@ -87,11 +90,14 @@ pub const UPDATE_RUNNING: Text = Text::new(
 pub const PANICKED: Text = Text::new("internal error at {}\n", "erreur interne dans {}\n");
 
 #[cfg(test)]
-pub const ALL: [&Text; 33] = [
+pub const ALL: [&Text; 36] = [
     &BENCH_SUMMARY,
     &BENCH_STATE,
     &BENCH_CONFIG,
     &BENCH_SESSION,
+    &BENCH_THEME,
+    &BENCH_COMPACT,
+    &BENCH_SYSTEM,
     &BENCH_RENDER,
     &BENCH_WRITE,
     &UNKNOWN_ARGUMENT,

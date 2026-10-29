@@ -189,16 +189,13 @@ enum Stage {
 }
 
 const STAGE_COUNT: usize = Stage::Write as usize + 1;
-const BENCH_THEME: Text = Text::new("theme", "thème");
-const BENCH_COMPACT: Text = Text::new("compact", "compact");
-const BENCH_SYSTEM: Text = Text::new("system", "système");
 const STAGE_LABELS: [(Stage, &Text); STAGE_COUNT] = [
     (Stage::State, &messages::BENCH_STATE),
     (Stage::Config, &messages::BENCH_CONFIG),
     (Stage::Session, &messages::BENCH_SESSION),
-    (Stage::Theme, &BENCH_THEME),
-    (Stage::Compact, &BENCH_COMPACT),
-    (Stage::System, &BENCH_SYSTEM),
+    (Stage::Theme, &messages::BENCH_THEME),
+    (Stage::Compact, &messages::BENCH_COMPACT),
+    (Stage::System, &messages::BENCH_SYSTEM),
     (Stage::Render, &messages::BENCH_RENDER),
     (Stage::Write, &messages::BENCH_WRITE),
 ];
