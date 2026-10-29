@@ -7,6 +7,7 @@ use crate::messages::{self, Text};
 use crate::os::{self, Claim, Contents};
 use crate::plain;
 use crate::portable;
+use crate::render::demo::{self, Level};
 use crate::render::{self, Data, SysValue};
 use crate::session::Session;
 use crate::settings::{self, Removal};
@@ -41,6 +42,8 @@ const CHANGES_SUFFIX: &str = ".changes";
 const STATE_READ_TRIES: u32 = 4;
 const STATE_READ_RETRY_MS: u32 = 10;
 const DEFAULT_BENCH_RUNS: usize = 200;
+const DEMO_TOKENS_PER_PERCENT: u64 = 10_000;
+const DEMO_FRESH_TOKENS: u64 = 60_000;
 
 fn config_path() -> Option<String> {
     if let Some(p) = os::env("STATUSLINE_CONFIG") {
@@ -288,13 +291,21 @@ fn read_file(p: &str) -> Option<String> {
     }
 }
 
+type Readings<'a> = &'a dyn Fn(&Config, &mut State, f64) -> Vec<SysValue>;
+
 fn run(input: &str, now: f64, laps: &mut Laps) -> (String, State, bool) {
     let state = load_state();
     laps.lap(Stage::State);
-    run_on(input, state, now, laps)
+    run_on(input, state, now, laps, &sample)
 }
 
-fn run_on(input: &str, mut state: State, now: f64, laps: &mut Laps) -> (String, State, bool) {
+fn run_on(
+    input: &str,
+    mut state: State,
+    now: f64,
+    laps: &mut Laps,
+    readings: Readings,
+) -> (String, State, bool) {
     let cfg = load_config();
     laps.lap(Stage::Config);
     let session = Session::parse(input);
@@ -322,7 +333,7 @@ fn run_on(input: &str, mut state: State, now: f64, laps: &mut Laps) -> (String, 
         None
     };
     laps.lap(Stage::Compact);
-    let sys = sample(&cfg, &mut state, now);
+    let sys = readings(&cfg, &mut state, now);
     laps.lap(Stage::System);
     let updating = update_watch::busy(now);
     let data = Data {
@@ -351,15 +362,45 @@ fn run_on(input: &str, mut state: State, now: f64, laps: &mut Laps) -> (String, 
 }
 
 fn demo_input(now: f64) -> String {
+    demo_input_for(now, None)
+}
+
+fn demo_input_for(now: f64, level: Option<Level>) -> String {
     let now = now as i64;
+    let percent = level.unwrap_or(Level::Low).context_percent();
+    let cached = percent * DEMO_TOKENS_PER_PERCENT - DEMO_FRESH_TOKENS;
     format!(
         "{{\"model\":{{\"id\":\"claude-opus-5\",\"display_name\":\"Opus 5\"}},\"effort\":{{\"level\":\"max\"}},\
-\"context_window\":{{\"context_window_size\":1000000,\"used_percentage\":34,\
-\"current_usage\":{{\"input_tokens\":12000,\"cache_creation_input_tokens\":48000,\"cache_read_input_tokens\":280000}}}},\
+\"context_window\":{{\"context_window_size\":1000000,\"used_percentage\":{},\
+\"current_usage\":{{\"input_tokens\":12000,\"cache_creation_input_tokens\":48000,\"cache_read_input_tokens\":{}}}}},\
 \"rate_limits\":{{\"five_hour\":{{\"used_percentage\":36,\"resets_at\":{}}},\"seven_day\":{{\"used_percentage\":61,\"resets_at\":{}}}}}}}",
+        percent,
+        cached,
         now + 12600,
         now + 320400
     )
+}
+
+fn show_demo(word: Option<&str>) -> i32 {
+    let level = match word.map(|word| (word, Level::named(word))) {
+        None => None,
+        Some((_, Some(level))) => Some(level),
+        Some((word, None)) => {
+            os::err(&messages::UNKNOWN_ARGUMENT.with(&[word, messages::HELP.text()]));
+            return 2;
+        }
+    };
+    let now = os::now();
+    let readings = |cfg: &Config, _: &mut State, _: f64| demo::readings(cfg, level, os::memory());
+    let (out, _, _) = run_on(
+        &demo_input_for(now, level),
+        load_state(),
+        now,
+        &mut Laps::new(),
+        &readings,
+    );
+    os::out(&out);
+    0
 }
 
 struct Rounds {
@@ -374,7 +415,7 @@ fn round(input: &str, target: Option<&str>, laps: &mut Laps) -> usize {
         .and_then(read_state)
         .unwrap_or_else(|| State::parse(""));
     laps.lap(Stage::State);
-    let (out, state, _) = run_on(input, state, os::now(), laps);
+    let (out, state, _) = run_on(input, state, os::now(), laps, &sample);
     if let Some(path) = target {
         save_state_at(path, &state);
     }
@@ -597,12 +638,7 @@ pub fn main(args: Vec<String>) -> i32 {
             }
             0
         }
-        Some("--demo") => {
-            let now = os::now();
-            let (out, _, _) = run(&demo_input(now), now, &mut Laps::new());
-            os::out(&out);
-            0
-        }
+        Some("--demo") => show_demo(args.get(2).map(String::as_str)),
         Some("--bench") => {
             let count = args.get(2).map(String::as_str);
             let Some(runs) = bench_runs(count) else {

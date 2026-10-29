@@ -6,6 +6,7 @@ use alloc::vec::Vec;
 use core::fmt::Write;
 use core::ops::RangeInclusive;
 
+pub mod demo;
 mod fill;
 mod fit;
 mod palette;
