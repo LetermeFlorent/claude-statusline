@@ -46,12 +46,12 @@ show() {
   case "$language.$1" in
     en.build_failed) text="build failed, using the released binary" ;;
     fr.build_failed) text="compilation impossible, passage au binaire publié" ;;
-    en.no_asset) text="no released binary for $2 $3: install Rust (https://rustup.rs) and run this script again" ;;
-    fr.no_asset) text="aucun binaire publié pour $2 $3 : installez Rust (https://rustup.rs) puis relancez" ;;
+    en.no_asset) text="no released binary for $2 $3: install Rust (https://rustup.rs) and run this script again from a clone of the repository" ;;
+    fr.no_asset) text="aucun binaire publié pour $2 $3 : installez Rust (https://rustup.rs) puis relancez depuis un clone du dépôt" ;;
     en.downloading) text="downloading $2" ;;
     fr.downloading) text="téléchargement de $2" ;;
-    en.download_failed) text="download failed: install Rust (https://rustup.rs) and run this script again" ;;
-    fr.download_failed) text="téléchargement impossible : installez Rust (https://rustup.rs) puis relancez" ;;
+    en.download_failed) text="download failed: check the network, or install Rust (https://rustup.rs) and run this script again from a clone of the repository" ;;
+    fr.download_failed) text="téléchargement impossible : vérifiez le réseau, ou installez Rust (https://rustup.rs) puis relancez depuis un clone du dépôt" ;;
     en.checksum) text="SHA-256 hash missing from SHA256SUMS or different: binary refused" ;;
     fr.checksum) text="empreinte SHA-256 absente de SHA256SUMS ou différente : binaire refusé" ;;
     en.copied) text="program copied to $2" ;;
@@ -68,11 +68,13 @@ show() {
   printf '%s\n' "$text"
 }
 
+can_build() { [ -f "$here/Cargo.toml" ] && command -v cargo >/dev/null 2>&1; }
+
 mkdir -p "$bin_dir"
-if command -v cargo >/dev/null 2>&1 && (cd "$here" && cargo build --release --quiet --target-dir "$here/target"); then
+if can_build && (cd "$here" && cargo build --release --quiet --target-dir "$here/target"); then
   cp "$here/target/release/statusline" "$bin_dir/statusline.new"
 else
-  command -v cargo >/dev/null 2>&1 && show build_failed >&2
+  can_build && show build_failed >&2
   case "$(uname -s)-$(uname -m)" in
     Linux-x86_64) asset=statusline-linux-x86_64 ;;
     Linux-aarch64 | Linux-arm64) asset=statusline-linux-arm64 ;;
@@ -112,7 +114,7 @@ show copied "$bin_dir/statusline"
 
 if [ -f "$main/statusline.json" ]; then
   show config_kept
-else
+elif [ -f "$here/statusline.json" ]; then
   cp "$here/statusline.json" "$main/statusline.json"
   show config_installed
 fi

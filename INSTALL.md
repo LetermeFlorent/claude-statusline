@@ -22,11 +22,29 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 The script does four things:
 
 1. It downloads `statusline-windows-x86_64.exe`, or `statusline-windows-arm64.exe` on an Arm processor, and `SHA256SUMS` from the latest release, and stops if the SHA-256 hash of the binary is missing from the list or differs from it. It first writes the new program next to the old one as `statusline.new.exe` and unblocks it (`Unblock-File`), then renames the previous `statusline.exe` to `statusline.exe.old-<timestamp>`, which allows the swap even during a Claude Code session, and renames the new file into `%USERPROFILE%\.claude\bin\statusline.exe`. If any of that fails, the previous program is put back and the script stops with a message, so a failed copy never leaves the account without a program. The `.old` copies are deleted when possible, along with those left by an automatic update.
-2. It installs `statusline.json` in `%USERPROFILE%\.claude`, only when that file does not exist yet. The other accounts read this same file, unless they have their own in their folder.
+2. It installs `statusline.json` in `%USERPROFILE%\.claude`, only when that file does not exist yet and the script has one beside it. The other accounts read this same file, unless they have their own in their folder.
 3. It lists the accounts: `.claude`, every `.claude-compte*` folder in the home folder, and every `Dir` in `.claude-accounts.json` (the registry of [claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)), without duplicates or missing folders. An unreadable registry gives a warning.
 4. For each account, it runs `statusline.exe --install` with `CLAUDE_CONFIG_DIR` set to the account folder. The command is rewritten in its portable form, `~/.claude/bin/statusline.exe`: any other command, such as a path from an old PC or an old user name, is replaced, and the script says so. The program also repairs the `statusLine` of the account's global file, `.claude.json` in its folder (and `%USERPROFILE%\.claude.json` for `.claude`), when it points to a statusline program that no longer exists; any other command there, such as `npx ccusage statusline`, is left alone. A failure is reported for that account and does not stop the others.
 
 With `-Build`, the script skips the download and compiles the sources (`cargo build --release`, Rust required). This is also the way out when the download fails, or when the release has no `SHA256SUMS`.
+
+## Installing without a clone
+
+The scripts need no copy of the repository to install a released binary. Download the script alone, then run it. On Windows:
+
+```powershell
+Invoke-WebRequest https://raw.githubusercontent.com/LetermeFlorent/claude-statusline/main/install.ps1 -OutFile install.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+On Linux and macOS:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/LetermeFlorent/claude-statusline/main/install.sh -o install.sh
+sh install.sh
+```
+
+Both scripts then download the binary of the latest release and its `SHA256SUMS`, and refuse to install a binary whose hash is missing from the list or differs from it. A release that publishes no `SHA256SUMS` is therefore refused, and the script stops without touching the account. Without a clone there is no `statusline.json` to copy: `--install` writes a short template in the account folder instead. Compiling needs the sources, so `-Build` on Windows stops with a message outside a clone, and `install.sh` goes straight to the download when it finds no `Cargo.toml` next to it.
 
 ## Installing on Linux or macOS
 

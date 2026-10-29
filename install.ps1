@@ -12,8 +12,9 @@ $french = $language -eq "fr"
 $texts = @{
   downloading = "downloading {0}", "téléchargement de {0}"
   checksum = "SHA-256 hash missing from SHA256SUMS or different.", "empreinte SHA-256 absente de SHA256SUMS ou différente."
-  release_refused = "released binary refused: {0} Run the script again with -Build to compile the sources (Rust required).", "binaire publié refusé : {0} Relancez avec -Build pour compiler les sources (Rust requis)."
+  release_refused = "released binary refused: {0} Run the script again with -Build, from a clone of the repository, to compile the sources (Rust required).", "binaire publié refusé : {0} Relancez avec -Build, depuis un clone du dépôt, pour compiler les sources (Rust requis)."
   build_failed = "build failed", "échec de la compilation"
+  no_sources = "-Build needs the sources: run the script from a clone of the repository", "-Build demande les sources : lancez le script depuis un clone du dépôt"
   swap_failed = "program not replaced, the previous one is kept: {0}", "programme non remplacé, le précédent est conservé : {0}"
   copied = "program copied to {0}", "programme copié dans {0}"
   config_kept = "statusline.json already exists, kept", "statusline.json existe déjà, conservé"
@@ -69,6 +70,7 @@ function Save-ReleaseBinary([string]$destination) {
 }
 
 if ($Build) {
+  if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot "Cargo.toml"))) { throw (Get-Text no_sources) }
   Push-Location $PSScriptRoot
   try {
     cargo build --release
@@ -104,8 +106,9 @@ if ($asked) { $language = $asked; $french = $language -eq "fr" }
 Write-Host (Get-Text copied $exe)
 
 $conf = Join-Path $main "statusline.json"
+$template = Join-Path $PSScriptRoot "statusline.json"
 if (Test-Path -LiteralPath $conf) { Write-Host (Get-Text config_kept) }
-else { Copy-Item -LiteralPath (Join-Path $PSScriptRoot "statusline.json") -Destination $conf; Write-Host (Get-Text config_installed) }
+elseif (Test-Path -LiteralPath $template) { Copy-Item -LiteralPath $template -Destination $conf; Write-Host (Get-Text config_installed) }
 
 $dirs = [ordered]@{}
 $found = @($main) + @(Get-ChildItem -LiteralPath $env:USERPROFILE -Directory -Filter ".claude-compte*" | ForEach-Object { $_.FullName })
