@@ -1,7 +1,7 @@
 mod edit;
 mod repair;
 
-pub(in crate::app) use edit::{add_line, remove_line};
+pub(in crate::cli::app) use edit::{add_line, remove_line};
 use repair::repair_globals;
 
 use crate::app::paths::{config_path, settings_path};
@@ -10,7 +10,7 @@ use crate::messages;
 use crate::os;
 use crate::portable;
 
-pub(in crate::app) const TEMPLATE: &str = "{
+pub(in crate::cli::app) const TEMPLATE: &str = "{
   \"bar_width\": 8,
   \"bold\": true,
   \"glyphs\": { \"filled\": \"\u{25A0}\", \"empty\": \"\u{25A0}\", \"half\": \"\u{25AA}\" },

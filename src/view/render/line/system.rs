@@ -5,7 +5,7 @@ use crate::render::text::{decimal, pct_text};
 use crate::render::SysValue;
 use alloc::string::String;
 
-pub(in crate::render) const GIB: f64 = 1_073_741_824.0;
+pub(in crate::view::render) const GIB: f64 = 1_073_741_824.0;
 
 impl Out<'_> {
     pub(super) fn system(&mut self, reading: &SysValue) {

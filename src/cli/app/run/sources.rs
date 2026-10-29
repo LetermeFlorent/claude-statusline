@@ -6,7 +6,7 @@ use crate::state::State;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-pub(in crate::app) fn sample(cfg: &Config, state: &mut State, now: f64) -> Vec<SysValue> {
+pub(in crate::cli::app) fn sample(cfg: &Config, state: &mut State, now: f64) -> Vec<SysValue> {
     let mut out = Vec::new();
     if !cfg.sys_enabled {
         return out;
@@ -34,17 +34,20 @@ pub(in crate::app) fn sample(cfg: &Config, state: &mut State, now: f64) -> Vec<S
     out
 }
 
-pub(in crate::app) fn local_only(dir: Option<&str>) -> Option<&str> {
+pub(in crate::cli::app) fn local_only(dir: Option<&str>) -> Option<&str> {
     dir.filter(|dir| !os::on_network(dir))
 }
 
-pub(in crate::app) fn has_project_settings(folder: &str) -> bool {
+pub(in crate::cli::app) fn has_project_settings(folder: &str) -> bool {
     ["settings.json", "settings.local.json"]
         .iter()
         .any(|f| os::stamp(&os::join(folder, &[".claude", f])).is_some())
 }
 
-pub(in crate::app) fn compact_files(cwd: Option<&str>, project_dir: Option<&str>) -> [String; 3] {
+pub(in crate::cli::app) fn compact_files(
+    cwd: Option<&str>,
+    project_dir: Option<&str>,
+) -> [String; 3] {
     let main = os::claude_dir()
         .map(|d| os::join(&d, &["settings.json"]))
         .unwrap_or_default();
@@ -66,7 +69,7 @@ pub(in crate::app) fn compact_files(cwd: Option<&str>, project_dir: Option<&str>
     ]
 }
 
-pub(in crate::app) fn stat_file(p: &str) -> Option<(u64, i64)> {
+pub(in crate::cli::app) fn stat_file(p: &str) -> Option<(u64, i64)> {
     if p.is_empty() {
         None
     } else {
@@ -74,7 +77,7 @@ pub(in crate::app) fn stat_file(p: &str) -> Option<(u64, i64)> {
     }
 }
 
-pub(in crate::app) fn read_file(p: &str) -> Option<String> {
+pub(in crate::cli::app) fn read_file(p: &str) -> Option<String> {
     if p.is_empty() {
         None
     } else {
