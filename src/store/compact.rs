@@ -13,6 +13,11 @@ mod tests;
 
 const RECHECK_AFTER: f64 = 30.0;
 
+pub struct Disk<'a> {
+    pub stat: &'a dyn Fn(&str) -> Option<(u64, i64)>,
+    pub read: &'a dyn Fn(&str) -> Option<String>,
+}
+
 pub struct Inputs<'a> {
     pub env: Option<&'a str>,
     pub disable: Option<&'a str>,
@@ -32,8 +37,7 @@ fn lookup(
     files: &[String; 3],
     state: &mut State,
     now: f64,
-    stat: &dyn Fn(&str) -> Option<(u64, i64)>,
-    read: &dyn Fn(&str) -> Option<String>,
+    disk: &Disk,
 ) -> Option<Setting> {
     cache::drop_legacy(state);
     let parts = files.iter().map(String::as_str).chain(model);
@@ -47,7 +51,7 @@ fn lookup(
     }
     let mut stamp = String::new();
     for f in files {
-        match stat(f) {
+        match (disk.stat)(f) {
             Some((size, mtime)) => stamp.push_str(&format!("{}:{};", size, mtime)),
             None => stamp.push_str("0;"),
         }
@@ -58,7 +62,7 @@ fn lookup(
         cache::save(state, &key, &Entry { at, ..entry });
         return setting;
     }
-    let setting = settings::scan(files, model, read);
+    let setting = settings::scan(files, model, disk.read);
     cache::save(state, &key, &Entry { at, stamp, setting });
     setting
 }
@@ -68,13 +72,12 @@ pub fn window(
     files: &[String; 3],
     state: &mut State,
     now: f64,
-    stat: &dyn Fn(&str) -> Option<(u64, i64)>,
-    read: &dyn Fn(&str) -> Option<String>,
+    disk: &Disk,
 ) -> Option<u64> {
     if truthy(inputs.disable) {
         return None;
     }
-    let found = lookup(inputs.model, files, state, now, stat, read);
+    let found = lookup(inputs.model, files, state, now, disk);
     let from_env = inputs.env.and_then(size::parse).map(size::clamp);
     let window = match found {
         Some(Setting::Off) => return None,

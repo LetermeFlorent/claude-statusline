@@ -24,7 +24,7 @@ pub(super) fn render(state: &mut State, n: usize, now: f64, reads: &Cell<usize>)
     };
     let stat = |f: &str| f.ends_with("file1").then_some((10, 20));
     let given = inputs(None, Some(BIG));
-    window(&given, &project(n), state, now, &stat, &read)
+    window(&given, &project(n), state, now, &disk(&stat, &read))
 }
 
 pub(super) fn entries(state: &State) -> usize {
@@ -125,7 +125,7 @@ fn entries_of_a_project_and_its_model_are_kept_apart() {
     let stat = |f: &str| f.ends_with("file1").then_some((10, 20));
     for model in [Some(MODEL), Some("claude-haiku-5")] {
         let given = inputs(model, Some(BIG));
-        window(&given, &project(0), &mut state, 1000.0, &stat, &read);
+        window(&given, &project(0), &mut state, 1000.0, &disk(&stat, &read));
     }
     assert_eq!(entries(&state), 2);
 }
