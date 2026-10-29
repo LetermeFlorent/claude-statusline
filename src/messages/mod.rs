@@ -2,6 +2,8 @@
 mod apple;
 mod check;
 mod help;
+#[cfg(any(windows, test))]
+mod identifier;
 mod language;
 #[cfg(any(not(windows), test))]
 mod locale;
@@ -17,6 +19,10 @@ use core::fmt;
 use language::Language;
 
 const PLACEHOLDER: &str = "{}";
+
+pub fn language_code() -> &'static str {
+    language::current().code()
+}
 
 pub struct Text {
     english: &'static str,

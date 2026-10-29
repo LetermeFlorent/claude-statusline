@@ -658,6 +658,10 @@ pub fn main(args: Vec<String>) -> i32 {
             os::out(&decision.report());
             0
         }
+        Some("--language") => {
+            os::out(&format!("{}\n", messages::language_code()));
+            0
+        }
         Some("--check") => check::run(config_path()),
         Some("--install") => install(),
         Some("--uninstall") => uninstall(),

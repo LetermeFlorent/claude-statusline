@@ -57,3 +57,38 @@ fn language_lists_the_first_supported_language() {
     let text = help(&[("LANGUAGE", "de:fr:en"), ("LANG", "en_US.UTF-8")]);
     assert!(text.contains(FRENCH_MARK), "{}", text);
 }
+
+fn language(variables: &[(&str, &str)]) -> (String, Option<i32>) {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_statusline"));
+    for name in LOCALE_VARIABLES {
+        command.env_remove(name);
+    }
+    let output = command.arg("--language").envs(variables.iter().copied());
+    let output = output.output().unwrap();
+    (
+        String::from_utf8(output.stdout).unwrap(),
+        output.status.code(),
+    )
+}
+
+#[test]
+fn language_prints_the_code_that_was_forced() {
+    assert_eq!(
+        language(&[("STATUSLINE_LANG", "fr")]),
+        ("fr\n".into(), Some(0))
+    );
+    assert_eq!(
+        language(&[("STATUSLINE_LANG", "en")]),
+        ("en\n".into(), Some(0))
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn language_prints_the_code_of_the_locale() {
+    assert_eq!(
+        language(&[("LANG", "fr_FR.UTF-8")]),
+        ("fr\n".into(), Some(0))
+    );
+    assert_eq!(language(&[("LANG", "C")]), ("en\n".into(), Some(0)));
+}

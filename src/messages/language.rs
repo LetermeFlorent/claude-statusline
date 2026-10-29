@@ -15,6 +15,15 @@ const FRENCH: u8 = 2;
 
 static CHOSEN: AtomicU8 = AtomicU8::new(UNDECIDED);
 
+impl Language {
+    pub fn code(self) -> &'static str {
+        match self {
+            Language::English => "en",
+            Language::French => "fr",
+        }
+    }
+}
+
 pub fn from_tag(tag: &str) -> Option<Language> {
     let code = tag.trim().split(CODE_ENDS).next()?;
     if code.eq_ignore_ascii_case("fr") {
@@ -23,17 +32,6 @@ pub fn from_tag(tag: &str) -> Option<Language> {
         Some(Language::English)
     } else {
         None
-    }
-}
-
-#[cfg(any(windows, test))]
-pub fn from_language_id(id: u16) -> Language {
-    const PRIMARY_LANGUAGE_MASK: u16 = 0x3ff;
-    const LANG_FRENCH: u16 = 0x0c;
-    if id & PRIMARY_LANGUAGE_MASK == LANG_FRENCH {
-        Language::French
-    } else {
-        Language::English
     }
 }
 
@@ -49,7 +47,7 @@ pub fn choose(
 
 #[cfg(windows)]
 fn system() -> Option<Language> {
-    Some(from_language_id(crate::os::ui_language()))
+    Some(super::identifier::from_language_id(crate::os::ui_language()))
 }
 
 #[cfg(not(windows))]
@@ -81,21 +79,6 @@ mod tests {
     fn forced(value: &str) -> Language {
         let variable = |name: &str| (name == FORCED).then(|| String::from(value));
         choose(&variable, &|| Some(Language::English))
-    }
-
-    #[test]
-    fn french_windows_display_languages_pick_french() {
-        assert_eq!(from_language_id(0x040c), Language::French);
-        assert_eq!(from_language_id(0x0c0c), Language::French);
-        assert_eq!(from_language_id(0x100c), Language::French);
-    }
-
-    #[test]
-    fn other_windows_display_languages_pick_english() {
-        assert_eq!(from_language_id(0x0409), Language::English);
-        assert_eq!(from_language_id(0x0407), Language::English);
-        assert_eq!(from_language_id(0x0462), Language::English);
-        assert_eq!(from_language_id(0), Language::English);
     }
 
     #[test]
@@ -145,5 +128,11 @@ mod tests {
         assert_eq!(from_tag("en-US"), Some(Language::English));
         assert_eq!(from_tag("de-DE"), None);
         assert_eq!(from_tag(""), None);
+    }
+
+    #[test]
+    fn each_language_names_its_code() {
+        assert_eq!(Language::French.code(), "fr");
+        assert_eq!(Language::English.code(), "en");
     }
 }

@@ -5,10 +5,42 @@ main="$HOME/.claude"
 bin_dir="$main/bin"
 repo="https://github.com/LetermeFlorent/claude-statusline"
 
-language=en
-case "${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}" in
-  fr | fr_* | fr.* | fr@*) language=fr ;;
-esac
+tag_language() {
+  case "${1%%[_.@-]*}" in
+    [Ff][Rr]) echo fr ;;
+    [Ee][Nn]) echo en ;;
+  esac
+}
+
+choose_language() {
+  forced=$(tag_language "${STATUSLINE_LANG:-}")
+  if [ -n "$forced" ]; then
+    echo "$forced"
+    return
+  fi
+  locale=${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}
+  case "${locale%%[_.@-]*}" in
+    [Cc] | [Pp][Oo][Ss][Ii][Xx])
+      echo en
+      return
+      ;;
+  esac
+  old_ifs=$IFS
+  IFS=:
+  for entry in ${LANGUAGE:-}; do
+    found=$(tag_language "$entry")
+    if [ -n "$found" ]; then
+      IFS=$old_ifs
+      echo "$found"
+      return
+    fi
+  done
+  IFS=$old_ifs
+  found=$(tag_language "$locale")
+  echo "${found:-en}"
+}
+
+language=$(choose_language)
 
 show() {
   case "$language.$1" in
@@ -70,6 +102,12 @@ fi
 
 chmod 755 "$bin_dir/statusline.new"
 mv -f "$bin_dir/statusline.new" "$bin_dir/statusline"
+asked=$("$bin_dir/statusline" --language 2>/dev/null) || asked=""
+case "$asked" in
+  fr | en) language=$asked ;;
+esac
+STATUSLINE_LANG=$language
+export STATUSLINE_LANG
 show copied "$bin_dir/statusline"
 
 if [ -f "$main/statusline.json" ]; then

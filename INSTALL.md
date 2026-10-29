@@ -40,6 +40,8 @@ The program goes to `~/.claude/bin/statusline`. When `cargo` is available, the s
 
 The binary is first written as `statusline.new`, then renamed, so that a bar already running keeps the old file until it exits. The rest matches Windows: `statusline.json` installed if missing, then `--install` for `.claude`, every `.claude-compte*` and every `Dir` of the registry (stale paths are repaired the same way, `~/.claude.json` included). The registry is read with `grep` and `sed`, with no JSON parser, so it must keep the format claude-account-menu writes.
 
+The scripts speak French or English by the same rule as the program: `STATUSLINE_LANG` first, then the display language on Windows, or `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and `LANG` elsewhere. Once the program is copied, they ask it for its language with `--language` and pass the answer to each `--install` through `STATUSLINE_LANG`, so the whole run speaks one language. A release older than this option has no `--language`: the scripts then keep their own choice.
+
 ## What --install does
 
 `--install` edits the `settings.json` of the current account: the one in the `CLAUDE_CONFIG_DIR` folder when that variable is set, `~/.claude/settings.json` otherwise. It goes through these steps:
