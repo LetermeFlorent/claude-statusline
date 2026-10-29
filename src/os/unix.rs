@@ -403,10 +403,15 @@ mod sys {
 
     const CPU_STATE_IDLE: usize = 2;
 
+    fn host() -> Port {
+        static HOST: std::sync::OnceLock<Port> = std::sync::OnceLock::new();
+        *HOST.get_or_init(|| unsafe { mach_host_self() })
+    }
+
     pub fn cpu() -> Option<Activity> {
         let mut ticks = [0i32; 4];
         let mut n = 4u32;
-        if unsafe { host_statistics(mach_host_self(), 3, ticks.as_mut_ptr(), &mut n) } != 0 {
+        if unsafe { host_statistics(host(), 3, ticks.as_mut_ptr(), &mut n) } != 0 {
             return None;
         }
         let ticks: Vec<i64> = ticks.iter().map(|x| *x as u32 as i64).collect();
@@ -501,7 +506,7 @@ mod sys {
         if r != 0 || total == 0 {
             return None;
         }
-        let host = unsafe { mach_host_self() };
+        let host = host();
         let mut page = 0usize;
         if unsafe { host_page_size(host, &mut page) } != 0 {
             return None;
