@@ -196,7 +196,7 @@ impl Config {
             marker: printable(
                 raw.get("auto_compact_marker")
                     .and_then(|v| v.str())
-                    .unwrap_or("\u{AA}"),
+                    .unwrap_or("~"),
             ),
             effort_flat: raw
                 .get("effort_style")

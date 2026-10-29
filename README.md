@@ -3,8 +3,8 @@
 A status line for Claude Code on Windows, Linux and macOS. It takes two lines: the first follows the session (context, 5-hour and 7-day quotas, model and effort), the second follows the machine (RAM, disk activity, CPU).
 
 ```
-ctx ■■▪■■■■■ 340k/1M | 5h ■■▪■■■■■ 36% 3h29m | 7d ■■■■▪■■■ 61% 3d16h | Opus 5:max
-ram ■■■■■▪■■ 11.3/15.3G | C: ▪■■■■■■■ 2% | cpu ▪■■■■■■■ 8%
+ctx ■■▪■■■■■ 340k/1M | 5h ■■■■■■■■ 36% 3h29m | 7d ■■■■■■■■ 61% 3d16h | Opus 5:max
+ram ■■■■■■■■ 11.3/15.3G | C: ▪■■■■■■■ 2% | cpu ▪■■■■■■■ 8%
 ```
 
 It is a small Rust program with no dependencies. Claude Code runs it every 3 seconds through the `statusLine` setting: it reads the session JSON on standard input, writes the bar on standard output and exits after a little over a millisecond of work. On Windows the binary does without the C runtime and weighs about 220 KB. It can update itself from the GitHub releases, an option that is off by default.
@@ -70,7 +70,7 @@ The `SessionStart` hook of [claude-account-menu](https://github.com/LetermeFlore
 
 ## Auto-compact threshold
 
-When an auto-compact threshold smaller than the context window is set, the `ctx` bar is measured against that threshold, the text becomes `used/threshold`, and a faint `ª` appears before `ctx`. The threshold is looked up in this order:
+When an auto-compact threshold smaller than the context window is set, the `ctx` bar is measured against that threshold, the text becomes `used/threshold`, and a `~` followed by a space appears before `ctx`, as in `~ ctx ■■■■■■■■ 340k/400k`. The threshold is looked up in this order:
 
 1. the `CLAUDE_CODE_AUTO_COMPACT_WINDOW` environment variable of the process, if it is a positive integer;
 2. otherwise three files, read one after the other: the `settings.json` of the account's configuration folder, then the project's `.claude/settings.json` and `.claude/settings.local.json`. The last one that gives a threshold wins.
@@ -134,7 +134,7 @@ It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, 
 | `bar_width` | `8` | squares per bar, from 1 to 40 |
 | `bold` | `true` | `false` drops the bold from labels and numbers |
 | `glyphs.filled`, `glyphs.empty`, `glyphs.half` | `■`, `■`, `▪` | full square, empty square, half-filled last square |
-| `auto_compact_marker` | `ª` | auto-compact threshold marker |
+| `auto_compact_marker` | `~` | auto-compact threshold marker, drawn before `ctx` and followed by a space; empty to hide it |
 | `effort_style` | `gradient` | `flat`, in any case, draws the effort in a single hue |
 | `segments.ctx`, `segments.5h`, `segments.7d`, `segments.model` | `true` | `false` hides the segment |
 | `gradient.5h`, `gradient.7d` | `0.55`, `0.3` | how strongly the bar lightens, from 0 to 1 |

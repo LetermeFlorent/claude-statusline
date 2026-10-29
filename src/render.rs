@@ -257,11 +257,11 @@ impl Out<'_> {
             }
         }
         if marked {
-            self.line.push_str("\x1b[2m");
-            let ink = self.col.ink;
-            self.tint(ink);
-            self.line.push_str(&self.cfg.marker);
-            self.line.push_str(RESET);
+            if !self.cfg.marker.is_empty() {
+                let marker = self.cfg.marker.clone();
+                self.label(&marker);
+                self.line.push(' ');
+            }
         }
         self.label("ctx");
         self.line.push(' ');
@@ -613,7 +613,7 @@ mod tests {
     fn dark_line() {
         let expected = format!(
             concat!(
-                "[dim]ª[/][b]ctx[/] [#96cdff]■[#8bc2fa]■[#7fb8f5]▪[#55595f]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[/] [b]60k/200k[/]",
+                "[b]~[/] [b]ctx[/] [#96cdff]■[#8bc2fa]■[#7fb8f5]▪[#55595f]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[/] [b]60k/200k[/]",
                 " [b]|[/] [b]5h[/] [#aa5aaf]■[#b168b6]■[#b876bc]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[#55595f]■[/] [b]36%[/] [b]1h00m[/]",
                 " [b]|[/] [b]7d[/] [#b95555]■[#ba5858]■[#bb5a5a]■[#bc5d5d]■[#bd5f5f]■[#be6262]■[#bf6464]▪[#55595f]■[/] [b]81%[/] [b]2d07h[/]",
                 " [b]|[/] [u]Opus 4[/][b]:[/][b][#8290cc]h[b][#8b8fcb]i[b][#938dcb]g[b][#9c8cca]h[/]\n",
@@ -631,7 +631,7 @@ mod tests {
     fn light_line() {
         let expected = format!(
             concat!(
-                "[dim]ª[/][b]ctx[/] [#3d8beb]■[#3a84e3]■[#377ddb]▪[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[/] [b]60k/200k[/]",
+                "[b]~[/] [b]ctx[/] [#3d8beb]■[#3a84e3]■[#377ddb]▪[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[/] [b]60k/200k[/]",
                 " [b]|[/] [b]5h[/] [#aa5aaf]■[#9a519e]■[#8a498d]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[#c4c8ce]■[/] [b]36%[/] [b]1h00m[/]",
                 " [b]|[/] [b]7d[/] [#b95555]■[#b65454]■[#b35252]■[#af5151]■[#ac4f4f]■[#a94e4e]■[#a64c4c]▪[#c4c8ce]■[/] [b]81%[/] [b]2d07h[/]",
                 " [b]|[/] [u]Opus 4[/][b]:[/][b][#4b5476]h[b][#505376]i[b][#555275]g[b][#5a5175]h[/]\n",
@@ -776,6 +776,21 @@ mod tests {
         assert_eq!(Config::parse(None).pal_cpu.ok, [79.0, 127.0, 196.0]);
         let text = line(false, None, &sample());
         assert!(text.contains("cpu[/] [#4f7fc4]"), "{}", text);
+    }
+
+    #[test]
+    fn the_auto_compact_marker_is_a_visible_tilde_and_a_space() {
+        let text = line(false, None, &sample());
+        assert!(text.starts_with("[b]~[/] [b]ctx[/]"), "{}", text);
+        let old = line(
+            false,
+            Some("{\"auto_compact_marker\": \"\u{AA}\"}"),
+            &sample(),
+        );
+        assert!(old.starts_with("[b]\u{AA}[/] [b]ctx[/]"), "{}", old);
+        let none = line(false, Some("{\"auto_compact_marker\": \"\"}"), &sample());
+        assert!(none.starts_with("[b]ctx[/]"), "{}", none);
+        assert!(!text.contains("[dim]"), "{}", text);
     }
 
     #[test]
