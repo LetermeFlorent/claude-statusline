@@ -111,6 +111,14 @@ impl State {
         self.map.retain(|(x, _)| x != key);
     }
 
+    pub fn with_prefix<'a>(
+        &'a self,
+        prefix: &'a str,
+    ) -> impl Iterator<Item = (&'a str, &'a str)> + 'a {
+        let keys = self.map.iter().filter(move |(x, _)| x.starts_with(prefix));
+        keys.map(|(x, v)| (x.as_str(), v.as_str()))
+    }
+
     pub fn text(&self) -> String {
         let mut out = String::new();
         for (key, value) in &self.map {
@@ -295,6 +303,13 @@ mod tests {
         saved.apply(&mine.changes());
         assert_eq!(saved.text(), "q_at@a 6\n");
         assert!(!saved.changed());
+    }
+
+    #[test]
+    fn keys_are_listed_by_prefix() {
+        let state = State::parse("a@1 x\na@2 y\nb@1 z\n");
+        let listed: Vec<_> = state.with_prefix("a@").collect();
+        assert_eq!(listed, [("a@1", "x"), ("a@2", "y")]);
     }
 
     #[test]
