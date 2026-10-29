@@ -12,7 +12,7 @@ fn value(c: u8) -> Option<u32> {
 }
 
 pub(crate) fn decode(text: &[u8]) -> Option<Vec<u8>> {
-    if text.is_empty() || text.len() % 4 != 0 {
+    if text.is_empty() || !text.len().is_multiple_of(4) {
         return None;
     }
     let last = text.len() / 4 - 1;
