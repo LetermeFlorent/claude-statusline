@@ -1,7 +1,5 @@
 pub use detect::{detect, detect_light};
 pub use hosts::color::colorfgbg;
-#[cfg(not(windows))]
-pub use hosts::color::luminance_light;
 pub use source::{Decision, Source};
 
 mod cache;
@@ -22,3 +20,7 @@ pub enum Mode {
 }
 
 type Lookup<'a> = dyn Fn(&str) -> Option<Mode> + 'a;
+
+pub fn luminance_light(c: [f64; 3]) -> bool {
+    0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] > 128.0
+}
