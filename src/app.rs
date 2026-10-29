@@ -149,13 +149,14 @@ fn park_changes(path: &str, lock_path: &str, state: &State) -> bool {
 }
 
 fn save_state(state: &State) -> bool {
+    state_path().is_some_and(|path| save_state_at(&path, state))
+}
+
+fn save_state_at(path: &str, state: &State) -> bool {
     if !state.changed() {
         return false;
     }
-    let Some(path) = state_path() else {
-        return false;
-    };
-    if let Some(d) = os::parent(&path) {
+    if let Some(d) = os::parent(path) {
         if !os::exists(d) {
             os::mkdirs(d);
         }
@@ -163,9 +164,9 @@ fn save_state(state: &State) -> bool {
     let lock_path = format!("{}.lock", path);
     let claim = os::lock(&lock_path, 0);
     if let Claim::Busy = claim {
-        return park_changes(&path, &lock_path, state);
+        return park_changes(path, &lock_path, state);
     }
-    merge_state(&path, Some(state))
+    merge_state(path, Some(state))
 }
 
 fn load_config() -> Config {
@@ -368,8 +369,8 @@ fn round(input: &str, target: Option<&str>, laps: &mut Laps) -> usize {
         .unwrap_or_else(|| State::parse(""));
     laps.lap(Stage::State);
     let (out, state, _) = run_on(input, state, os::now(), laps);
-    if let Some(path) = target.filter(|_| state.changed()) {
-        os::write_atomic(path, state.text().as_bytes());
+    if let Some(path) = target {
+        save_state_at(path, &state);
     }
     laps.lap(Stage::Write);
     out.len()
@@ -377,7 +378,7 @@ fn round(input: &str, target: Option<&str>, laps: &mut Laps) -> usize {
 
 fn rounds(input: &str, target: Option<&str>, runs: usize) -> Rounds {
     if let Some(path) = target {
-        os::remove(path);
+        clear_bench(path);
     }
     let mut laps = Laps::new();
     let mut bytes = 0;
@@ -392,9 +393,21 @@ fn rounds(input: &str, target: Option<&str>, runs: usize) -> Rounds {
     }
 }
 
+fn bench_target(state: &str, pid: u32) -> String {
+    format!("{}-bench-{}", state, pid)
+}
+
+fn clear_bench(target: &str) {
+    for file in pending_changes(target) {
+        os::remove(&file);
+    }
+    os::remove(&format!("{}.lock", target));
+    os::remove(target);
+}
+
 fn bench(runs: usize) {
     let input = demo_input(os::now());
-    let target = state_path().map(|p| format!("{}.bench", p));
+    let target = state_path().map(|p| bench_target(&p, os::pid()));
     if let Some(d) = target.as_deref().and_then(os::parent) {
         if !os::exists(d) {
             os::mkdirs(d);
@@ -402,7 +415,7 @@ fn bench(runs: usize) {
     }
     let done = rounds(&input, target.as_deref(), runs);
     if let Some(path) = &target {
-        os::remove(path);
+        clear_bench(path);
     }
     let per_run_ms = |seconds: f64| format!("{:.3}", seconds * MS_PER_SECOND / runs as f64);
     let mut report = messages::BENCH_SUMMARY.with(&[
@@ -718,7 +731,59 @@ mod tests {
         round(&input, Some(&target), &mut Laps::new());
         let written = std::fs::read_to_string(&target).unwrap();
         assert!(written.contains("kept 1\n"), "{}", written);
-        assert_eq!(sandbox.files(), ["state.bench"]);
+        assert_eq!(sandbox.files(), ["state.bench", "state.bench.lock"]);
+    }
+
+    #[test]
+    fn the_bench_leaves_the_state_folder_as_it_found_it() {
+        let sandbox = Sandbox::new("bench-clean");
+        std::fs::write(
+            sandbox.path("state"),
+            "kept 1
+",
+        )
+        .unwrap();
+        let before = sandbox.files();
+        let target = bench_target(&sandbox.path("state"), 7);
+        rounds(&demo_input(os::now()), Some(&target), 2);
+        let parked = format!("{}.9{}", target, CHANGES_SUFFIX);
+        std::fs::write(
+            &parked, "kept 2
+",
+        )
+        .unwrap();
+        assert_ne!(sandbox.files(), before);
+        clear_bench(&target);
+        assert_eq!(sandbox.files(), before);
+    }
+
+    #[test]
+    fn two_bench_targets_of_different_pids_do_not_touch_each_other() {
+        let sandbox = Sandbox::new("bench-pids");
+        let state = sandbox.path("state");
+        let (first, second) = (bench_target(&state, 1), bench_target(&state, 2));
+        assert_ne!(first, second);
+        let input = demo_input(os::now());
+        rounds(&input, Some(&first), 1);
+        let kept = std::fs::read_to_string(&first).unwrap();
+        rounds(&input, Some(&second), 2);
+        clear_bench(&second);
+        assert_eq!(std::fs::read_to_string(&first).unwrap(), kept);
+        assert_eq!(sandbox.files(), ["state-bench-1", "state-bench-1.lock"]);
+    }
+
+    #[test]
+    fn a_bench_target_is_never_a_changes_file_of_the_real_state() {
+        let sandbox = Sandbox::new("bench-name");
+        let state = sandbox.path("state");
+        let target = bench_target(&state, 3);
+        std::fs::write(
+            format!("{}.4{}", target, CHANGES_SUFFIX),
+            "x 1
+",
+        )
+        .unwrap();
+        assert!(pending_changes(&state).is_empty());
     }
 
     #[test]
