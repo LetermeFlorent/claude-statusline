@@ -3,10 +3,13 @@ name = "statusline"
 version = "2.2.0"
 edition = "2021"
 rust-version = "1.89"
-description = "Fast, dependency-free status line for Claude Code: context window, 5-hour and 7-day quotas, model, RAM, disk and CPU. Windows, Linux and macOS."
+description = "Fast, self-contained status line for Claude Code: context window, 5-hour and 7-day quotas, model, RAM, disk and CPU. Windows, Linux and macOS."
 license = "MIT"
 repository = "https://github.com/LetermeFlorent/claude-statusline"
 publish = false
+
+[dependencies]
+ed25519-compact = { version = "=2.6.0", default-features = false }
 
 [profile.dev]
 panic = "abort"
