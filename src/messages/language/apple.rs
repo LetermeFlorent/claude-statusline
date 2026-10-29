@@ -1,4 +1,4 @@
-use super::language::{from_tag, Language};
+use super::{from_tag, Language};
 use alloc::string::String;
 use alloc::vec::Vec;
 
