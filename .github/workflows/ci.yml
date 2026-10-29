@@ -227,31 +227,57 @@ jobs:
       - name: installer
         run: |
           export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
-          root="$RUNNER_TEMP/i"
-          mkdir -p "$root/.claude" "$root/.claude-compte2"
-          printf '{"model": "opus", "env": {"B": "1", "A": "2"}}' > "$root/.claude/settings.json"
-          export HOME="$root"
           ext=""
-          if [ "$RUNNER_OS" = Windows ]; then
-            ext=.exe
-            export USERPROFILE="$(cygpath -w "$root")" LOCALAPPDATA="$(cygpath -w "$root/local")"
-            run_installer() { powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -Build; }
-          else
-            export XDG_STATE_HOME="$root/state"
-            run_installer() { sh install.sh; }
-          fi
+          [ "$RUNNER_OS" = Windows ] && ext=.exe
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
           line='  "statusLine": {\n    "type": "command",\n    "command": "~/.claude/bin/statusline'$ext'",\n    "refreshInterval": 3\n  }\n'
           printf '{\n  "model": "opus",\n  "env": {\n    "B": "1",\n    "A": "2"\n  },\n'"$line"'}\n' > "$RUNNER_TEMP/main.json"
           printf '{\n'"$line"'}\n' > "$RUNNER_TEMP/account.json"
-          for run in first second; do
-            echo "installer, $run run"
-            run_installer
-            test "$("$root/.claude/bin/statusline$ext" --version)" = "statusline $version"
-            diff "$RUNNER_TEMP/main.json" "$root/.claude/settings.json"
-            diff "$RUNNER_TEMP/account.json" "$root/.claude-compte2/settings.json"
-            cmp statusline.json "$root/.claude/statusline.json"
-          done
+          install_in() {
+            label="$1"; built="$2"; shift 2
+            root="$RUNNER_TEMP/i-$label"
+            mkdir -p "$root/.claude" "$root/.claude-compte2"
+            printf '{"model": "opus", "env": {"B": "1", "A": "2"}}' > "$root/.claude/settings.json"
+            export HOME="$root"
+            if [ "$RUNNER_OS" = Windows ]; then
+              export USERPROFILE="$(cygpath -w "$root")" LOCALAPPDATA="$(cygpath -w "$root/local")"
+            else
+              export XDG_STATE_HOME="$root/state"
+            fi
+            for run in first second; do
+              echo "installer $label, $run run"
+              "$@"
+              shipped=$("$root/.claude/bin/statusline$ext" --version)
+              if [ "$built" = yes ]; then
+                test "$shipped" = "statusline $version"
+                diff "$RUNNER_TEMP/main.json" "$root/.claude/settings.json"
+                diff "$RUNNER_TEMP/account.json" "$root/.claude-compte2/settings.json"
+              else
+                case "$shipped" in "statusline "[0-9]*) ;; *) echo "$shipped"; exit 1 ;; esac
+                grep -q '"statusLine"' "$root/.claude/settings.json"
+                grep -q '"statusLine"' "$root/.claude-compte2/settings.json"
+              fi
+              cmp statusline.json "$root/.claude/statusline.json"
+            done
+          }
+          if [ "$RUNNER_OS" = Windows ]; then
+            install_in powershell yes powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -Build
+            install_in pwsh yes pwsh -NoProfile -File ./install.ps1 -Build
+          else
+            install_in sh yes sh install.sh
+            nocargo=$(
+              hash -r
+              for _ in 1 2 3 4 5 6 7 8; do
+                command -v cargo > /dev/null || break
+                folder=$(dirname "$(command -v cargo)")
+                PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -vxF "$folder" | paste -sd: -)
+                hash -r
+              done
+              printf '%s' "$PATH"
+            )
+            PATH="$nocargo" command -v cargo > /dev/null && exit 1
+            install_in release no env PATH="$nocargo" sh install.sh
+          fi
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
