@@ -63,7 +63,12 @@ fn the_newest_parked_value_wins_the_merge() {
 fn parking_again_keeps_the_changes_not_merged_yet() {
     let sandbox = Sandbox::new("parked-reuse");
     let path = sandbox.path("state");
-    let own = parked(&path, std::process::id(), "q7_pct@x 10\nq5_pct@x 20\n", ago(0));
+    let own = parked(
+        &path,
+        std::process::id(),
+        "q7_pct@x 10\nq5_pct@x 20\n",
+        ago(0),
+    );
     let Claim::Held(_lock) = os::lock(&format!("{}.lock", path), 0) else {
         panic!("lock not taken");
     };

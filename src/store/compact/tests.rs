@@ -69,7 +69,13 @@ fn cache_is_reused_for_thirty_seconds_then_checked_by_stamp() {
     let moved = |f: &str| (f == "a").then_some((11, 20));
     let other = String::from("{\"autoCompactWindow\": 400000}");
     let read_new = |_: &str| Some(other.clone());
-    let fresh = window(&given, &files(), &mut state, 3000.0, &disk(&moved, &read_new));
+    let fresh = window(
+        &given,
+        &files(),
+        &mut state,
+        3000.0,
+        &disk(&moved, &read_new),
+    );
     assert_eq!(fresh, Some(400_000));
 }
 
