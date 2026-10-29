@@ -8,6 +8,7 @@ use core::ops::RangeInclusive;
 
 mod fill;
 mod fit;
+mod palette;
 mod terminal;
 
 use fit::Layout;
@@ -158,7 +159,7 @@ impl Out<'_> {
                 "\x1b[38;2;{};{};{}m",
                 c[0] as i64, c[1] as i64, c[2] as i64
             ),
-            Depth::Indexed => write!(self.line, "\x1b[38;5;{}m", terminal::indexed(c)),
+            Depth::Indexed => write!(self.line, "\x1b[38;5;{}m", palette::indexed(c)),
         };
     }
 
