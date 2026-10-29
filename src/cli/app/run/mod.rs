@@ -55,7 +55,11 @@ pub(super) fn run_on(
             model: session.model_id.as_deref(),
             size: session.ctx.size,
         };
-        compact::window(&inputs, &files, &mut state, now, &stat_file, &read_file)
+        let disk = compact::Disk {
+            stat: &stat_file,
+            read: &read_file,
+        };
+        compact::window(&inputs, &files, &mut state, now, &disk)
     } else {
         None
     };
