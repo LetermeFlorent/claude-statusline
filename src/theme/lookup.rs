@@ -1,4 +1,6 @@
-use super::{ghostty_keys, read_json, Mode};
+use super::hosts::ghostty::ghostty_keys;
+use super::hosts::read_json;
+use super::Mode;
 use crate::json::Value;
 use crate::os;
 use alloc::string::String;
