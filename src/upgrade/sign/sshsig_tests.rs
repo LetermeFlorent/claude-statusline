@@ -1,6 +1,7 @@
 use super::key::release_key;
-use super::sshsig::{verify, MAX_MESSAGE, MAX_SIGNATURE};
-use super::testkit::{armor, fixture_blob, test_key, MANIFEST, OTHER_NAMESPACE, SIGNATURE};
+use super::sshsig::{verify, MAX_MESSAGE, MAX_SIGNATURE, NAMESPACE};
+use super::testkit::{armor, fixture_blob, sign, signer_key, test_key};
+use super::testkit::{MANIFEST, OTHER_NAMESPACE, SIGNATURE};
 use ed25519_compact::{PublicKey, Signature};
 
 const RFC_KEY_1: &str = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a";
@@ -45,6 +46,8 @@ fn ed25519_accepts_the_rfc_8032_vectors() {
 fn the_ssh_keygen_fixture_verifies() {
     assert!(verify(&test_key(), MANIFEST, SIGNATURE));
     assert!(verify(&test_key(), MANIFEST, &armor(&fixture_blob())));
+    assert!(verify(&signer_key(), MANIFEST, &sign(NAMESPACE, MANIFEST)));
+    assert!(!verify(&signer_key(), MANIFEST, &sign(b"other", MANIFEST)));
 }
 
 #[test]
