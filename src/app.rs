@@ -189,16 +189,13 @@ enum Stage {
 }
 
 const STAGE_COUNT: usize = Stage::Write as usize + 1;
-const BENCH_THEME: Text = Text::new("theme", "thème");
-const BENCH_COMPACT: Text = Text::new("compact", "compact");
-const BENCH_SYSTEM: Text = Text::new("system", "système");
 const STAGE_LABELS: [(Stage, &Text); STAGE_COUNT] = [
     (Stage::State, &messages::BENCH_STATE),
     (Stage::Config, &messages::BENCH_CONFIG),
     (Stage::Session, &messages::BENCH_SESSION),
-    (Stage::Theme, &BENCH_THEME),
-    (Stage::Compact, &BENCH_COMPACT),
-    (Stage::System, &BENCH_SYSTEM),
+    (Stage::Theme, &messages::BENCH_THEME),
+    (Stage::Compact, &messages::BENCH_COMPACT),
+    (Stage::System, &messages::BENCH_SYSTEM),
     (Stage::Render, &messages::BENCH_RENDER),
     (Stage::Write, &messages::BENCH_WRITE),
 ];
@@ -326,7 +323,7 @@ fn run_on(
     );
     laps.lap(Stage::Session);
     let project = local_only(session.project.as_deref().or(session.cwd.as_deref()));
-    let light = theme::detect_light(cfg.light_override, project, &mut state);
+    let light = theme::detect_light(cfg.light_override, project, &mut state, now);
     laps.lap(Stage::Theme);
     let window = if cfg.seg_ctx {
         let env = os::env("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
@@ -350,6 +347,8 @@ fn run_on(
         ctx: session.ctx,
         window,
         quotas,
+        spend: session.spend.map(|spend| spend.quota()),
+        cache_warm: session.cache_warm,
         model: session.model,
         effort: session.effort,
         sys,
@@ -662,8 +661,8 @@ pub fn main(args: Vec<String>) -> i32 {
             let cfg = load_config();
             let mut state = load_state();
             let cwd = os::cwd();
-            let decision =
-                theme::detect(cfg.light_override, local_only(cwd.as_deref()), &mut state);
+            let project = local_only(cwd.as_deref());
+            let decision = theme::detect(cfg.light_override, project, &mut state, os::now());
             save_state(&state);
             os::out(&decision.report());
             0

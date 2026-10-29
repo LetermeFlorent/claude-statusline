@@ -1,4 +1,5 @@
 use crate::config::{Colors, Config, Metric, Rgb, HOT_SYS, WARN_SYS};
+use crate::messages;
 use crate::num;
 use alloc::format;
 use alloc::string::String;
@@ -6,10 +7,16 @@ use alloc::vec::Vec;
 use core::fmt::Write;
 use core::ops::RangeInclusive;
 
+#[cfg(test)]
+mod cache;
 pub mod demo;
 mod fill;
 mod fit;
+#[cfg(test)]
+mod french;
 mod palette;
+#[cfg(test)]
+mod spend;
 mod terminal;
 
 use fit::Layout;
@@ -44,6 +51,8 @@ pub struct Data {
     pub ctx: Ctx,
     pub window: Option<u64>,
     pub quotas: Option<Quotas>,
+    pub spend: Option<Quota>,
+    pub cache_warm: Option<bool>,
     pub model: String,
     pub effort: Option<String>,
     pub sys: Vec<SysValue>,
@@ -53,7 +62,6 @@ pub struct Data {
 const RESET: &str = "\x1b[0m";
 const MAX_TOKENS: u64 = 999_000_000_000;
 const LARGEST_TOKEN_UNIT: f64 = 1e9;
-const TOKEN_UNITS: [(f64, char); 3] = [(1e3, 'k'), (1e6, 'M'), (LARGEST_TOKEN_UNIT, 'B')];
 const MINUTE: i64 = 60;
 const HOUR: i64 = 60 * MINUTE;
 const DAY: i64 = 24 * HOUR;
@@ -121,13 +129,15 @@ impl Tone {
 enum QuotaWindow {
     FiveHour,
     SevenDay,
+    Spend,
 }
 
 impl QuotaWindow {
     fn label(self) -> &'static str {
         match self {
             QuotaWindow::FiveHour => "5h",
-            QuotaWindow::SevenDay => "7d",
+            QuotaWindow::SevenDay => messages::SEVEN_DAY_LABEL.text(),
+            QuotaWindow::Spend => messages::SPEND_LABEL.text(),
         }
     }
 }
@@ -297,11 +307,15 @@ impl Out<'_> {
             _ => pct_text(pct),
         };
         self.value(&text, pct, last);
+        if self.cfg.cold_cache_marker && data.cache_warm == Some(false) {
+            self.line.push(' ');
+            self.label(messages::COLD_CACHE_LABEL.text());
+        }
     }
 
     fn quota(&mut self, window: QuotaWindow, quota: Option<Quota>, now: f64) {
         let (palette, gradient) = match window {
-            QuotaWindow::FiveHour => (self.cfg.pal_5h, self.cfg.grad_5h),
+            QuotaWindow::FiveHour | QuotaWindow::Spend => (self.cfg.pal_5h, self.cfg.grad_5h),
             QuotaWindow::SevenDay => (self.cfg.pal_7d, self.cfg.grad_7d),
         };
         let quota = quota.unwrap_or_default();
@@ -320,7 +334,7 @@ impl Out<'_> {
         }
         if let Some(at) = quota.at {
             self.line.push(' ');
-            self.label(&reset_text(at - now, window == QuotaWindow::SevenDay));
+            self.label(&reset_text(at - now, window != QuotaWindow::FiveHour));
         } else if window == QuotaWindow::FiveHour {
             self.line.push(' ');
             self.label("--");
@@ -371,9 +385,8 @@ impl Out<'_> {
                     .filter(|(total, _)| *total > 0.0)
                     .map(|(total, available)| (total - available) / total * 100.0);
                 let text = match (pct, reading.ram) {
-                    (Some(_), Some((total, available))) => {
-                        format!("{:.1}/{:.1}G", (total - available) / GIB, total / GIB)
-                    }
+                    (Some(_), Some((total, available))) => messages::RAM_USAGE
+                        .with(&[&decimal((total - available) / GIB), &decimal(total / GIB)]),
                     _ => String::from("--%"),
                 };
                 (String::from("ram"), cfg.pal_ram, pct, text)
@@ -420,13 +433,22 @@ pub fn pct_text(p: Option<f64>) -> String {
     }
 }
 
+fn decimal(value: f64) -> String {
+    format!("{:.1}", value).replace('.', messages::DECIMAL_POINT.text())
+}
+
 pub fn tokens(count: u64) -> String {
     let count = count.min(MAX_TOKENS);
     if count < 1000 {
         return format!("{}", count);
     }
     let amount = count as f64;
-    for (size, unit) in TOKEN_UNITS {
+    let units = [
+        (1e3, "k"),
+        (1e6, "M"),
+        (LARGEST_TOKEN_UNIT, messages::UNIT_BILLION.text()),
+    ];
+    for (size, unit) in units {
         let rounded = num::round(amount / size) as u64;
         if rounded < 1000 || size == LARGEST_TOKEN_UNIT {
             return format!("{}{}", rounded, unit);
@@ -438,15 +460,17 @@ pub fn tokens(count: u64) -> String {
 pub fn reset_text(secs: f64, long: bool) -> String {
     let secs = num::floor(num::clamp(secs, 0.0, MAX_RESET_SECS)) as i64;
     if secs <= 0 {
-        return String::from("0m");
+        return messages::RESET_MINUTES.with(&["0"]);
     }
     if secs < HOUR {
-        return format!("{}m", secs / MINUTE);
+        return messages::RESET_MINUTES.with(&[&format!("{}", secs / MINUTE)]);
     }
     if long && secs >= DAY {
-        return format!("{}d{:02}h", secs / DAY, (secs % DAY) / HOUR);
+        let (days, hours) = (secs / DAY, (secs % DAY) / HOUR);
+        return messages::RESET_DAYS.with(&[&format!("{}", days), &format!("{:02}", hours)]);
     }
-    format!("{}h{:02}m", secs / HOUR, (secs % HOUR) / MINUTE)
+    let (hours, minutes) = (secs / HOUR, (secs % HOUR) / MINUTE);
+    messages::RESET_HOURS.with(&[&format!("{}", hours), &format!("{:02}", minutes)])
 }
 
 fn is_printable(c: char) -> bool {
@@ -483,6 +507,11 @@ pub fn render(cfg: &Config, col: &Colors, data: &Data, now: f64, term: &Terminal
     }
 }
 
+fn has_windows(data: &Data) -> bool {
+    data.quotas
+        .is_some_and(|q| q.five_hour.is_some() || q.seven_day.is_some())
+}
+
 fn draw(cfg: &Config, col: &Colors, data: &Data, now: f64, layout: Layout, depth: Depth) -> String {
     let mut out = Out {
         line: String::with_capacity(LINE_CAPACITY),
@@ -506,6 +535,10 @@ fn draw(cfg: &Config, col: &Colors, data: &Data, now: f64, layout: Layout, depth
             out.quota(QuotaWindow::SevenDay, quotas.seven_day, now);
         }
     }
+    if let Some(spend) = data.spend.filter(|_| cfg.seg_spend && !has_windows(data)) {
+        out.sep(&mut first);
+        out.quota(QuotaWindow::Spend, Some(spend), now);
+    }
     if cfg.seg_model {
         out.sep(&mut first);
         out.model(data);
@@ -519,7 +552,7 @@ fn draw(cfg: &Config, col: &Colors, data: &Data, now: f64, layout: Layout, depth
         }
         if data.updating {
             out.sep(&mut first);
-            out.label("update");
+            out.label(messages::UPDATE_LABEL.text());
         }
     }
     out.line.push_str(RESET);
@@ -599,6 +632,8 @@ mod tests {
                     at: Some(NOW + 200_000.0),
                 }),
             }),
+            spend: None,
+            cache_warm: None,
             model: String::from("Opus 4"),
             effort: Some(String::from("high")),
             sys: alloc::vec![

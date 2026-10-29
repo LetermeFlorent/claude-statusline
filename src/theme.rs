@@ -9,6 +9,7 @@ use core::cmp::Reverse;
 use places::{var, Places};
 pub use source::{Decision, Source};
 
+mod cache;
 #[cfg(test)]
 mod fixtures;
 mod lookup;
@@ -47,7 +48,6 @@ const WT_LIGHT: [&str; 3] = ["One Half Light", "Solarized Light", "Tango Light"]
 const WT_DEFAULT_SCHEME: &str = "Campbell";
 const TERMINAL_BACKGROUND: &str = "terminal.background";
 const VSCODE_WORKSPACE: [&str; 2] = [".vscode", "settings.json"];
-const LEGACY_BACKGROUND_KEY: &str = "bg_at";
 
 fn host() -> Host {
     match os::env("TERM_PROGRAM").as_deref() {
@@ -370,12 +370,18 @@ pub fn detect_light(
     light_override: Option<bool>,
     project: Option<&str>,
     state: &mut State,
+    now: f64,
 ) -> bool {
-    detect(light_override, project, state).light
+    detect(light_override, project, state, now).light
 }
 
-pub fn detect(light_override: Option<bool>, project: Option<&str>, state: &mut State) -> Decision {
-    state.remove(LEGACY_BACKGROUND_KEY);
+pub fn detect(
+    light_override: Option<bool>,
+    project: Option<&str>,
+    state: &mut State,
+    now: f64,
+) -> Decision {
+    cache::drop_legacy(state);
     let background = os::env("STATUSLINE_BG");
     let colorfgbg = os::env("COLORFGBG");
     let chosen = Decision::chosen(background.as_deref(), light_override, colorfgbg.as_deref());
@@ -397,35 +403,17 @@ pub fn detect(light_override: Option<bool>, project: Option<&str>, state: &mut S
         workspace: workspace.as_deref(),
     };
     let stamp = host_stamp(terminal, &files, &context);
-    if state.get("bg_stamp") == Some(stamp.as_str()) {
-        let source = state
-            .get("bg_source")
-            .map_or(Source::Saved, Source::from_name);
-        match state.get("bg_host") {
-            Some("light") => {
-                return Decision {
-                    light: true,
-                    source,
-                }
-            }
-            Some("dark") => {
-                return Decision {
-                    light: false,
-                    source,
-                }
-            }
-            _ => {}
-        }
+    if let Some(decision) = cache::recall(state, &stamp, now) {
+        return decision;
     }
     let (light, source) = match host_mode(terminal, &files, &context) {
         Mode::Light => (true, host_source(terminal)),
         Mode::Dark => (false, host_source(terminal)),
         Mode::System => (os::os_theme().unwrap_or(false), Source::System),
     };
-    state.set("bg_host", if light { "light" } else { "dark" });
-    state.set("bg_source", source.name());
-    state.set("bg_stamp", &stamp);
-    Decision { light, source }
+    let decision = Decision { light, source };
+    cache::remember(state, &stamp, decision, now);
+    decision
 }
 
 #[cfg(test)]

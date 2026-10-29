@@ -1,4 +1,6 @@
 use alloc::string::String;
+#[cfg(test)]
+use core::cell::Cell;
 use core::sync::atomic::{AtomicU8, Ordering};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -14,6 +16,11 @@ const ENGLISH: u8 = 1;
 const FRENCH: u8 = 2;
 
 static CHOSEN: AtomicU8 = AtomicU8::new(UNDECIDED);
+
+#[cfg(test)]
+std::thread_local! {
+    static TEST_LANGUAGE: Cell<Language> = const { Cell::new(Language::English) };
+}
 
 impl Language {
     pub fn code(self) -> &'static str {
@@ -55,7 +62,28 @@ fn system() -> Option<Language> {
     super::locale::from_locale(&crate::os::env).or_else(super::apple::preferred)
 }
 
+#[cfg(test)]
+fn test_language() -> Option<Language> {
+    Some(TEST_LANGUAGE.get())
+}
+
+#[cfg(not(test))]
+fn test_language() -> Option<Language> {
+    None
+}
+
+#[cfg(test)]
+pub fn with_test_language<R>(language: Language, run: impl FnOnce() -> R) -> R {
+    let before = TEST_LANGUAGE.replace(language);
+    let result = run();
+    TEST_LANGUAGE.set(before);
+    result
+}
+
 pub fn current() -> Language {
+    if let Some(language) = test_language() {
+        return language;
+    }
     match CHOSEN.load(Ordering::Relaxed) {
         ENGLISH => Language::English,
         FRENCH => Language::French,

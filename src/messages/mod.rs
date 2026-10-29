@@ -24,6 +24,11 @@ pub fn language_code() -> &'static str {
     language::current().code()
 }
 
+#[cfg(test)]
+pub fn in_french<R>(run: impl FnOnce() -> R) -> R {
+    language::with_test_language(Language::French, run)
+}
+
 pub struct Text {
     english: &'static str,
     french: &'static str,

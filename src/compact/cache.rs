@@ -1,8 +1,8 @@
 use super::settings::Setting;
+use crate::slots;
 use crate::state::State;
 use alloc::format;
 use alloc::string::String;
-use alloc::vec::Vec;
 
 const PREFIX: &str = "compact@";
 const SLOTS: usize = 4;
@@ -75,18 +75,7 @@ pub fn drop_legacy(state: &mut State) {
 }
 
 fn prune(state: &mut State) {
-    let mut kept: Vec<(i64, String)> = Vec::new();
-    let mut broken: Vec<String> = Vec::new();
-    for (key, value) in state.with_prefix(PREFIX) {
-        match Entry::decode(value) {
-            Some(entry) => kept.push((entry.at, String::from(key))),
-            None => broken.push(String::from(key)),
-        }
-    }
-    kept.sort();
-    let surplus = kept.len().saturating_sub(SLOTS);
-    let evicted = kept.into_iter().take(surplus).map(|(_, key)| key);
-    for key in broken.into_iter().chain(evicted) {
-        state.remove(&key);
-    }
+    slots::prune(state, PREFIX, SLOTS, &|value| {
+        Entry::decode(value).map(|entry| entry.at)
+    });
 }

@@ -7,8 +7,21 @@ pub const BENCH_SUMMARY: Text = Text::new(
 pub const BENCH_STATE: Text = Text::new("state", "état");
 pub const BENCH_CONFIG: Text = Text::new("config", "config");
 pub const BENCH_SESSION: Text = Text::new("session", "session");
+pub const BENCH_THEME: Text = Text::new("theme", "thème");
+pub const BENCH_COMPACT: Text = Text::new("compact", "compact");
+pub const BENCH_SYSTEM: Text = Text::new("system", "système");
 pub const BENCH_RENDER: Text = Text::new("render", "rendu");
 pub const BENCH_WRITE: Text = Text::new("write", "écriture");
+pub const SEVEN_DAY_LABEL: Text = Text::new("7d", "7j");
+pub const SPEND_LABEL: Text = Text::new("spend", "dépense");
+pub const COLD_CACHE_LABEL: Text = Text::new("cold", "froid");
+pub const UPDATE_LABEL: Text = Text::new("update", "maj");
+pub const RESET_DAYS: Text = Text::new("{}d{}h", "{}j{}h");
+pub const RESET_HOURS: Text = Text::new("{}h{}m", "{}h{}min");
+pub const RESET_MINUTES: Text = Text::new("{}m", "{}min");
+pub const RAM_USAGE: Text = Text::new("{}/{}G", "{}/{}Go");
+pub const DECIMAL_POINT: Text = Text::new(".", ",");
+pub const UNIT_BILLION: Text = Text::new("B", "Md");
 pub const UNKNOWN_ARGUMENT: Text =
     Text::new("unknown argument: {}\n{}", "argument inconnu : {}\n{}");
 pub const BAD_BENCH_COUNT: Text = Text::new(
@@ -96,13 +109,26 @@ pub const WRONG_VERSION: Text = Text::new(
 );
 
 #[cfg(test)]
-pub const ALL: [&Text; 35] = [
+pub const ALL: [&Text; 48] = [
     &BENCH_SUMMARY,
     &BENCH_STATE,
     &BENCH_CONFIG,
     &BENCH_SESSION,
+    &BENCH_THEME,
+    &BENCH_COMPACT,
+    &BENCH_SYSTEM,
     &BENCH_RENDER,
     &BENCH_WRITE,
+    &SEVEN_DAY_LABEL,
+    &SPEND_LABEL,
+    &COLD_CACHE_LABEL,
+    &UPDATE_LABEL,
+    &RESET_DAYS,
+    &RESET_HOURS,
+    &RESET_MINUTES,
+    &RAM_USAGE,
+    &DECIMAL_POINT,
+    &UNIT_BILLION,
     &UNKNOWN_ARGUMENT,
     &BAD_BENCH_COUNT,
     &SETTINGS_UNREADABLE,
