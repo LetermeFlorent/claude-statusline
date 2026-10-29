@@ -165,7 +165,7 @@ const VERBATIM_UNC_NAME: &str = "UNC\\";
 const DRIVE_ROOT_INDEX: usize = 2;
 const DRIVE_REMOTE: u32 = 4;
 const MAX_BUFFER_UNITS: u32 = 1 << 20;
-const READ_CHUNK_BYTES: usize = 64 << 10;
+const READ_GROWTH_BYTES: usize = 4 << 10;
 const MAX_WRITE_BYTES: usize = 1 << 30;
 const CONSOLE_CHUNK_UNITS: usize = 1024;
 const STDIN_SIZE_HINT: usize = 4096;
@@ -455,15 +455,20 @@ fn open_existing(path: &str, access: u32, flags: u32) -> Handle {
 }
 
 fn read_all(file: Handle, hint: usize, limit: usize) -> Vec<u8> {
-    let mut out: Vec<u8> = Vec::with_capacity(hint + 1);
-    let mut chunk = vec![0u8; READ_CHUNK_BYTES];
+    let mut out: Vec<u8> = Vec::with_capacity(hint.saturating_add(1));
     while out.len() <= limit {
+        if out.len() == out.capacity() {
+            out.reserve(READ_GROWTH_BYTES);
+        }
+        let room = (out.capacity() - out.len())
+            .min((limit - out.len()).saturating_add(1))
+            .min(u32::MAX as usize);
         let mut got = 0u32;
         let ok = unsafe {
             ReadFile(
                 file,
-                chunk.as_mut_ptr(),
-                chunk.len() as u32,
+                out.as_mut_ptr().add(out.len()),
+                room as u32,
                 &mut got,
                 null_mut(),
             )
@@ -471,7 +476,7 @@ fn read_all(file: Handle, hint: usize, limit: usize) -> Vec<u8> {
         if ok == 0 || got == 0 {
             break;
         }
-        out.extend_from_slice(&chunk[..got as usize]);
+        unsafe { out.set_len(out.len() + got as usize) };
     }
     out
 }
