@@ -101,10 +101,6 @@ extern "system" {
         returned: *mut u32,
         overlapped: *mut c_void,
     ) -> i32;
-}
-
-#[link(name = "advapi32", kind = "raw-dylib")]
-extern "system" {
     fn RegGetValueW(
         key: isize,
         subkey: *const u16,
