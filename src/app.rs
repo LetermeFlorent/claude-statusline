@@ -36,6 +36,8 @@ const TEMPLATE: &str = "{
 
 const MS_PER_SECOND: f64 = 1000.0;
 const STATE_LOCK_WAIT_MS: u32 = 500;
+const STATE_READ_TRIES: u32 = 4;
+const STATE_READ_RETRY_MS: u32 = 10;
 const DEFAULT_BENCH_RUNS: usize = 200;
 
 fn config_path() -> Option<String> {
@@ -56,11 +58,17 @@ fn state_path() -> Option<String> {
 }
 
 fn read_state(path: &str) -> Option<State> {
-    match os::read_checked(path, os::MAX_READ_BYTES) {
-        Contents::Bytes(data) => Some(State::parse(&String::from_utf8_lossy(&data))),
-        Contents::Missing => Some(State::parse("")),
-        Contents::Unreadable => None,
+    for attempt in 0..STATE_READ_TRIES {
+        if attempt > 0 {
+            os::sleep(STATE_READ_RETRY_MS);
+        }
+        match os::read_checked(path, os::MAX_READ_BYTES) {
+            Contents::Bytes(data) => return Some(State::parse(&String::from_utf8_lossy(&data))),
+            Contents::Missing => return Some(State::parse("")),
+            Contents::Unreadable => {}
+        }
     }
+    None
 }
 
 fn load_state() -> State {
@@ -599,6 +607,30 @@ mod tests {
         assert!(backup.starts_with("settings.json.bak-"), "{}", backup);
         let backup_told = messages::BACKUP.with(&[&sandbox.path(backup)]);
         assert_eq!(told, backup_told + &messages::REMOVED.with(&[&path]));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_state_file_held_a_moment_without_read_sharing_is_still_read() {
+        use std::os::windows::fs::OpenOptionsExt;
+        const SHARE_WRITE_AND_DELETE: u32 = 6;
+        const HELD_MS: u64 = 5;
+        let sandbox = Sandbox::new("held-state");
+        let path = sandbox.path("state");
+        std::fs::write(&path, "q5_pct@a 40\n").unwrap();
+        let holder = std::fs::OpenOptions::new()
+            .write(true)
+            .share_mode(SHARE_WRITE_AND_DELETE)
+            .open(&path)
+            .unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(HELD_MS));
+            drop(holder);
+        });
+        let state = read_state(&path);
+        release.join().unwrap();
+        let pct = state.as_ref().and_then(|s| s.get("q5_pct@a"));
+        assert_eq!(pct, Some("40"));
     }
 
     #[test]
