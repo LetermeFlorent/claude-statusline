@@ -19,6 +19,8 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
+const FAILED_EXIT: i32 = 1;
+const USAGE_EXIT: i32 = 2;
 const TEMPLATE: &str = "{
   \"bar_width\": 8,
   \"bold\": true,
@@ -395,8 +397,8 @@ fn show_demo(word: Option<&str>) -> i32 {
         None => None,
         Some((_, Some(level))) => Some(level),
         Some((word, None)) => {
-            os::err(&messages::UNKNOWN_ARGUMENT.with(&[word, messages::HELP.text()]));
-            return 2;
+            let message = messages::UNKNOWN_ARGUMENT.with(&[word, messages::HELP.text()]);
+            return os::fail(&message, USAGE_EXIT);
         }
     };
     let now = os::now();
@@ -500,11 +502,6 @@ fn settings_path() -> Option<String> {
     os::claude_dir().map(|d| os::join(&d, &["settings.json"]))
 }
 
-fn fail(msg: &str) -> i32 {
-    os::err(msg);
-    1
-}
-
 fn store(path: &str, text: &str) -> Result<(), String> {
     if os::write_atomic(path, text.as_bytes()) {
         Ok(())
@@ -597,15 +594,15 @@ fn remove_line(path: &str) -> Result<String, String> {
 
 fn install() -> i32 {
     let Some(path) = settings_path() else {
-        return fail(messages::NO_HOME.text());
+        return os::fail(messages::NO_HOME.text(), FAILED_EXIT);
     };
     let Some(exe) = os::exe() else {
-        return fail(messages::NO_EXE.text());
+        return os::fail(messages::NO_EXE.text(), FAILED_EXIT);
     };
     let command = portable::command(&exe);
     match add_line(&path, &command) {
         Ok(told) => os::out(&told),
-        Err(message) => return fail(&message),
+        Err(message) => return os::fail(&message, FAILED_EXIT),
     }
     repair_globals(&command);
     let conf = config_path();
@@ -623,14 +620,14 @@ fn install() -> i32 {
 
 fn uninstall() -> i32 {
     let Some(path) = settings_path() else {
-        return fail(messages::NO_HOME.text());
+        return os::fail(messages::NO_HOME.text(), FAILED_EXIT);
     };
     match remove_line(&path) {
         Ok(told) => {
             os::out(&told);
             0
         }
-        Err(message) => fail(&message),
+        Err(message) => os::fail(&message, FAILED_EXIT),
     }
 }
 
@@ -651,8 +648,8 @@ pub fn main(args: Vec<String>) -> i32 {
         Some("--bench") => {
             let count = args.get(2).map(String::as_str);
             let Some(runs) = bench_runs(count) else {
-                os::err(&messages::BAD_BENCH_COUNT.with(&[count.unwrap_or_default()]));
-                return 2;
+                let message = messages::BAD_BENCH_COUNT.with(&[count.unwrap_or_default()]);
+                return os::fail(&message, USAGE_EXIT);
             };
             bench(runs);
             0
@@ -684,8 +681,8 @@ pub fn main(args: Vec<String>) -> i32 {
             0
         }
         Some(other) => {
-            os::err(&messages::UNKNOWN_ARGUMENT.with(&[other, messages::HELP.text()]));
-            2
+            let message = messages::UNKNOWN_ARGUMENT.with(&[other, messages::HELP.text()]);
+            os::fail(&message, USAGE_EXIT)
         }
     }
 }
