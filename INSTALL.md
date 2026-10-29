@@ -85,6 +85,14 @@ These are the settings most often changed:
 
 An empty `metrics` list, or one with no known name, falls back to the three metrics: to hide them all, use `"enabled": false`. To use another settings file, set `STATUSLINE_CONFIG` to its path. The README lists every key with its default value.
 
+Some terminals, mostly CJK locales and a few fonts, draw ambiguous-width characters such as `■` and `▪` two columns wide, which pushes the line out of line. This ASCII glyph set is one column wide everywhere, ready to copy into `~/.claude/statusline.json`:
+
+```json
+{ "glyphs": { "filled": "#", "empty": "-", "half": "+" } }
+```
+
+The marker before `ctx` is already plain ASCII (`~`), so it needs no change.
+
 A mistake in the file does not show on the bar: invalid JSON brings every setting back to its default, and a misspelt key or a wrong value is skipped. After an edit, `statusline --check` lists each mistake with its line and column.
 
 ## Updating
