@@ -530,6 +530,9 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           path: dist
@@ -544,5 +547,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           ls -l dist
-          notes="Status line binaries for Linux, macOS and Windows. SHA256SUMS holds their SHA-256 checksums, and each file carries a build provenance attestation: gh attestation verify <file> --repo $GITHUB_REPOSITORY"
-          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "$notes"
+          bash .github/release-notes.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
