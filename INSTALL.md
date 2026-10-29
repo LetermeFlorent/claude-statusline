@@ -9,7 +9,7 @@ You need Claude Code installed. The rest depends on the system:
 - Windows: nothing else. The script downloads the released binary for Windows 10 or later, x86_64 or arm64 depending on the processor. Rust is only needed to build it yourself with `-Build`.
 - Linux and macOS: `install.sh` compiles the sources when Rust is installed (https://rustup.rs). Without Rust, it downloads the released binary with `curl`, for Linux x86_64 or arm64 and for macOS on Apple silicon or Intel.
 
-The bar sends 24-bit colors and draws its squares with Unicode characters (`■`, `▪`). Windows Terminal, the VS Code terminal, iTerm2, GNOME Terminal, Konsole, Ghostty and Zed show them with no setup. A terminal limited to 256 colors shows approximate or wrong hues.
+The bar sends 24-bit colors when `COLORTERM` is `truecolor` or `24bit` (Windows consoles and Windows Terminal always do), and falls back to 256 colors otherwise. It draws its squares with Unicode characters (`■`, `▪`). Windows Terminal, the VS Code terminal, iTerm2, GNOME Terminal, Konsole, Ghostty and Zed show them with no setup.
 
 ## Installing on Windows
 
@@ -125,7 +125,7 @@ If the `5h` and `7d` segments do not appear, Claude Code has not sent the quotas
 
 Disk and CPU show `--%` on the first refresh, until there are two readings to compare, and after more than a minute without a refresh. They stay at `--%` on systems other than Windows, Linux and macOS. On Linux the disk also stays at `--%` when `disk_path` sits on a filesystem with no device behind it, such as ZFS, `/mnt/c` under WSL or the root of a container, on a machine with several disks: point `disk_path` to a folder on an ordinary disk partition, or remove `io` from `system.metrics`.
 
-If the colors are wrong or the squares turn into question marks, the terminal does not handle 24-bit colors or the font lacks the `■` and `▪` characters. These characters can be changed in `glyphs`.
+If the colors are wrong or the squares turn into question marks, the terminal does not handle 256 colors or the font lacks the `■` and `▪` characters. These characters can be changed in `glyphs`.
 
 If the bar picks a dark palette on a light terminal under WSL, it most likely found no Windows profile, neither in `PATH` nor through the Windows Terminal package in `/mnt/c/Users`. Set `STATUSLINE_BG=light` in the shell profile, or `terminal_background` in `statusline.json`.
 

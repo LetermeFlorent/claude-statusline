@@ -11,7 +11,7 @@ mod fit;
 mod terminal;
 
 use fit::Layout;
-pub use terminal::Terminal;
+pub use terminal::{Depth, Terminal};
 
 #[derive(Clone, Copy, Default, Debug, PartialEq)]
 pub struct Quota {
@@ -147,15 +147,19 @@ struct Out<'a> {
     cfg: &'a Config,
     col: &'a Colors,
     layout: Layout,
+    depth: Depth,
 }
 
 impl Out<'_> {
     fn fg(&mut self, c: Rgb) {
-        let _ = write!(
-            self.line,
-            "\x1b[38;2;{};{};{}m",
-            c[0] as i64, c[1] as i64, c[2] as i64
-        );
+        let _ = match self.depth {
+            Depth::TrueColor => write!(
+                self.line,
+                "\x1b[38;2;{};{};{}m",
+                c[0] as i64, c[1] as i64, c[2] as i64
+            ),
+            Depth::Indexed => write!(self.line, "\x1b[38;5;{}m", terminal::indexed(c)),
+        };
     }
 
     fn bold(&mut self) {
@@ -468,7 +472,7 @@ pub fn label_text(text: &str) -> String {
 pub fn render(cfg: &Config, col: &Colors, data: &Data, now: f64, term: &Terminal) -> String {
     let mut layout = Layout::full(cfg.width);
     loop {
-        let text = draw(cfg, col, data, now, layout);
+        let text = draw(cfg, col, data, now, layout, term.depth);
         let fits = term
             .columns
             .is_none_or(|columns| fit::widest(&text) <= columns);
@@ -479,12 +483,13 @@ pub fn render(cfg: &Config, col: &Colors, data: &Data, now: f64, term: &Terminal
     }
 }
 
-fn draw(cfg: &Config, col: &Colors, data: &Data, now: f64, layout: Layout) -> String {
+fn draw(cfg: &Config, col: &Colors, data: &Data, now: f64, layout: Layout, depth: Depth) -> String {
     let mut out = Out {
         line: String::with_capacity(LINE_CAPACITY),
         cfg,
         col,
         layout,
+        depth,
     };
     let mut first = true;
     if cfg.seg_ctx {
@@ -632,6 +637,7 @@ mod tests {
         let cfg = Config::parse(config);
         let term = Terminal {
             columns: Some(columns),
+            depth: Depth::TrueColor,
         };
         readable(&render(&cfg, &cfg.colors(false), &sample(), NOW, &term))
     }
@@ -876,6 +882,27 @@ mod tests {
         let text = glyphs(&fitted(80, Some("{\"bar_width\": 4}")));
         assert!(text.contains("1h00") && text.contains(":high"), "{}", text);
         assert!(fit::widest(&text) <= 80, "{}", text);
+    }
+
+    fn raw(depth: Depth) -> String {
+        let cfg = Config::parse(None);
+        let term = Terminal {
+            columns: None,
+            depth,
+        };
+        render(&cfg, &cfg.colors(false), &sample(), NOW, &term)
+    }
+
+    #[test]
+    fn without_truecolor_only_256_color_sequences_are_sent() {
+        let indexed = raw(Depth::Indexed);
+        assert!(!indexed.contains("38;2;"), "{:?}", indexed);
+        assert!(indexed.contains("[38;5;240m"), "{:?}", indexed);
+        let colors = indexed.matches("38;5;").count();
+        assert_eq!(colors, indexed.matches("[38;").count());
+        let true_color = raw(Depth::TrueColor);
+        assert!(!true_color.contains("38;5;"), "{:?}", true_color);
+        assert!(true_color.contains("38;2;85;89;95"), "{:?}", true_color);
     }
 
     #[test]

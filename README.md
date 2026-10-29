@@ -215,6 +215,7 @@ The program reads the following variables, all of them optional:
 | `CLAUDE_CONFIG_DIR` | account folder: settings, auto-compact threshold, quota keys, target of `--install` |
 | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | auto-compact threshold |
 | `COLORFGBG` | terminal colors, for the background |
+| `COLORTERM` | `truecolor` or `24bit` keeps 24-bit colors; anything else, or nothing, switches to 256 colors |
 | `COLUMNS` | width of the terminal: the line drops details to fit in it |
 | `NO_COLOR`, `TERM` | plain text, when `NO_COLOR` is set or `TERM` is `dumb` |
 | `TERM_PROGRAM`, `VSCODE_INJECTION`, `VSCODE_PID`, `WT_SESSION` | host terminal detection |
@@ -266,4 +267,4 @@ On Linux, `sha256sum -c SHA256SUMS --ignore-missing` also compares the binaries 
 
 The Linux arm64 binary always loads at the same address, because Rust cannot yet build a static position-independent executable for the `aarch64-unknown-linux-musl` target. On other Unix systems (BSD, for example) the bar works without machine metrics, system theme or automatic updates: `--%` everywhere on the second line, and a dark background unless one is set. Automatic updates need `curl`, which ships with macOS and with Windows 10 since version 1803, and has to be installed on some Linux systems.
 
-Colors are sent as 24-bit, with no fallback to 256 colors. When `NO_COLOR` is set or `TERM` is `dumb`, the bar comes out with no escape sequence at all, so without colors or text styles, and with the same glyphs and values. Background detection through the host terminal covers VS Code and its forks, Windows Terminal, Zed and Ghostty. Other terminals go through `COLORFGBG` or the system theme, and `STATUSLINE_BG` can force the choice.
+Colors are sent as 24-bit when `COLORTERM` is `truecolor` or `24bit`, and always on Windows consoles and Windows Terminal. Anywhere else the bar falls back to the 256-color palette, picking the nearest color of the 6x6x6 cube or of the gray ramp, so the hues stay close and no 24-bit sequence reaches a terminal that would misread it. When `NO_COLOR` is set or `TERM` is `dumb`, the bar comes out with no escape sequence at all, so without colors or text styles, and with the same glyphs and values. Background detection through the host terminal covers VS Code and its forks, Windows Terminal, Zed and Ghostty. Other terminals go through `COLORFGBG` or the system theme, and `STATUSLINE_BG` can force the choice.
