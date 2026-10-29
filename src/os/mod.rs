@@ -260,6 +260,22 @@ mod tests {
     }
 
     #[test]
+    fn a_held_lock_turns_others_away_within_the_wait() {
+        const WAIT_MS: u32 = 50;
+        const SURELY_WAITED_MS: u64 = 25;
+        const BOUND_MS: u64 = 1000;
+        let sandbox = Sandbox::new("lock");
+        let path = sandbox.path("state.lock");
+        let held = lock(&path, 0).unwrap();
+        let start = std::time::Instant::now();
+        assert!(lock(&path, WAIT_MS).is_none());
+        let waited = start.elapsed().as_millis() as u64;
+        assert!((SURELY_WAITED_MS..BOUND_MS).contains(&waited), "{}", waited);
+        drop(held);
+        assert!(lock(&path, 0).is_some());
+    }
+
+    #[test]
     #[cfg_attr(windows, ignore = "creating a symbolic link needs an elevated token")]
     fn atomic_write_keeps_a_symbolic_link() {
         let sandbox = Sandbox::new("link");

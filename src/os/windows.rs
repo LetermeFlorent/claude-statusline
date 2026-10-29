@@ -55,6 +55,25 @@ extern "system" {
     fn MoveFileExW(from: *const u16, to: *const u16, flags: u32) -> i32;
     fn DeleteFileW(name: *const u16) -> i32;
     fn SetFileInformationByHandle(file: Handle, class: u32, info: *const c_void, size: u32) -> i32;
+    fn CreateEventW(security: *mut c_void, manual: i32, initial: i32, name: *const u16) -> Handle;
+    fn LockFileEx(
+        file: Handle,
+        flags: u32,
+        reserved: u32,
+        low: u32,
+        high: u32,
+        overlapped: *mut Overlapped,
+    ) -> i32;
+    fn UnlockFile(file: Handle, offset: u32, offset_high: u32, low: u32, high: u32) -> i32;
+    fn GetOverlappedResultEx(
+        file: Handle,
+        overlapped: *mut Overlapped,
+        moved: *mut u32,
+        ms: u32,
+        alertable: i32,
+    ) -> i32;
+    fn CancelIoEx(file: Handle, overlapped: *mut Overlapped) -> i32;
+    fn GetLastError() -> u32;
     fn CreateDirectoryW(name: *const u16, security: *mut c_void) -> i32;
     fn FindFirstFileW(pattern: *const u16, data: *mut FindData) -> Handle;
     fn FindNextFileW(search: Handle, data: *mut FindData) -> i32;
@@ -122,10 +141,17 @@ const FILE_TYPE_DISK: u32 = 1;
 const FILE_TYPE_CHAR: u32 = 2;
 const MOVEFILE_REPLACE_EXISTING: u32 = 1;
 const DELETE: u32 = 0x0001_0000;
+const OPEN_ALWAYS: u32 = 4;
+const FILE_FLAG_OVERLAPPED: u32 = 0x4000_0000;
 const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 const FILE_RENAME_INFO_EX: u32 = 22;
 const FILE_RENAME_FLAG_REPLACE_IF_EXISTS: u32 = 1;
 const FILE_RENAME_FLAG_POSIX_SEMANTICS: u32 = 2;
+const LOCKFILE_EXCLUSIVE_LOCK: u32 = 2;
+const LOCKED_BYTES: u32 = 1;
+const ERROR_IO_PENDING: u32 = 997;
+const INFINITE: u32 = u32::MAX;
+const MANUAL_RESET: i32 = 1;
 const RENAME_TRIES: u32 = 3;
 const RENAME_RETRY_MS: u32 = 5;
 const STD_INPUT_HANDLE: u32 = -10i32 as u32;
@@ -152,6 +178,16 @@ const CONSOLE_CHUNK_UNITS: usize = 1024;
 const STDIN_SIZE_HINT: usize = 4096;
 const UNIX_EPOCH_TICKS: u64 = 116_444_736_000_000_000;
 const TICKS_PER_SECOND: i64 = 10_000_000;
+
+#[repr(C)]
+#[derive(Default)]
+struct Overlapped {
+    internal: usize,
+    internal_high: usize,
+    offset: u32,
+    offset_high: u32,
+    event: Handle,
+}
 
 #[repr(C)]
 struct RenameInfo {
@@ -496,6 +532,72 @@ fn rename_info(wide_to: &[u16]) -> Vec<u64> {
 
 pub fn create_private(path: &str, data: &[u8]) -> bool {
     write_with(path, SHARE_NONE, CREATE_NEW, data)
+}
+
+pub struct Lock(Handle);
+
+impl Drop for Lock {
+    fn drop(&mut self) {
+        unsafe {
+            UnlockFile(self.0, 0, 0, LOCKED_BYTES, 0);
+            CloseHandle(self.0);
+        }
+    }
+}
+
+pub fn lock(path: &str, wait_ms: u32) -> Option<Lock> {
+    let wide_path = wide_path(path);
+    let file = unsafe {
+        CreateFileW(
+            wide_path.as_ptr(),
+            GENERIC_READ | GENERIC_WRITE,
+            SHARE_ALL,
+            null_mut(),
+            OPEN_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
+            0,
+        )
+    };
+    if file == INVALID {
+        return None;
+    }
+    let held = Lock(file);
+    let event = unsafe { CreateEventW(null_mut(), MANUAL_RESET, 0, core::ptr::null()) };
+    if event == 0 {
+        return None;
+    }
+    let taken = wait_for_lock(file, event, wait_ms);
+    unsafe { CloseHandle(event) };
+    taken.then_some(held)
+}
+
+fn wait_for_lock(file: Handle, event: Handle, wait_ms: u32) -> bool {
+    let mut overlapped = Overlapped {
+        event,
+        ..Overlapped::default()
+    };
+    let mut moved = 0u32;
+    unsafe {
+        if LockFileEx(
+            file,
+            LOCKFILE_EXCLUSIVE_LOCK,
+            0,
+            LOCKED_BYTES,
+            0,
+            &mut overlapped,
+        ) != 0
+        {
+            return true;
+        }
+        if GetLastError() != ERROR_IO_PENDING {
+            return false;
+        }
+        if GetOverlappedResultEx(file, &mut overlapped, &mut moved, wait_ms, 0) != 0 {
+            return true;
+        }
+        CancelIoEx(file, &mut overlapped);
+        GetOverlappedResultEx(file, &mut overlapped, &mut moved, INFINITE, 0) != 0
+    }
 }
 
 pub fn make_executable(path: &str) -> bool {

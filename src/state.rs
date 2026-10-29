@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 
 pub struct State {
     map: Vec<(String, String)>,
-    loaded: String,
+    loaded: Vec<(String, String)>,
 }
 
 const FRESH: f64 = 600.0;
@@ -55,6 +55,10 @@ fn quota_as_of(quota: Quota, period: f64, now: f64) -> Quota {
     }
 }
 
+fn value_in<'a>(map: &'a [(String, String)], key: &str) -> Option<&'a str> {
+    map.iter().find(|(x, _)| x == key).map(|(_, v)| v.as_str())
+}
+
 fn percent(previous: Activity, reading: Activity) -> Option<f64> {
     let elapsed = reading.clock.wrapping_sub(previous.clock);
     let busy = reading.busy.wrapping_sub(previous.busy);
@@ -69,7 +73,7 @@ impl State {
     pub fn parse(text: &str) -> State {
         let mut state = State {
             map: Vec::new(),
-            loaded: String::new(),
+            loaded: Vec::new(),
         };
         for line in text.split('\n') {
             let line = line.strip_suffix('\r').unwrap_or(line);
@@ -77,15 +81,12 @@ impl State {
                 state.set(&line[..i], &line[i + 1..]);
             }
         }
-        state.loaded = state.text();
+        state.loaded = state.map.clone();
         state
     }
 
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.map
-            .iter()
-            .find(|(x, _)| x == key)
-            .map(|(_, v)| v.as_str())
+        value_in(&self.map, key)
     }
 
     pub fn num(&self, key: &str) -> Option<f64> {
@@ -122,7 +123,21 @@ impl State {
     }
 
     pub fn changed(&self) -> bool {
-        self.text() != self.loaded
+        self.map != self.loaded
+    }
+
+    pub fn rebased_on(&self, mut latest: State) -> State {
+        for (key, value) in &self.map {
+            if value_in(&self.loaded, key) != Some(value.as_str()) {
+                latest.set(key, value);
+            }
+        }
+        for (key, _) in &self.loaded {
+            if self.get(key).is_none() {
+                latest.remove(key);
+            }
+        }
+        latest
     }
 
     pub fn quotas(
@@ -244,6 +259,31 @@ mod tests {
         state.set("b", "2");
         assert_eq!(state.text(), "a b c\nb 2\nq5_at  12\nz 1\n");
         assert!(state.changed());
+    }
+
+    #[test]
+    fn saving_keeps_what_another_process_wrote_since_loading() {
+        let mut mine = State::parse("bg_stamp 1\nq5_pct@a 10\nq_at@a 5\n");
+        mine.set("q5_pct@a", "20");
+        mine.remove("q_at@a");
+        mine.set("cpu_at", "7");
+        let latest = State::parse("bg_stamp 2\nq5_pct@a 10\nq5_pct@b 30\nq_at@a 5\n");
+        let saved = mine.rebased_on(latest);
+        assert_eq!(
+            saved.text(),
+            "bg_stamp 2\ncpu_at 7\nq5_pct@a 20\nq5_pct@b 30\n"
+        );
+        assert!(saved.changed());
+    }
+
+    #[test]
+    fn a_state_set_back_to_what_it_loaded_changes_nothing_on_disk() {
+        let mut mine = State::parse("q_at@a 5\n");
+        mine.remove("q_at@a");
+        mine.set("q_at@a", "5");
+        let saved = mine.rebased_on(State::parse("q_at@a 6\n"));
+        assert_eq!(saved.text(), "q_at@a 6\n");
+        assert!(!saved.changed());
     }
 
     #[test]

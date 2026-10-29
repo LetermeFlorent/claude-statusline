@@ -4,6 +4,8 @@ use std::vec::Vec;
 
 pub const SEP: char = '/';
 pub const PRIVATE_MODE: u32 = 0o600;
+const MS_PER_SECOND: f64 = 1000.0;
+const LOCK_POLL_MS: u32 = 1;
 
 pub fn args() -> Vec<String> {
     std::env::args_os()
@@ -80,6 +82,31 @@ pub fn create_private(path: &str, data: &[u8]) -> bool {
         .open(path)
         .and_then(|mut file| file.write_all(data))
         .is_ok()
+}
+
+pub struct Lock {
+    _file: std::fs::File,
+}
+
+pub fn lock(path: &str, wait_ms: u32) -> Option<Lock> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(PRIVATE_MODE)
+        .open(path)
+        .ok()?;
+    let deadline = ticks() + f64::from(wait_ms) / MS_PER_SECOND;
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Some(Lock { _file: file }),
+            Err(std::fs::TryLockError::WouldBlock) if ticks() < deadline => {
+                super::sleep(LOCK_POLL_MS)
+            }
+            Err(_) => return None,
+        }
+    }
 }
 
 pub fn make_executable(path: &str) -> bool {

@@ -35,6 +35,7 @@ const TEMPLATE: &str = "{
 ";
 
 const MS_PER_SECOND: f64 = 1000.0;
+const STATE_LOCK_WAIT_MS: u32 = 500;
 const DEFAULT_BENCH_RUNS: usize = 200;
 
 fn config_path() -> Option<String> {
@@ -54,12 +55,18 @@ fn state_path() -> Option<String> {
     os::state_dir().map(|d| os::join(&d, &["state"]))
 }
 
+fn read_state(path: &str) -> Option<State> {
+    match os::read_checked(path, os::MAX_READ_BYTES) {
+        Contents::Bytes(data) => Some(State::parse(&String::from_utf8_lossy(&data))),
+        Contents::Missing => Some(State::parse("")),
+        Contents::Unreadable => None,
+    }
+}
+
 fn load_state() -> State {
-    State::parse(
-        &state_path()
-            .and_then(|p| os::read_text(&p))
-            .unwrap_or_default(),
-    )
+    state_path()
+        .and_then(|p| read_state(&p))
+        .unwrap_or_else(|| State::parse(""))
 }
 
 fn save_state(state: &State) -> bool {
@@ -74,7 +81,12 @@ fn save_state(state: &State) -> bool {
             os::mkdirs(d);
         }
     }
-    os::write_atomic(&path, state.text().as_bytes())
+    let _lock = os::lock(&format!("{}.lock", path), STATE_LOCK_WAIT_MS);
+    let Some(latest) = read_state(&path) else {
+        return os::write_atomic(&path, state.text().as_bytes());
+    };
+    let saved = state.rebased_on(latest);
+    saved.changed() && os::write_atomic(&path, saved.text().as_bytes())
 }
 
 fn load_config() -> Config {
