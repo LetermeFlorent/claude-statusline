@@ -15,7 +15,10 @@ const FRESH: f64 = 600.0;
 
 impl State {
     pub fn parse(text: &str) -> State {
-        let mut s = State { map: Vec::new(), loaded: String::new() };
+        let mut s = State {
+            map: Vec::new(),
+            loaded: String::new(),
+        };
         for line in text.split('\n') {
             let line = line.strip_suffix('\r').unwrap_or(line);
             if let Some(i) = line.find(' ') {
@@ -27,7 +30,10 @@ impl State {
     }
 
     pub fn get(&self, k: &str) -> Option<&str> {
-        self.map.iter().find(|(x, _)| x == k).map(|(_, v)| v.as_str())
+        self.map
+            .iter()
+            .find(|(x, _)| x == k)
+            .map(|(_, v)| v.as_str())
     }
 
     pub fn num(&self, k: &str) -> Option<f64> {
@@ -67,7 +73,12 @@ impl State {
     // Quotas : ceux de Claude Code s'il les envoie (et on les garde), sinon
     // ceux du fichier s'ils ont moins de 10 minutes, avances jusqu'au prochain reset.
     // Le fichier sert a tous les comptes : chaque cle porte le suffixe @<tag> du compte.
-    pub fn quotas(&mut self, live: Option<(Option<Live>, Option<Live>)>, now: f64, tag: &str) -> Option<(Option<Quota>, Option<Quota>)> {
+    pub fn quotas(
+        &mut self,
+        live: Option<(Option<Live>, Option<Live>)>,
+        now: f64,
+        tag: &str,
+    ) -> Option<(Option<Quota>, Option<Quota>)> {
         if let Some((five, seven)) = live {
             for k in ["q_at", "q5_at", "q5_pct", "q7_at", "q7_pct"] {
                 // Cles de la version 1, sans compte
@@ -139,7 +150,11 @@ impl State {
 // Tag du compte tire de son dossier de config : ".claude-compte2" => "claude-compte2".
 // Le hook SessionStart de claude-account-menu calcule le meme.
 pub fn tag(dir: &str) -> String {
-    let leaf = dir.trim_end_matches(['/', '\\']).rsplit(['/', '\\']).next().unwrap_or("");
+    let leaf = dir
+        .trim_end_matches(['/', '\\'])
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or("");
     let t: String = leaf
         .trim_start_matches('.')
         .chars()
@@ -179,16 +194,31 @@ mod tests {
         let now = 1_000_000.0;
         let mut s = State::parse("q_at@a 999999\nq5_at@a 990000\nq5_pct@a 40\n");
         let (q5, q7) = s.quotas(None, now, "a").unwrap();
-        assert_eq!(q5, Some(Quota { pct: None, at: Some(1_008_000.0) }));
+        assert_eq!(
+            q5,
+            Some(Quota {
+                pct: None,
+                at: Some(1_008_000.0)
+            })
+        );
         assert_eq!(q7, None);
         // Les quotas d'un autre compte ne servent pas
         assert!(s.quotas(None, now, "b").is_none());
         let mut s = State::parse("q_at@a 1\nq5_at@a 2000000\n");
         assert!(s.quotas(None, now, "a").is_none());
-        let live = Some((Some(Live { pct: Some(10.5), at: Some(1791373904.7) }), None));
+        let live = Some((
+            Some(Live {
+                pct: Some(10.5),
+                at: Some(1791373904.7),
+            }),
+            None,
+        ));
         let mut s = State::parse("q7_pct 3\nq7_pct@a 3\nq7_pct@b 4\nq7_x 2\nx 1\n");
         s.quotas(live, now, "a");
-        assert_eq!(s.text(), "q5_at@a 1791373904.7\nq5_pct@a 10.5\nq7_pct@b 4\nq7_x 2\nq_at@a 1000000\nx 1\n");
+        assert_eq!(
+            s.text(),
+            "q5_at@a 1791373904.7\nq5_pct@a 10.5\nq7_pct@b 4\nq7_x 2\nq_at@a 1000000\nx 1\n"
+        );
     }
 
     #[test]

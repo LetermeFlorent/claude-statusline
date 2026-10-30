@@ -64,7 +64,11 @@ fn state_path() -> Option<String> {
 }
 
 fn load_state() -> State {
-    State::parse(&state_path().and_then(|p| os::read_text(&p)).unwrap_or_default())
+    State::parse(
+        &state_path()
+            .and_then(|p| os::read_text(&p))
+            .unwrap_or_default(),
+    )
 }
 
 fn save_state(state: &State) -> bool {
@@ -92,7 +96,10 @@ struct Laps {
 
 impl Laps {
     fn new() -> Laps {
-        Laps { t: [0.0; 4], last: os::ticks() }
+        Laps {
+            t: [0.0; 4],
+            last: os::ticks(),
+        }
     }
     fn lap(&mut self, i: usize) {
         let now = os::ticks();
@@ -108,9 +115,21 @@ fn sample(cfg: &Config, state: &mut State) -> Vec<SysValue> {
     }
     for m in &cfg.metrics {
         let v = match m {
-            Metric::Ram => SysValue { metric: *m, pct: None, ram: os::memory() },
-            Metric::Io => SysValue { metric: *m, pct: state.counter("io", os::disk(&cfg.disk_path)), ram: None },
-            Metric::Cpu => SysValue { metric: *m, pct: state.counter("cpu", os::cpu()), ram: None },
+            Metric::Ram => SysValue {
+                metric: *m,
+                pct: None,
+                ram: os::memory(),
+            },
+            Metric::Io => SysValue {
+                metric: *m,
+                pct: state.counter("io", os::disk(&cfg.disk_path)),
+                ram: None,
+            },
+            Metric::Cpu => SysValue {
+                metric: *m,
+                pct: state.counter("cpu", os::cpu()),
+                ram: None,
+            },
         };
         out.push(v);
     }
@@ -118,10 +137,20 @@ fn sample(cfg: &Config, state: &mut State) -> Vec<SysValue> {
 }
 
 fn compact_files(cwd: Option<&str>) -> [String; 3] {
-    let main = os::claude_dir().map(|d| os::join(&d, &["settings.json"])).unwrap_or_default();
+    let main = os::claude_dir()
+        .map(|d| os::join(&d, &["settings.json"]))
+        .unwrap_or_default();
     let cwd = cwd.map(String::from).or_else(os::cwd);
-    let project = |f: &str| cwd.as_deref().map(|c| os::join(c, &[".claude", f])).unwrap_or_default();
-    [main, project("settings.json"), project("settings.local.json")]
+    let project = |f: &str| {
+        cwd.as_deref()
+            .map(|c| os::join(c, &[".claude", f]))
+            .unwrap_or_default()
+    };
+    [
+        main,
+        project("settings.json"),
+        project("settings.local.json"),
+    ]
 }
 
 fn stat_file(p: &str) -> Option<(u64, i64)> {
@@ -147,18 +176,37 @@ fn run(input: &str, now: f64, laps: &mut Laps) -> (String, State, bool) {
     laps.lap(2);
     let mut state = load_state();
     let light = theme::detect(cfg.background, &mut state);
-    let quotas = state.quotas(s.live, now, &state::tag(&os::claude_dir().unwrap_or_default()));
+    let quotas = state.quotas(
+        s.live,
+        now,
+        &state::tag(&os::claude_dir().unwrap_or_default()),
+    );
     let window = if cfg.seg_ctx {
         let env = os::env("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
         let files = compact_files(s.cwd.as_deref());
-        compact::window(env.as_deref(), &files, &mut state, now, &stat_file, &read_file)
+        compact::window(
+            env.as_deref(),
+            &files,
+            &mut state,
+            now,
+            &stat_file,
+            &read_file,
+        )
     } else {
         None
     };
     let sys = sample(&cfg, &mut state);
     laps.lap(0);
     let updating = update_watch::busy(now);
-    let data = Data { ctx: s.ctx, window, quotas, model: s.model, effort: s.effort, sys, updating };
+    let data = Data {
+        ctx: s.ctx,
+        window,
+        quotas,
+        model: s.model,
+        effort: s.effort,
+        sys,
+        updating,
+    };
     let out = render::render(&cfg, &cfg.colors(light), &data, now);
     laps.lap(3);
     (out, state, cfg.auto_update)
@@ -198,8 +246,19 @@ fn bench(n: usize) {
         os::remove(t);
     }
     let ms = |x: f64| x * 1000.0 / n as f64;
-    let mut s = format!("{} rendus, {:.3} ms par rendu ({} octets produits)\n", n, ms(total), bytes);
-    for (label, v) in [("etat", laps.t[0]), ("config", laps.t[1]), ("session", laps.t[2]), ("rendu", laps.t[3]), ("ecriture", write)] {
+    let mut s = format!(
+        "{} rendus, {:.3} ms par rendu ({} octets produits)\n",
+        n,
+        ms(total),
+        bytes
+    );
+    for (label, v) in [
+        ("etat", laps.t[0]),
+        ("config", laps.t[1]),
+        ("session", laps.t[2]),
+        ("rendu", laps.t[3]),
+        ("ecriture", write),
+    ] {
         s.push_str(&format!("  {:<10}{:.3} ms\n", label, ms(v)));
     }
     os::out(&s);
@@ -230,8 +289,12 @@ fn fail(msg: &str) -> i32 {
 }
 
 fn install() -> i32 {
-    let Some(path) = settings_path() else { return fail("dossier personnel introuvable\n") };
-    let Some(exe) = os::exe() else { return fail("chemin du binaire introuvable\n") };
+    let Some(path) = settings_path() else {
+        return fail("dossier personnel introuvable\n");
+    };
+    let Some(exe) = os::exe() else {
+        return fail("chemin du binaire introuvable\n");
+    };
     let now = os::now();
     let mut v = Value::Obj(Vec::new());
     if let Some(raw) = os::read(&path) {
@@ -239,7 +302,12 @@ fn install() -> i32 {
         // Un fichier illisible n'est jamais remplace : on s'arrete
         match json::parse(&text, false).filter(|x| x.is_obj()) {
             Some(x) => v = x,
-            None => return fail(&format!("reglages illisibles, rien n'est modifie : {}\n", path)),
+            None => {
+                return fail(&format!(
+                    "reglages illisibles, rien n'est modifie : {}\n",
+                    path
+                ))
+            }
         }
         match backup(&path, &raw, now) {
             Some(b) => os::out(&format!("sauvegarde : {}\n", b)),
@@ -264,7 +332,9 @@ fn install() -> i32 {
     os::out(&format!("statusLine posee dans {}\n", path));
     let conf = config_path();
     if let Some(c) = conf.filter(|c| !os::exists(c)) {
-        let target = os::claude_dir().map(|d| os::join(&d, &["statusline.json"])).unwrap_or(c);
+        let target = os::claude_dir()
+            .map(|d| os::join(&d, &["statusline.json"]))
+            .unwrap_or(c);
         if os::write(&target, TEMPLATE.as_bytes()) {
             os::out(&format!("configuration : {}\n", target));
         }
@@ -274,7 +344,9 @@ fn install() -> i32 {
 }
 
 fn uninstall() -> i32 {
-    let Some(path) = settings_path() else { return fail("dossier personnel introuvable\n") };
+    let Some(path) = settings_path() else {
+        return fail("dossier personnel introuvable\n");
+    };
     let raw = os::read(&path);
     let parsed = raw
         .as_ref()
@@ -316,7 +388,11 @@ pub fn main(args: Vec<String>) -> i32 {
             0
         }
         Some("--bench") => {
-            let n = args.get(2).and_then(|s| s.parse::<usize>().ok()).filter(|n| *n > 0).unwrap_or(200);
+            let n = args
+                .get(2)
+                .and_then(|s| s.parse::<usize>().ok())
+                .filter(|n| *n > 0)
+                .unwrap_or(200);
             bench(n);
             0
         }

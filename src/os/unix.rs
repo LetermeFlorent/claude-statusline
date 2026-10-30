@@ -7,11 +7,15 @@ use std::vec::Vec;
 pub const SEP: char = '/';
 
 pub fn args() -> Vec<String> {
-    std::env::args_os().map(|a| a.to_string_lossy().into_owned()).collect()
+    std::env::args_os()
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect()
 }
 
 pub fn env(name: &str) -> Option<String> {
-    std::env::var_os(name).map(|v| v.to_string_lossy().into_owned()).filter(|s| !s.is_empty())
+    std::env::var_os(name)
+        .map(|v| v.to_string_lossy().into_owned())
+        .filter(|s| !s.is_empty())
 }
 
 pub fn read(path: &str) -> Option<Vec<u8>> {
@@ -43,7 +47,11 @@ pub fn rename(from: &str, to: &str) -> bool {
 }
 
 pub fn create_new(path: &str) -> bool {
-    std::fs::OpenOptions::new().write(true).create_new(true).open(path).is_ok()
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .is_ok()
 }
 
 pub fn make_executable(path: &str) -> bool {
@@ -67,7 +75,9 @@ pub fn mkdirs(path: &str) -> bool {
 }
 
 pub fn list(dir: &str, prefix: &str) -> Vec<String> {
-    let Ok(rd) = std::fs::read_dir(dir) else { return Vec::new() };
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
     rd.filter_map(|e| e.ok())
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .filter(|n| n.starts_with(prefix))
@@ -96,11 +106,15 @@ pub fn err(s: &str) {
 }
 
 pub fn exe() -> Option<String> {
-    std::env::current_exe().ok().map(|p| p.to_string_lossy().into_owned())
+    std::env::current_exe()
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned())
 }
 
 pub fn cwd() -> Option<String> {
-    std::env::current_dir().ok().map(|p| p.to_string_lossy().into_owned())
+    std::env::current_dir()
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned())
 }
 
 pub fn now() -> f64 {
@@ -112,7 +126,10 @@ pub fn now() -> f64 {
 
 pub fn ticks() -> f64 {
     static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
-    START.get_or_init(std::time::Instant::now).elapsed().as_secs_f64()
+    START
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_secs_f64()
 }
 
 pub fn home() -> Option<String> {
@@ -121,9 +138,11 @@ pub fn home() -> Option<String> {
 
 pub fn state_dir() -> Option<String> {
     if cfg!(target_os = "macos") {
-        return home().map(|h| super::join(&h, &["Library", "Application Support", "claude-statusline"]));
+        return home()
+            .map(|h| super::join(&h, &["Library", "Application Support", "claude-statusline"]));
     }
-    let base = env("XDG_STATE_HOME").or_else(|| home().map(|h| super::join(&h, &[".local", "state"])))?;
+    let base =
+        env("XDG_STATE_HOME").or_else(|| home().map(|h| super::join(&h, &[".local", "state"])))?;
     Some(super::join(&base, &["claude-statusline"]))
 }
 
@@ -194,8 +213,13 @@ mod sys {
                 }
             }
             let name = f[2];
-            let virt = ["loop", "ram", "zram", "sr", "fd", "nbd"].iter().any(|p| name.starts_with(p));
-            if fallback.is_none() && !virt && std::path::Path::new(&format!("/sys/block/{}", name)).exists() {
+            let virt = ["loop", "ram", "zram", "sr", "fd", "nbd"]
+                .iter()
+                .any(|p| name.starts_with(p));
+            if fallback.is_none()
+                && !virt
+                && std::path::Path::new(&format!("/sys/block/{}", name)).exists()
+            {
                 fallback = Some(ticks);
             }
         }
@@ -206,7 +230,12 @@ mod sys {
         let s = read_str("/proc/meminfo")?;
         let get = |k: &str| -> Option<f64> {
             let line = s.lines().find(|l| l.starts_with(k))?;
-            let kb: f64 = line[k.len()..].trim().trim_end_matches("kB").trim().parse().ok()?;
+            let kb: f64 = line[k.len()..]
+                .trim()
+                .trim_end_matches("kB")
+                .trim()
+                .parse()
+                .ok()?;
             Some(kb * 1024.0)
         };
         Some((get("MemTotal:")?, get("MemAvailable:")?))
@@ -221,11 +250,18 @@ mod sys {
         if !o.status.success() {
             return None;
         }
-        Some(String::from_utf8_lossy(&o.stdout).trim().trim_matches('\'').to_lowercase())
+        Some(
+            String::from_utf8_lossy(&o.stdout)
+                .trim()
+                .trim_matches('\'')
+                .to_lowercase(),
+        )
     }
 
     fn kde() -> Option<bool> {
-        let desk = env("XDG_CURRENT_DESKTOP").unwrap_or_default().to_uppercase();
+        let desk = env("XDG_CURRENT_DESKTOP")
+            .unwrap_or_default()
+            .to_uppercase();
         if !desk.contains("KDE") {
             return None;
         }
@@ -270,7 +306,10 @@ mod sys {
             "{}|{}|{}|{}",
             env("GTK_THEME").unwrap_or_default(),
             env("XDG_CURRENT_DESKTOP").unwrap_or_default(),
-            stamp_text(ch.as_ref().map(|c| super::super::join(c, &["dconf", "user"]))),
+            stamp_text(
+                ch.as_ref()
+                    .map(|c| super::super::join(c, &["dconf", "user"]))
+            ),
             stamp_text(ch.as_ref().map(|c| super::super::join(c, &["kdeglobals"]))),
         )
     }
@@ -288,7 +327,13 @@ mod sys {
         fn host_statistics(host: Port, flavor: i32, info: *mut i32, count: *mut u32) -> i32;
         fn host_statistics64(host: Port, flavor: i32, info: *mut i32, count: *mut u32) -> i32;
         fn host_page_size(host: Port, size: *mut usize) -> i32;
-        fn sysctlbyname(name: *const u8, old: *mut c_void, oldlen: *mut usize, new: *mut c_void, newlen: usize) -> i32;
+        fn sysctlbyname(
+            name: *const u8,
+            old: *mut c_void,
+            oldlen: *mut usize,
+            new: *mut c_void,
+            newlen: usize,
+        ) -> i32;
         fn clock_gettime_nsec_np(clock: u32) -> u64;
     }
 
@@ -297,13 +342,19 @@ mod sys {
         fn IOServiceMatching(name: *const u8) -> *mut c_void;
         fn IOServiceGetMatchingServices(main: Port, matching: *mut c_void, iter: *mut u32) -> i32;
         fn IOIteratorNext(iter: u32) -> u32;
-        fn IORegistryEntryCreateCFProperty(entry: u32, key: *const c_void, alloc: *const c_void, options: u32) -> *const c_void;
+        fn IORegistryEntryCreateCFProperty(
+            entry: u32,
+            key: *const c_void,
+            alloc: *const c_void,
+            options: u32,
+        ) -> *const c_void;
         fn IOObjectRelease(obj: u32) -> i32;
     }
 
     #[link(name = "CoreFoundation", kind = "framework")]
     extern "C" {
-        fn CFStringCreateWithCString(alloc: *const c_void, s: *const u8, enc: u32) -> *const c_void;
+        fn CFStringCreateWithCString(alloc: *const c_void, s: *const u8, enc: u32)
+            -> *const c_void;
         fn CFDictionaryGetValue(d: *const c_void, key: *const c_void) -> *const c_void;
         fn CFNumberGetValue(n: *const c_void, kind: i32, out: *mut c_void) -> u8;
         fn CFGetTypeID(cf: *const c_void) -> usize;
@@ -341,7 +392,9 @@ mod sys {
     pub fn disk(_path: &str) -> Option<(i64, i64)> {
         let mut iter = 0u32;
         let matching = unsafe { IOServiceMatching(c"IOBlockStorageDriver".as_ptr().cast()) };
-        if matching.is_null() || unsafe { IOServiceGetMatchingServices(0, matching, &mut iter) } != 0 {
+        if matching.is_null()
+            || unsafe { IOServiceGetMatchingServices(0, matching, &mut iter) } != 0
+        {
             return None;
         }
         let k_stats = cfstr(b"Statistics\0");
@@ -357,7 +410,9 @@ mod sys {
             let d = unsafe { IORegistryEntryCreateCFProperty(e, k_stats, std::ptr::null(), 0) };
             if !d.is_null() {
                 if unsafe { CFGetTypeID(d) == CFDictionaryGetTypeID() } {
-                    busy = busy.wrapping_add(number(d, k_read)).wrapping_add(number(d, k_write));
+                    busy = busy
+                        .wrapping_add(number(d, k_read))
+                        .wrapping_add(number(d, k_write));
                     seen = true;
                 }
                 unsafe { CFRelease(d) };
@@ -380,7 +435,15 @@ mod sys {
     pub fn memory() -> Option<(f64, f64)> {
         let mut total = 0u64;
         let mut len = 8usize;
-        let r = unsafe { sysctlbyname(c"hw.memsize".as_ptr().cast(), &mut total as *mut u64 as *mut c_void, &mut len, std::ptr::null_mut(), 0) };
+        let r = unsafe {
+            sysctlbyname(
+                c"hw.memsize".as_ptr().cast(),
+                &mut total as *mut u64 as *mut c_void,
+                &mut len,
+                std::ptr::null_mut(),
+                0,
+            )
+        };
         if r != 0 || total == 0 {
             return None;
         }
@@ -397,12 +460,18 @@ mod sys {
         let at = |off: usize| v[off / 4] as u32 as f64;
         let pages = at(140) - at(88) + at(12) + at(128);
         let used = pages * page as f64;
-        let used = if used > total as f64 { total as f64 } else { used };
+        let used = if used > total as f64 {
+            total as f64
+        } else {
+            used
+        };
         Some((total as f64, total as f64 - used))
     }
 
     fn prefs() -> Option<String> {
-        home().map(|h| super::super::join(&h, &["Library", "Preferences", ".GlobalPreferences.plist"]))
+        home().map(|h| {
+            super::super::join(&h, &["Library", "Preferences", ".GlobalPreferences.plist"])
+        })
     }
 
     fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
@@ -419,8 +488,15 @@ mod sys {
             return Some(!(find(&data, &key).is_some() && find(&data, &dark).is_some()));
         }
         let text = String::from_utf8_lossy(&data);
-        let Some(i) = text.find("<key>AppleInterfaceStyle</key>") else { return Some(true) };
-        Some(!text[i..].trim_start_matches("<key>AppleInterfaceStyle</key>").trim_start().starts_with("<string>Dark</string>"))
+        let Some(i) = text.find("<key>AppleInterfaceStyle</key>") else {
+            return Some(true);
+        };
+        Some(
+            !text[i..]
+                .trim_start_matches("<key>AppleInterfaceStyle</key>")
+                .trim_start()
+                .starts_with("<string>Dark</string>"),
+        )
     }
 
     pub fn os_stamp() -> String {

@@ -61,7 +61,11 @@ fn effort_pair(light: bool, key: &str) -> Pair {
 }
 
 fn lerp(a: Rgb, b: Rgb, t: f64) -> Rgb {
-    [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
+    [
+        a[0] + (b[0] - a[0]) * t,
+        a[1] + (b[1] - a[1]) * t,
+        a[2] + (b[2] - a[2]) * t,
+    ]
 }
 
 fn rgb(c: Rgb) -> Rgb {
@@ -76,7 +80,11 @@ struct Out<'a> {
 
 impl Out<'_> {
     fn fg(&mut self, c: Rgb) {
-        let _ = write!(self.s, "\x1b[38;2;{};{};{}m", c[0] as i64, c[1] as i64, c[2] as i64);
+        let _ = write!(
+            self.s,
+            "\x1b[38;2;{};{};{}m",
+            c[0] as i64, c[1] as i64, c[2] as i64
+        );
     }
 
     fn bold(&mut self) {
@@ -116,7 +124,11 @@ impl Out<'_> {
                 let c = color_at(i, n);
                 last = Some(c);
                 self.fg(c);
-                let g = if i == n - 1 { &self.cfg.half } else { &self.cfg.filled };
+                let g = if i == n - 1 {
+                    &self.cfg.half
+                } else {
+                    &self.cfg.filled
+                };
                 self.s.push_str(g);
             } else {
                 self.fg(empty);
@@ -129,9 +141,25 @@ impl Out<'_> {
 
     fn gradient_bar(&mut self, p: Option<f64>, start: Rgb, g: f64) -> Option<Rgb> {
         let light = self.col.light;
-        let target = start.map(|c| num::round(if light { c * 0.65 } else { c + (255.0 - c) * 0.3 }));
+        let target = start.map(|c| {
+            num::round(if light {
+                c * 0.65
+            } else {
+                c + (255.0 - c) * 0.3
+            })
+        });
         let end = lerp(start, target, g);
-        self.bar(p, &|i, n| rgb(lerp(start, end, if n > 1 { i as f64 / (n - 1) as f64 } else { 0.0 })))
+        self.bar(p, &|i, n| {
+            rgb(lerp(
+                start,
+                end,
+                if n > 1 {
+                    i as f64 / (n - 1) as f64
+                } else {
+                    0.0
+                },
+            ))
+        })
     }
 
     fn value(&mut self, text: &str, p: Option<f64>, last: Option<Rgb>) {
@@ -169,7 +197,11 @@ impl Out<'_> {
         self.label("ctx");
         self.s.push(' ');
         let (from, to) = (self.col.ctx_from, self.col.ctx_to);
-        let span = if self.cfg.width > 1 { (self.cfg.width - 1) as f64 } else { 1.0 };
+        let span = if self.cfg.width > 1 {
+            (self.cfg.width - 1) as f64
+        } else {
+            1.0
+        };
         let last = self.bar(pct, &|i, _| rgb(lerp(from, to, i as f64 / span)));
         self.s.push(' ');
         let text = match (denom, used) {
@@ -206,12 +238,18 @@ impl Out<'_> {
         self.fg(ink);
         self.s.push_str(&d.model);
         self.s.push_str(RESET);
-        let Some(level) = d.effort.as_deref() else { return };
+        let Some(level) = d.effort.as_deref() else {
+            return;
+        };
         let mut key = level.to_lowercase();
         if key == "auto" {
             key = String::from("low");
         }
-        let word = if key == "ultracode" { format!("{}(+workflows)", level) } else { String::from(level) };
+        let word = if key == "ultracode" {
+            format!("{}(+workflows)", level)
+        } else {
+            String::from(level)
+        };
         let (start, end) = effort_pair(self.col.light, &key);
         self.label(":");
         if self.cfg.effort_flat {
@@ -220,7 +258,11 @@ impl Out<'_> {
         }
         let chars: Vec<char> = word.chars().collect();
         for (i, ch) in chars.iter().enumerate() {
-            let t = if chars.len() > 1 { i as f64 / (chars.len() - 1) as f64 } else { 0.0 };
+            let t = if chars.len() > 1 {
+                i as f64 / (chars.len() - 1) as f64
+            } else {
+                0.0
+            };
             self.bold();
             self.fg(rgb(lerp(start, end, t)));
             self.s.push(*ch);
@@ -232,7 +274,10 @@ impl Out<'_> {
         let cfg = self.cfg;
         let (name, pal, p, text) = match v.metric {
             Metric::Ram => {
-                let p = v.ram.filter(|(t, _)| *t > 0.0).map(|(t, a)| (t - a) / t * 100.0);
+                let p = v
+                    .ram
+                    .filter(|(t, _)| *t > 0.0)
+                    .map(|(t, a)| (t - a) / t * 100.0);
                 let text = match (p, v.ram) {
                     (Some(_), Some((t, a))) => {
                         let gib = 1073741824.0;
@@ -317,7 +362,11 @@ pub fn reset_text(secs: f64, long: bool) -> String {
 }
 
 pub fn render(cfg: &Config, col: &Colors, d: &Data, now: f64) -> String {
-    let mut o = Out { s: String::with_capacity(2048), cfg, col };
+    let mut o = Out {
+        s: String::with_capacity(2048),
+        cfg,
+        col,
+    };
     let mut first = true;
     if cfg.seg_ctx {
         o.sep(&mut first);

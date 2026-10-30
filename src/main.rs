@@ -19,7 +19,7 @@ mod theme;
 mod update;
 mod update_watch;
 
-#[cfg(not(windows))]
+#[cfg(any(not(windows), test))]
 fn main() {
     std::process::exit(app::main(os::args()));
 }

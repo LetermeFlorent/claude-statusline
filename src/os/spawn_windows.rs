@@ -8,7 +8,18 @@ type Handle = isize;
 
 #[link(name = "kernel32", kind = "raw-dylib")]
 extern "system" {
-    fn CreateProcessW(app: *const u16, cmd: *mut u16, pa: *mut c_void, ta: *mut c_void, inherit: i32, flags: u32, env: *mut c_void, dir: *const u16, si: *mut u64, pi: *mut Handle) -> i32;
+    fn CreateProcessW(
+        app: *const u16,
+        cmd: *mut u16,
+        pa: *mut c_void,
+        ta: *mut c_void,
+        inherit: i32,
+        flags: u32,
+        env: *mut c_void,
+        dir: *const u16,
+        si: *mut u64,
+        pi: *mut Handle,
+    ) -> i32;
     fn WaitForSingleObject(h: Handle, ms: u32) -> u32;
     fn GetExitCodeProcess(h: Handle, code: *mut u32) -> i32;
     fn TerminateProcess(h: Handle, code: u32) -> i32;
@@ -54,13 +65,30 @@ fn command_line(exe: &str, args: &[&str]) -> Vec<u16> {
 }
 
 fn start(exe: &str, args: &[&str], flags: u32) -> Option<[Handle; 3]> {
-    let app = if exe.contains(['\\', '/']) { Some(wide(exe)) } else { None };
+    let app = if exe.contains(['\\', '/']) {
+        Some(wide(exe))
+    } else {
+        None
+    };
     let mut cmd = command_line(exe, args);
     let mut si = [0u64; 13];
     si[0] = STARTUP_INFO_SIZE;
     let mut pi: [Handle; 3] = [0; 3];
     let app_ptr = app.as_ref().map_or(null(), |a| a.as_ptr());
-    let ok = unsafe { CreateProcessW(app_ptr, cmd.as_mut_ptr(), null_mut(), null_mut(), 0, flags, null_mut(), null(), si.as_mut_ptr(), pi.as_mut_ptr()) };
+    let ok = unsafe {
+        CreateProcessW(
+            app_ptr,
+            cmd.as_mut_ptr(),
+            null_mut(),
+            null_mut(),
+            0,
+            flags,
+            null_mut(),
+            null(),
+            si.as_mut_ptr(),
+            pi.as_mut_ptr(),
+        )
+    };
     if ok == 0 {
         None
     } else {
