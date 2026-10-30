@@ -7,7 +7,7 @@ All notable changes to this project are listed here, newest first. Versions foll
 Changes since v2.1.1.
 
 - Releases are signed. Each release carries `SHA256SUMS` and a `release-manifest` that binds the tag to every file and its SHA-256 hash, signed with an Ed25519 key kept outside GitHub (OpenSSH format, namespace `statusline-release`). `--update` checks the signature, the tag, the version and the hash before it runs or installs anything, and keeps the installed program on any doubt. The install scripts check the signature with the local `ssh-keygen` when it can, and fall back to the SHA-256 check with a warning when it cannot.
-- Automatic updates are on by default again, now that every update is signed and checked. `"auto_update": false` in `statusline.json` turns them off, and `--update` still works by hand.
+- Automatic updates are on by default again, now that every update is signed and checked. `"auto_update": false` in `statusline.json` turns them off, a `statusline.json` that cannot be read keeps them off, and `--update` still works by hand.
 - Updates and installers are stricter: curl runs from the system folder and ignores `~/.curlrc`, the settings file is parsed strictly before it is rewritten, and three private backups are kept before it is swapped atomically.
 - The state file and the session input are bounded and cleaned: regular files up to 1 MiB, no injected lines, no endless reset loop, terminal controls stripped from the model, effort and glyphs, and numbers that overflow are refused. Several sessions saving at once no longer lose each other's quotas.
 - Windows binaries build repeatably and are attested, a native Windows on Arm binary is built, and the Windows executable is no longer kept in git.
