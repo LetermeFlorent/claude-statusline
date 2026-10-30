@@ -106,8 +106,10 @@ function Test-Signature([string]$keygen, [string]$key, [string]$message, [string
 function Confirm-Manifest([string]$manifest, [string]$signature, [string]$work) {
   $keygen = Find-KeyGen
   Write-LfFile "$work.probe" "statusline probe`n"
+  Write-LfFile "$work.tampered" "statusline probe!`n"
   Write-LfFile "$work.probe.sig" ($probeSignature + "`n")
-  if ($keygen -and (Test-Signature $keygen $probeKey "$work.probe" "$work.probe.sig" $work)) {
+  $usable = $keygen -and (Test-Signature $keygen $probeKey "$work.probe" "$work.probe.sig" $work) -and -not (Test-Signature $keygen $probeKey "$work.tampered" "$work.probe.sig" $work)
+  if ($usable) {
     if (-not (Test-Signature $keygen $releaseKey $manifest $signature $work)) { throw (Get-Text signature) }
   } else {
     Write-Warning (Get-Text no_signature_check)
@@ -141,7 +143,7 @@ function Save-ReleaseBinary([string]$destination) {
     Remove-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue
     throw (Get-Text release_refused $_.Exception.Message)
   } finally {
-    foreach ($suffix in ".manifest", ".manifest.sig", ".allowed", ".probe", ".probe.sig") {
+    foreach ($suffix in ".manifest", ".manifest.sig", ".allowed", ".probe", ".tampered", ".probe.sig") {
       Remove-Item -LiteralPath ($destination + $suffix) -Force -ErrorAction SilentlyContinue
     }
   }

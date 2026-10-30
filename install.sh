@@ -165,8 +165,10 @@ check_signature() {
 verify_manifest() {
   keygen=$(command -v ssh-keygen 2>/dev/null) || keygen=""
   printf 'statusline probe\n' > "$staged.probe"
+  printf 'statusline probe!\n' > "$staged.tampered"
   printf '%s\n' "$probe_signature" > "$staged.probe.sig"
-  if [ -n "$keygen" ] && check_signature "$probe_key" "$staged.probe" "$staged.probe.sig"; then
+  if [ -n "$keygen" ] && check_signature "$probe_key" "$staged.probe" "$staged.probe.sig" &&
+    ! check_signature "$probe_key" "$staged.tampered" "$staged.probe.sig"; then
     check_signature "$release_key" "$1" "$2"
   else
     show no_signature_check >&2
@@ -201,7 +203,7 @@ else
   fi
   fetch() { curl -q -fsSL --proto "=$release_protocol" --proto-redir "=$release_protocol" "$release_base/$1" -o "$2"; }
   sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi < "$1" | cut -d ' ' -f 1; }
-  clean_download() { rm -f "$staged" "$staged.manifest" "$staged.manifest.sig" "$staged.allowed" "$staged.probe" "$staged.probe.sig"; }
+  clean_download() { rm -f "$staged" "$staged.manifest" "$staged.manifest.sig" "$staged.allowed" "$staged.probe" "$staged.tampered" "$staged.probe.sig"; }
   fetch release-manifest "$staged.manifest" && fetch release-manifest.sig "$staged.manifest.sig" && fetch "$asset" "$staged" || {
     clean_download
     show download_failed >&2
@@ -221,7 +223,7 @@ else
     show checksum >&2
     exit 1
   fi
-  rm -f "$staged.manifest" "$staged.manifest.sig" "$staged.allowed" "$staged.probe" "$staged.probe.sig"
+  rm -f "$staged.manifest" "$staged.manifest.sig" "$staged.allowed" "$staged.probe" "$staged.tampered" "$staged.probe.sig"
 fi
 
 chmod 755 "$staged"
