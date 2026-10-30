@@ -1,4 +1,5 @@
 use crate::json::{self, Syntax};
+use crate::messages;
 use crate::os;
 use crate::update_watch::{asset, newer, parts, MARKER, STALE_AFTER};
 use alloc::format;
@@ -8,11 +9,8 @@ const REPO: &str = "LetermeFlorent/claude-statusline";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const SHOWN_AFTER_SWAP_MS: u32 = 5000;
 const HTTP_OK: u16 = 200;
-const NO_RELEASE: &str = "derniere version introuvable\n";
 const RATE_LIMIT_STATUSES: [u16; 2] = [403, 429];
 const HTTPS_ONLY: &str = "=https";
-const CURL_MISSING: &str = "curl.exe introuvable dans le dossier systeme\n";
-const RATE_LIMITED: &str = "limite de requetes GitHub atteinte, reessayez plus tard\n";
 
 type Fetch<'a> = &'a dyn Fn(&str, &str, u32) -> Option<u16>;
 
@@ -85,14 +83,14 @@ fn latest(dir: &str, fetch: Fetch) -> Result<String, String> {
     let text = os::read_text(&file);
     os::remove(&file);
     if status.is_some_and(|s| RATE_LIMIT_STATUSES.contains(&s)) {
-        return Err(String::from(RATE_LIMITED));
+        return Err(String::from(messages::RATE_LIMITED.text()));
     }
     let tag = text
         .filter(|_| status == Some(HTTP_OK))
         .and_then(|t| json::parse(&t, Syntax::Tolerant))
         .and_then(|release| release.get("tag_name")?.str().map(String::from))
         .filter(|tag| parts(tag).is_some());
-    tag.ok_or_else(|| String::from(NO_RELEASE))
+    tag.ok_or_else(|| String::from(messages::NO_RELEASE.text()))
 }
 
 fn staging(exe: &str) -> String {
@@ -145,7 +143,7 @@ fn fail(msg: &str) -> i32 {
 
 fn install(dir: &str, exe: &str, tag: &str, fetch: Fetch) -> Result<(), String> {
     let Some(name) = asset() else {
-        return Err(String::from("aucun binaire publie pour ce systeme\n"));
+        return Err(String::from(messages::NO_ASSET.text()));
     };
     let fresh = staging(exe);
     let url = format!(
@@ -157,7 +155,7 @@ fn install(dir: &str, exe: &str, tag: &str, fetch: Fetch) -> Result<(), String> 
         && os::call(&fresh, &["--version"], dir, 30) == Some(0);
     if !ready || !swap(exe, &fresh) {
         os::remove(&fresh);
-        return Err(format!("mise a jour vers {} impossible\n", tag));
+        return Err(messages::UPDATE_FAILED.with(&[tag]));
     }
     Ok(())
 }
@@ -176,11 +174,11 @@ fn attempt(dir: &str, exe: &str, fetch: Fetch) -> Result<Outcome, String> {
 fn report(result: Result<Outcome, String>) -> i32 {
     match result {
         Ok(Outcome::UpToDate) => {
-            os::out(&format!("deja a jour : {}\n", VERSION));
+            os::out(&messages::UP_TO_DATE.with(&[VERSION]));
             0
         }
         Ok(Outcome::Updated(tag)) => {
-            os::out(&format!("mise a jour : {} -> {}\n", VERSION, tag));
+            os::out(&messages::UPDATED.with(&[VERSION, &tag]));
             os::sleep(SHOWN_AFTER_SWAP_MS);
             0
         }
@@ -198,7 +196,7 @@ fn acquire(lock: &str) -> bool {
 
 fn take_lock(dir: &str) -> Result<Option<String>, String> {
     if !os::mkdirs(dir) {
-        return Err(format!("dossier d'etat impossible a creer : {}\n", dir));
+        return Err(messages::STATE_DIR_FAILED.with(&[dir]));
     }
     let lock = os::join(dir, &["update.lock"]);
     Ok(acquire(&lock).then_some(lock))
@@ -206,15 +204,15 @@ fn take_lock(dir: &str) -> Result<Option<String>, String> {
 
 pub fn run() -> i32 {
     let Some(dir) = os::state_dir() else {
-        return fail("dossier d'etat introuvable\n");
+        return fail(messages::NO_STATE_DIR.text());
     };
     let Some(program) = curl() else {
-        return fail(CURL_MISSING);
+        return fail(messages::CURL_MISSING.text());
     };
     let lock = match take_lock(&dir) {
         Ok(Some(lock)) => lock,
         Ok(None) => {
-            os::out("mise a jour deja en cours\n");
+            os::out(messages::UPDATE_RUNNING.text());
             return 0;
         }
         Err(msg) => return fail(&msg),
@@ -223,7 +221,7 @@ pub fn run() -> i32 {
     let fetch = |url: &str, to: &str, secs: u32| curl.fetch(url, to, secs);
     let result = match os::exe() {
         Some(exe) => attempt(&dir, &exe, &fetch),
-        None => Err(String::from("chemin du binaire introuvable\n")),
+        None => Err(String::from(messages::NO_EXE.text())),
     };
     let code = report(result);
     os::remove(&os::join(&dir, &[MARKER]));
@@ -349,7 +347,7 @@ mod tests {
     fn tag_outside_x_y_z_is_refused() {
         for (i, tag) in ["v99.0", "v99.0.0-rc1", "latest"].iter().enumerate() {
             let run = update(&format!("refused-{}", i), release(tag, &working_binary()));
-            assert_eq!(run.result, Err(String::from(NO_RELEASE)));
+            assert_eq!(run.result, Err(String::from(messages::NO_RELEASE.text())));
             assert_eq!(run.installed, OLD_BINARY);
             assert_eq!(run.files, [EXE_NAME]);
         }
@@ -358,10 +356,7 @@ mod tests {
     #[test]
     fn binary_failing_its_version_check_is_not_swapped_in() {
         let run = update("failing", release("v99.0.0", FAILING_BINARY));
-        assert_eq!(
-            run.result,
-            Err(String::from("mise a jour vers v99.0.0 impossible\n"))
-        );
+        assert_eq!(run.result, Err(messages::UPDATE_FAILED.with(&["v99.0.0"])));
         assert_eq!(run.installed, OLD_BINARY);
         assert_eq!(run.files, [EXE_NAME, MARKER]);
     }
@@ -376,7 +371,7 @@ mod tests {
                     ..release("v99.0.0", OLD_BINARY)
                 },
             );
-            assert_eq!(run.result, Err(String::from(RATE_LIMITED)));
+            assert_eq!(run.result, Err(String::from(messages::RATE_LIMITED.text())));
             assert_eq!(run.asked, 1);
             assert_eq!(run.files, [EXE_NAME]);
         }
@@ -433,7 +428,7 @@ mod tests {
         let dir = blocker.join("state").to_string_lossy().into_owned();
         assert_eq!(
             take_lock(&dir),
-            Err(format!("dossier d'etat impossible a creer : {}\n", dir))
+            Err(messages::STATE_DIR_FAILED.with(&[&dir]))
         );
     }
 

@@ -1,3 +1,5 @@
+#[cfg(any(target_os = "linux", test))]
+mod cgroup;
 #[cfg(not(windows))]
 mod spawn_unix;
 #[cfg(not(windows))]

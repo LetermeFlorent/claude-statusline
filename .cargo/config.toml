@@ -9,5 +9,15 @@ rustflags = [
     "-C", "link-arg=/CETCOMPAT",
 ]
 
+[target.aarch64-pc-windows-msvc]
+linker = "rust-lld"
+rustflags = [
+    "-C", "link-arg=/NODEFAULTLIB",
+    "-C", "link-arg=/ENTRY:start",
+    "-C", "link-arg=/SUBSYSTEM:CONSOLE",
+    "-C", "link-arg=/DEBUG:NONE",
+    "-C", "link-arg=/Brepro",
+]
+
 [target.'cfg(target_os = "macos")']
 rustflags = ["-C", "link-arg=-Wl,-S"]
