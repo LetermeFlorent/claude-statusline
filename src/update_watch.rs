@@ -5,6 +5,7 @@ use alloc::format;
 use alloc::string::String;
 
 pub const STALE_AFTER: f64 = 900.0;
+pub const MARKER: &str = "updating";
 const CHECKED_KEY: &str = "update_at";
 const CHECK_EVERY: f64 = 21600.0;
 
@@ -41,7 +42,7 @@ pub fn newer(remote: &str, local: &str) -> bool {
 }
 
 pub fn marker() -> Option<String> {
-    os::state_dir().map(|d| os::join(&d, &["updating"]))
+    os::state_dir().map(|d| os::join(&d, &[MARKER]))
 }
 
 pub fn busy(now: f64) -> bool {
