@@ -3,7 +3,7 @@ use super::sha512_consts::{H0, K};
 pub(crate) fn sha512(data: &[u8]) -> [u8; 64] {
     let mut h = H0;
     let full = data.len() - data.len() % 128;
-    for block in data[..full].chunks_exact(128) {
+    for block in data[..full].as_chunks::<128>().0 {
         compress(&mut h, block);
     }
     let rest = data.len() - full;
@@ -13,22 +13,20 @@ pub(crate) fn sha512(data: &[u8]) -> [u8; 64] {
     let end = if rest < 112 { 128 } else { 256 };
     let bits = (data.len() as u128) * 8;
     tail[end - 16..end].copy_from_slice(&bits.to_be_bytes());
-    for block in tail[..end].chunks_exact(128) {
+    for block in tail[..end].as_chunks::<128>().0 {
         compress(&mut h, block);
     }
     let mut out = [0u8; 64];
-    for (chunk, word) in out.chunks_exact_mut(8).zip(h) {
-        chunk.copy_from_slice(&word.to_be_bytes());
+    for (chunk, word) in out.as_chunks_mut::<8>().0.iter_mut().zip(h) {
+        *chunk = word.to_be_bytes();
     }
     out
 }
 
 fn compress(h: &mut [u64; 8], block: &[u8]) {
     let mut w = [0u64; 16];
-    for (slot, word) in w.iter_mut().zip(block.chunks_exact(8)) {
-        let mut bytes = [0u8; 8];
-        bytes.copy_from_slice(word);
-        *slot = u64::from_be_bytes(bytes);
+    for (slot, word) in w.iter_mut().zip(block.as_chunks::<8>().0) {
+        *slot = u64::from_be_bytes(*word);
     }
     let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh] = *h;
     for (t, k) in K.iter().enumerate() {

@@ -78,7 +78,7 @@ const K: [u32; 64] = [
 pub(crate) fn sha256(data: &[u8]) -> [u8; 32] {
     let mut h = H0;
     let full = data.len() - data.len() % 64;
-    for block in data[..full].chunks_exact(64) {
+    for block in data[..full].as_chunks::<64>().0 {
         compress(&mut h, block);
     }
     let rest = data.len() - full;
@@ -88,20 +88,20 @@ pub(crate) fn sha256(data: &[u8]) -> [u8; 32] {
     let end = if rest < 56 { 64 } else { 128 };
     let bits = (data.len() as u64).wrapping_mul(8);
     tail[end - 8..end].copy_from_slice(&bits.to_be_bytes());
-    for block in tail[..end].chunks_exact(64) {
+    for block in tail[..end].as_chunks::<64>().0 {
         compress(&mut h, block);
     }
     let mut out = [0u8; 32];
-    for (chunk, word) in out.chunks_exact_mut(4).zip(h) {
-        chunk.copy_from_slice(&word.to_be_bytes());
+    for (chunk, word) in out.as_chunks_mut::<4>().0.iter_mut().zip(h) {
+        *chunk = word.to_be_bytes();
     }
     out
 }
 
 fn compress(h: &mut [u32; 8], block: &[u8]) {
     let mut w = [0u32; 16];
-    for (slot, word) in w.iter_mut().zip(block.chunks_exact(4)) {
-        *slot = u32::from_be_bytes([word[0], word[1], word[2], word[3]]);
+    for (slot, word) in w.iter_mut().zip(block.as_chunks::<4>().0) {
+        *slot = u32::from_be_bytes(*word);
     }
     let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh] = *h;
     for (t, k) in K.iter().enumerate() {
