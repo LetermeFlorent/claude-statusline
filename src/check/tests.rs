@@ -88,3 +88,23 @@ fn broken_or_misplaced_json_is_reported() {
     assert_eq!(faults("[1]"), [(1, 1, Fault::NotAnObject)]);
     assert_eq!(faults("{\"bold\": true}}"), [(1, 15, Fault::TrailingText)]);
 }
+
+#[test]
+fn the_spend_segment_is_a_known_key() {
+    assert_eq!(faults("{\"segments\": {\"spend\": false}}"), []);
+    let wrong = "{\"segments\": {\"spend\": \"no\"}}";
+    assert_eq!(
+        expected_paths(wrong),
+        [(24, String::from("segments.spend"))]
+    );
+}
+
+#[test]
+fn the_cold_cache_marker_is_a_known_flag() {
+    assert_eq!(faults("{\"cold_cache_marker\": true}"), []);
+    let wrong = "{\"cold_cache_marker\": \"yes\"}";
+    assert_eq!(
+        expected_paths(wrong),
+        [(23, String::from("cold_cache_marker"))]
+    );
+}
