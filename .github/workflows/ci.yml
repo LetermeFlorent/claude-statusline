@@ -239,6 +239,7 @@ jobs:
           printf '{\n  "model": "opus",\n  "env": {\n    "B": "1",\n    "A": "2"\n  },\n'"$line"'}\n' > "$RUNNER_TEMP/main.json"
           printf '{\n'"$line"'}\n' > "$RUNNER_TEMP/account.json"
           config=statusline.json
+          expect=""
           home_of() {
             root="$RUNNER_TEMP/i-$1"
             mkdir -p "$root/.claude" "$root/.claude-compte2"
@@ -286,7 +287,27 @@ jobs:
                 grep -q '"statusLine"' "$root/.claude-compte2/settings.json"
               fi
               [ "$config" = none ] || cmp "$config" "$root/.claude/statusline.json"
+              [ -z "$expect" ] || cmp "$expect" "$root/.claude/bin/statusline$ext"
             done
+          }
+          refuse_in() {
+            label="$1"; shift
+            home_of "$label"
+            mkdir -p "$root/.claude/bin"
+            printf '{"model": "opus", "env": {"B": "1", "A": "2"}}' > "$root/.claude/settings.json"
+            printf 'previous program' > "$root/.claude/bin/statusline$ext"
+            cp "$root/.claude/settings.json" "$root/settings.before"
+            cp "$root/.claude/bin/statusline$ext" "$root/program.before"
+            if env STATUSLINE_LANG=en "$@" > "$root/refusal.log" 2>&1; then
+              echo "$label accepted a release it had to refuse"
+              exit 1
+            fi
+            cat "$root/refusal.log"
+            grep -Eq 'download failed|released binary refused|SHA-256 hash' "$root/refusal.log"
+            cmp "$root/program.before" "$root/.claude/bin/statusline$ext"
+            cmp "$root/settings.before" "$root/.claude/settings.json"
+            test ! -e "$root/.claude-compte2/settings.json"
+            test "$(ls -A "$root/.claude/bin")" = "statusline$ext"
           }
           uninstall_in() {
             label="$1"; shift
@@ -320,7 +341,68 @@ jobs:
             grep -q '"statusLine"' "$root/$accent/settings.json"
             test ! -e "$root/.claude-absent"
           }
+          serve="$RUNNER_TEMP/serve"
+          rm -rf "$serve"
+          mkdir -p "$serve"
+          python=""
+          for candidate in python3 python; do
+            if "$candidate" -I -c 'import http.server' > /dev/null 2>&1; then
+              python="$candidate"
+              break
+            fi
+          done
+          test -n "$python"
+          port=$("$python" -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])' | tr -d '\r')
+          "$python" -I -m http.server "$port" --bind 127.0.0.1 --directory "$serve" > "$RUNNER_TEMP/serve.log" 2>&1 < /dev/null &
+          server=$!
+          trap 'kill "$server" 2> /dev/null || true' EXIT
+          url="http://127.0.0.1:$port/"
+          printf ready > "$serve/ready"
+          up=no
+          for _ in $(seq 1 60); do
+            if curl -fs -o /dev/null "${url}ready"; then
+              up=yes
+              break
+            fi
+            sleep 0.5
+          done
+          if [ "$up" != yes ]; then
+            cat "$RUNNER_TEMP/serve.log"
+            exit 1
+          fi
+          rm -f "$serve/ready"
+          names="${{ matrix.asset }}"
           if [ "$RUNNER_OS" = Windows ]; then
+            names="statusline-windows-x86_64.exe statusline-windows-arm64.exe"
+          fi
+          digest() {
+            if command -v sha256sum > /dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d ' ' -f 1
+          }
+          publish() {
+            rm -f "$serve"/statusline-* "$serve/SHA256SUMS"
+            hash=$(digest "dist/${{ matrix.asset }}")
+            if [ "$1" = wrong ]; then
+              hash=0000000000000000000000000000000000000000000000000000000000000000
+            fi
+            for name in $names; do
+              cp "dist/${{ matrix.asset }}" "$serve/$name"
+              if [ "$1" != missing ]; then
+                printf '%s  %s\n' "$hash" "$name" >> "$serve/SHA256SUMS"
+              fi
+            done
+          }
+          if [ "$RUNNER_OS" = Windows ]; then
+            for shell in powershell pwsh; do
+              case "$shell" in powershell) options="-NoProfile -ExecutionPolicy Bypass" ;; *) options=-NoProfile ;; esac
+              publish good
+              expect="$PWD/dist/${{ matrix.asset }}"
+              install_in "download-$shell" yes env STATUSLINE_RELEASE_URL="$url" "$shell" $options -File ./install.ps1
+              expect=""
+              publish wrong
+              refuse_in "wrong-$shell" env STATUSLINE_RELEASE_URL="$url" "$shell" $options -File ./install.ps1
+              publish missing
+              refuse_in "missing-$shell" env STATUSLINE_RELEASE_URL="$url" "$shell" $options -File ./install.ps1
+            done
             install_in powershell yes powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -Build
             uninstall_in powershell powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -Uninstall
             install_in pwsh yes pwsh -NoProfile -File ./install.ps1 -Build
@@ -357,6 +439,27 @@ jobs:
               printf '%s' "$PATH"
             )
             PATH="$nocargo" command -v cargo > /dev/null && exit 1
+            publish good
+            expect="$PWD/dist/${{ matrix.asset }}"
+            install_in download-sh yes env STATUSLINE_RELEASE_URL="$url" PATH="$nocargo" sh install.sh
+            foreign="$RUNNER_TEMP/foreign"
+            rm -rf "$foreign"
+            mkdir -p "$foreign/src"
+            cp install.sh "$foreign/install.sh"
+            printf '[package]\nname = "other"\nversion = "0.0.0"\nedition = "2021"\nbuild = "build.rs"\n' > "$foreign/Cargo.toml"
+            printf 'fn main() {}\n' > "$foreign/src/main.rs"
+            printf 'fn main() { std::fs::write("built.marker", "x").unwrap(); }\n' > "$foreign/build.rs"
+            command -v cargo > /dev/null
+            config=none
+            install_in foreign yes env STATUSLINE_RELEASE_URL="$url" sh "$foreign/install.sh"
+            config=statusline.json
+            test ! -e "$foreign/built.marker"
+            test ! -e "$foreign/target"
+            expect=""
+            publish wrong
+            refuse_in wrong-sh env STATUSLINE_RELEASE_URL="$url" PATH="$nocargo" sh install.sh
+            publish missing
+            refuse_in missing-sh env STATUSLINE_RELEASE_URL="$url" PATH="$nocargo" sh install.sh
             sums="https://github.com/LetermeFlorent/claude-statusline/releases/latest/download/SHA256SUMS"
             if curl -fsIL --proto =https -o /dev/null "$sums"; then
               release=no
@@ -427,6 +530,9 @@ jobs:
       id-token: write
       attestations: write
     steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           path: dist
@@ -441,5 +547,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           ls -l dist
-          notes="Status line binaries for Linux, macOS and Windows. SHA256SUMS holds their SHA-256 checksums, and each file carries a build provenance attestation: gh attestation verify <file> --repo $GITHUB_REPOSITORY"
-          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "$notes"
+          bash .github/release-notes.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"

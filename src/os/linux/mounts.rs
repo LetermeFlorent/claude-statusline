@@ -4,7 +4,7 @@ use alloc::string::String;
 const MOUNT_POINT_FIELD: usize = 4;
 const FIELDS_SEPARATOR: &str = " - ";
 const ESCAPE_DIGITS: usize = 3;
-const NETWORK_KINDS: [&str; 10] = [
+const NETWORK_KINDS: [&str; 14] = [
     "nfs",
     "nfs4",
     "cifs",
@@ -15,6 +15,10 @@ const NETWORK_KINDS: [&str; 10] = [
     "afs",
     "fuse.sshfs",
     "fuse.rclone",
+    "fuse.s3fs",
+    "davfs",
+    "lustre",
+    "autofs",
 ];
 
 struct Mount<'a> {
@@ -81,6 +85,7 @@ mod tests {
 141 22 0:71 / /mnt/share rw,relatime shared:6 - cifs //192.0.2.1/share rw,vers=3.1.1
 142 140 0:72 / /mnt/nas/scratch rw,relatime shared:7 - ext4 /dev/sdd1 rw
 143 23 0:73 / /home/user/remote rw,nosuid shared:8 - fuse.sshfs user@192.0.2.1:/srv rw
+144 22 0:74 / /net rw,relatime shared:9 - autofs /etc/auto.net rw,fd=7
 ";
 
     fn mount_source(path: &str) -> Option<String> {
@@ -121,6 +126,7 @@ mod tests {
             ("/mnt/nas/project", true),
             ("/mnt/share", true),
             ("/home/user/remote/notes", true),
+            ("/net/host/project", true),
             ("/mnt/nas/scratch/project", false),
             ("/mnt/nasty", false),
             ("/mnt/c/Users", false),

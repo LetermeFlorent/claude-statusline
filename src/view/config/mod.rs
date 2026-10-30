@@ -3,6 +3,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 mod colors;
+mod fields;
 mod hex;
 mod names;
 mod palettes;

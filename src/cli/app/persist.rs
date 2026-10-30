@@ -29,13 +29,14 @@ pub(super) fn pending_changes(path: &str) -> Vec<String> {
         return Vec::new();
     };
     let prefix = format!("{}.", os::file_name(path));
-    let mut found: Vec<String> = os::list(dir, &prefix)
+    let mut found: Vec<(Option<i64>, String)> = os::list(dir, &prefix)
         .into_iter()
         .filter(|name| name.ends_with(CHANGES_SUFFIX))
         .map(|name| os::join(dir, &[&name]))
+        .map(|file| (os::written(&file), file))
         .collect();
     found.sort();
-    found
+    found.into_iter().map(|(_, file)| file).collect()
 }
 
 fn read_pending(path: &str) -> Vec<(String, String)> {
@@ -67,7 +68,7 @@ pub(super) fn load_state() -> State {
 fn merge_state(path: &str, own: Option<&State>) -> bool {
     let pending = read_pending(path);
     let Some(latest) = read_state(path) else {
-        return own.is_some_and(|state| os::write_atomic(path, state.text().as_bytes()));
+        return own.is_some_and(|state| park(path, state).is_some());
     };
     let mut merged = with_pending(latest, &pending);
     if let Some(state) = own {
@@ -82,11 +83,20 @@ fn merge_state(path: &str, own: Option<&State>) -> bool {
     written
 }
 
-fn park_changes(path: &str, lock_path: &str, state: &State) -> bool {
+fn park(path: &str, state: &State) -> Option<String> {
     let parked = format!("{}.{}{}", path, os::pid(), CHANGES_SUFFIX);
-    if !os::write_atomic(&parked, state.changes().as_bytes()) {
-        return false;
+    let mut changes = os::read_text(&parked).unwrap_or_default();
+    if !changes.is_empty() && !changes.ends_with('\n') {
+        changes.push('\n');
     }
+    changes.push_str(&state.changes());
+    os::write_atomic(&parked, changes.as_bytes()).then_some(parked)
+}
+
+fn park_changes(path: &str, lock_path: &str, state: &State) -> bool {
+    let Some(parked) = park(path, state) else {
+        return false;
+    };
     for _ in 0..STATE_LOCK_WAIT_MS / STATE_LOCK_SLICE_MS {
         if !os::exists(&parked) {
             break;

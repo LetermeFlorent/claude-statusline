@@ -12,10 +12,19 @@ Changes since v2.1.1, on the cleanup branches.
 - Windows binaries build repeatably and are attested, a native Windows on Arm binary is built, and the Windows executable is no longer kept in git.
 - Readings are more accurate: the disk figure is busy time on the disk that holds the path, Linux containers show the memory of their cgroup limit, and free RAM works on kernels without MemAvailable.
 - The background colour follows each terminal's own settings, WSL included, and `NO_COLOR` or `TERM=dumb` gives plain text.
+- The install scripts run without a clone: download the script alone and it fetches the latest release. `install.sh --uninstall` and `install.ps1 -Uninstall` remove the bar from every account, and `--install` and `--uninstall` answer each settings case on its own.
+- The program no longer ships in git: `install.ps1` downloads the Windows binary of the latest release and checks its SHA-256 hash, like `install.sh`, and refuses a release that has no `SHA256SUMS`. An upgrade means running the install script again.
+- The bar speaks French on a French system: units read `7j`, `2j07h`, `1h20min`, `11,3/15,3Go`, `Md` and `maj` there, and `STATUSLINE_LANG` forces `fr` or `en`. `--language` prints the one in use.
+- New `spend` segment, shown in place of `5h` and `7d` when the session holds only a spend limit, as behind a Claude apps gateway (`segments.spend` hides it).
+- Colours fall back to the 256-colour palette when `COLORTERM` does not announce 24-bit colour, and `COLUMNS` makes the line drop details to fit.
+- The context bar is measured against the real auto-compact threshold (including `modelSettings` and `workspace.project_dir`), warns from 70 % and 90 %, and a per-project cache keeps the threshold of several sessions. The auto-compact marker is now `~` followed by a space, and the optional `cold_cache_marker` shows `cold` when the prompt cache is not warm.
+- Project files on network folders are left unread (UNC paths, network drives, NFS, SMB and similar mounts), so a stalled share cannot hold the bar.
+- The look changed slightly: empty squares are dimmer, text keeps the terminal's default colour, the default cpu and context blues are lighter, and rounded token counts move to the next unit at 1000.
+- `--demo` takes `low`, `warn` or `hot` and shows sample disk and cpu values, and `--bench` reports the time of each stage.
 - New options: `--check` validates `statusline.json`, and metric names are read without case.
 - The help, the messages and the install scripts speak French or English.
 - The README, the install guide and the CI step names are in English, and the sources carry no comments.
-- CI runs rustfmt, clippy and the tests on all five rows, runs both installer scripts, tests the self-update against a local release, and pins the rendered line for the dark and light palettes.
+- CI runs rustfmt, clippy and the tests on all six rows (Linux, macOS and Windows, each on x86_64 and arm64), runs both installer scripts, tests the self-update against a local release, and pins the rendered line for the dark and light palettes.
 - Cargo.toml now declares `rust-version`, the licence (MIT), the repository and a description. SECURITY.md and an issue template are new.
 
 ## 2.1.1 - 2026-10-20
