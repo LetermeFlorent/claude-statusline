@@ -431,6 +431,14 @@ jobs:
               printf '%s' "$PATH"
             )
             PATH="$nossh" command -v ssh-keygen > /dev/null && exit 1
+            fake=$(cygpath -u "$RUNNER_TEMP/fakekeygen")
+            rm -rf "$fake"
+            mkdir -p "$fake"
+            stub=$(hash -r; type -P true)
+            cp "$stub" "$fake/ssh-keygen.exe"
+            cp "$(dirname "$stub")/msys-2.0.dll" "$fake/"
+            "$fake/ssh-keygen.exe" -Y verify -f missing -I x -n x -s missing
+            (PATH="$fake:$nossh"; hash -r; test "$(command -v ssh-keygen)" = "$fake/ssh-keygen")
             for shell in powershell pwsh; do
               case "$shell" in powershell) options="-NoProfile -ExecutionPolicy Bypass" ;; *) options=-NoProfile ;; esac
               publish good
@@ -438,12 +446,21 @@ jobs:
               install_in "download-$shell" yes env STATUSLINE_RELEASE_URL="$url" "$shell" $options -File ./install-signed.ps1
               install_in "nokeygen-$shell" yes env STATUSLINE_LANG=en STATUSLINE_RELEASE_URL="$url" PATH="$nossh" "$(command -v "$shell")" $options -File ./install-nokeygen.ps1 2>&1 | tee "$RUNNER_TEMP/warning.log"
               grep -q 'cannot check signatures' "$RUNNER_TEMP/warning.log"
+              install_in "fakekeygen-$shell" yes env STATUSLINE_LANG=en STATUSLINE_RELEASE_URL="$url" PATH="$fake:$nossh" "$(command -v "$shell")" $options -File ./install-nokeygen.ps1 2>&1 | tee "$RUNNER_TEMP/warning.log"
+              grep -q 'cannot check signatures' "$RUNNER_TEMP/warning.log"
+              install_in "nextkeygen-$shell" yes env STATUSLINE_LANG=en STATUSLINE_RELEASE_URL="$url" PATH="$fake:$PATH" "$(command -v "$shell")" $options -File ./install-nokeygen.ps1 2>&1 | tee "$RUNNER_TEMP/warning.log"
+              if grep -q 'cannot check signatures' "$RUNNER_TEMP/warning.log"; then
+                echo "the ssh-keygen after the fake one on PATH was not used"
+                exit 1
+              fi
               expect=""
               refuse_in "realkey-$shell" env STATUSLINE_RELEASE_URL="$url" "$shell" $options -File ./install.ps1
               for mode in otherkey nosig nomanifest wronghash; do
                 publish "$mode"
                 refuse_in "$mode-$shell" env STATUSLINE_RELEASE_URL="$url" "$shell" $options -File ./install-signed.ps1
               done
+              publish otherkey
+              refuse_in "nextkeygen-otherkey-$shell" env STATUSLINE_RELEASE_URL="$url" PATH="$fake:$PATH" "$(command -v "$shell")" $options -File ./install-nokeygen.ps1
             done
             install_in powershell yes powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -Build
             uninstall_in powershell powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -Uninstall
@@ -500,6 +517,14 @@ jobs:
             expect="$PWD/dist/${{ matrix.asset }}"
             install_in download-sh yes env STATUSLINE_RELEASE_URL="$url" PATH="$nocargo" sh ./install-signed.sh
             install_in nokeygen-sh yes env STATUSLINE_LANG=en STATUSLINE_RELEASE_URL="$url" PATH="$nossh" sh ./install-signed.sh 2>&1 | tee "$RUNNER_TEMP/warning.log"
+            grep -q 'cannot check signatures' "$RUNNER_TEMP/warning.log"
+            fake="$RUNNER_TEMP/fakekeygen"
+            rm -rf "$fake"
+            mkdir -p "$fake"
+            printf '#!/bin/sh\nexit 0\n' > "$fake/ssh-keygen"
+            chmod 755 "$fake/ssh-keygen"
+            (PATH="$fake:$nossh"; hash -r; test "$(command -v ssh-keygen)" = "$fake/ssh-keygen")
+            install_in fakekeygen-sh yes env STATUSLINE_LANG=en STATUSLINE_RELEASE_URL="$url" PATH="$fake:$nossh" sh ./install-signed.sh 2>&1 | tee "$RUNNER_TEMP/warning.log"
             grep -q 'cannot check signatures' "$RUNNER_TEMP/warning.log"
             foreign="$RUNNER_TEMP/foreign"
             rm -rf "$foreign"
