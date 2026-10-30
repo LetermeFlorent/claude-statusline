@@ -62,10 +62,19 @@ impl Value {
     }
 
     pub fn set(&mut self, key: &str, val: Value) {
-        if let Value::Obj(m) = self {
-            m.retain(|(k, _)| k != key);
+        let Value::Obj(m) = self else {
+            return;
+        };
+        let Some(first) = m.iter().position(|(k, _)| k == key) else {
             m.push((String::from(key), val));
-        }
+            return;
+        };
+        let mut index = 0;
+        m.retain(|(k, _)| {
+            index += 1;
+            index - 1 == first || k != key
+        });
+        m[first].1 = val;
     }
 
     pub fn remove(&mut self, key: &str) -> bool {
@@ -368,7 +377,6 @@ fn write_value(v: &Value, ind: usize, out: &mut String) {
                 out.push_str("{}");
                 return;
             }
-            keys.sort();
             out.push_str("{\n");
             for (i, k) in keys.iter().enumerate() {
                 indent(ind + 2, out);
@@ -449,6 +457,13 @@ mod tests {
             false,
         )
         .unwrap();
-        assert_eq!(pretty(&v), "{\n  \"a\": {},\n  \"b\": [\n    1,\n    2.50\n  ],\n  \"c\": \"x\\u0001\\\"\",\n  \"d\": []\n}\n");
+        assert_eq!(pretty(&v), "{\n  \"b\": [\n    1,\n    2.50\n  ],\n  \"a\": {},\n  \"c\": \"x\\u0001\\\"\",\n  \"d\": []\n}\n");
+        let mut v = parse("{\"a\":1,\"b\":2,\"a\":3}", false).unwrap();
+        v.set("a", Value::Bool(true));
+        v.set("c", Value::Null);
+        assert_eq!(
+            pretty(&v),
+            "{\n  \"a\": true,\n  \"b\": 2,\n  \"c\": null\n}\n"
+        );
     }
 }

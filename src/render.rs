@@ -421,4 +421,140 @@ mod tests {
         assert_eq!(cell_count(0.5, 8), 1);
         assert_eq!(cell_count(150.0, 8), 8);
     }
+
+    const NOW: f64 = 1_000_000.0;
+    const GIB: f64 = 1073741824.0;
+
+    fn readable(s: &str) -> String {
+        let mut parts = s.split('\x1b');
+        let mut out = String::from(parts.next().unwrap_or(""));
+        for part in parts {
+            let (code, text) = part[1..].split_once('m').unwrap();
+            match code {
+                "0" => out.push_str("[/]"),
+                "1" => out.push_str("[b]"),
+                "2" => out.push_str("[dim]"),
+                "4" => out.push_str("[u]"),
+                _ => {
+                    let c: Vec<u8> = code
+                        .strip_prefix("38;2;")
+                        .unwrap()
+                        .split(';')
+                        .map(|x| x.parse().unwrap())
+                        .collect();
+                    let _ = write!(out, "[#{:02x}{:02x}{:02x}]", c[0], c[1], c[2]);
+                }
+            }
+            out.push_str(text);
+        }
+        out
+    }
+
+    fn sample() -> Data {
+        Data {
+            ctx: Ctx {
+                size: Some(1_000_000.0),
+                pct: Some(6.0),
+                tokens: Some(60_000),
+            },
+            window: Some(200_000),
+            quotas: Some((
+                Some(Quota {
+                    pct: Some(36.0),
+                    at: Some(NOW + 3600.0),
+                }),
+                Some(Quota {
+                    pct: Some(81.0),
+                    at: Some(NOW + 200_000.0),
+                }),
+            )),
+            model: String::from("Opus 4"),
+            effort: Some(String::from("high")),
+            sys: alloc::vec![
+                SysValue {
+                    metric: Metric::Ram,
+                    pct: None,
+                    ram: Some((16.0 * GIB, 4.0 * GIB)),
+                },
+                SysValue {
+                    metric: Metric::Io,
+                    pct: Some(90.0),
+                    ram: None,
+                },
+                SysValue {
+                    metric: Metric::Cpu,
+                    pct: Some(12.0),
+                    ram: None,
+                },
+            ],
+            updating: true,
+        }
+    }
+
+    fn line(light: bool, config: Option<&str>, d: &Data) -> String {
+        let cfg = Config::parse(config);
+        readable(&render(&cfg, &cfg.colors(light), d, NOW))
+    }
+
+    fn quota_only(pct: Option<f64>) -> String {
+        let mut d = sample();
+        d.quotas = Some((Some(Quota { pct, at: None }), None));
+        d.sys.clear();
+        d.updating = false;
+        let only_5h = "{\"segments\": {\"ctx\": false, \"7d\": false, \"model\": false}}";
+        line(false, Some(only_5h), &d)
+    }
+
+    const DISK: &str = if cfg!(windows) { "C:" } else { "dsk" };
+
+    #[test]
+    fn dark_line() {
+        let expected = format!(
+            concat!(
+                "[dim][#e8eaed]ª[/][b][#e8eaed]ctx[/] [#96cdff]■[#8bc2fa]■[#7fb8f5]▪[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[/] [b][#e8eaed]60k/200k[/]",
+                " [b][#e8eaed]|[/] [b][#e8eaed]5h[/] [#aa5aaf]■[#b168b6]■[#b876bc]▪[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[/] [b][#e8eaed]36%[/] [b][#e8eaed]1h00m[/]",
+                " [b][#e8eaed]|[/] [b][#e8eaed]7d[/] [#b95555]■[#ba5858]■[#bb5a5a]■[#bc5d5d]■[#bd5f5f]■[#be6262]■[#bf6464]▪[#e2e5ea]■[/] [b][#e8eaed]81%[/] [b][#e8eaed]2d07h[/]",
+                " [b][#e8eaed]|[/] [u][#e8eaed]Opus 4[/][b][#e8eaed]:[/][b][#8290cc]h[b][#8b8fcb]i[b][#938dcb]g[b][#9c8cca]h[/]\n",
+                "[b][#e8eaed]ram[/] [#be823c]■[#c08541]■[#c28947]■[#c38c4c]■[#c59051]■[#c79357]▪[#e2e5ea]■[#e2e5ea]■[/] [b][#e8eaed]12.0/16.0G[/]",
+                " [b][#e8eaed]|[/] [b][#e8eaed]{disk}[/] [#c83c3c]■[#c94040]■[#cb4545]■[#cc4949]■[#cd4e4e]■[#ce5252]■[#d05757]▪[#e2e5ea]■[/] [b][#e8eaed]90%[/]",
+                " [b][#e8eaed]|[/] [b][#e8eaed]cpu[/] [#375a8c]▪[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[/] [b][#e8eaed]12%[/]",
+                " [b][#e8eaed]|[/] [b][#e8eaed]update[/][/]\n",
+            ),
+            disk = DISK
+        );
+        assert_eq!(line(false, None, &sample()), expected);
+    }
+
+    #[test]
+    fn light_line() {
+        let expected = format!(
+            concat!(
+                "[dim][#000000]ª[/][b][#000000]ctx[/] [#7db9ff]■[#71abf4]■[#659eea]▪[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[/] [b][#000000]60k/200k[/]",
+                " [b][#000000]|[/] [b][#000000]5h[/] [#aa5aaf]■[#9a519e]■[#8a498d]▪[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[/] [b][#000000]36%[/] [b][#000000]1h00m[/]",
+                " [b][#000000]|[/] [b][#000000]7d[/] [#b95555]■[#b65454]■[#b35252]■[#af5151]■[#ac4f4f]■[#a94e4e]■[#a64c4c]▪[#beb4a5]■[/] [b][#000000]81%[/] [b][#000000]2d07h[/]",
+                " [b][#000000]|[/] [u][#000000]Opus 4[/][b][#000000]:[/][b][#4b5476]h[b][#505376]i[b][#555275]g[b][#5a5175]h[/]\n",
+                "[b][#000000]ram[/] [#be823c]■[#b87e3a]■[#b27a38]■[#ac7636]■[#a67234]■[#a06e33]▪[#beb4a5]■[#beb4a5]■[/] [b][#000000]12.0/16.0G[/]",
+                " [b][#000000]|[/] [b][#000000]{disk}[/] [#c83c3c]■[#c33a3a]■[#be3939]■[#b83737]■[#b33636]■[#ae3434]■[#a93333]▪[#beb4a5]■[/] [b][#000000]90%[/]",
+                " [b][#000000]|[/] [b][#000000]cpu[/] [#375a8c]▪[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[#beb4a5]■[/] [b][#000000]12%[/]",
+                " [b][#000000]|[/] [b][#000000]update[/][/]\n",
+            ),
+            disk = DISK
+        );
+        assert_eq!(line(true, None, &sample()), expected);
+    }
+
+    #[test]
+    fn quota_bar_levels() {
+        let levels = [Some(0.0), Some(50.0), Some(80.0), Some(100.0), None].map(quota_only);
+        assert_eq!(
+            levels,
+            [
+                "[b][#e8eaed]5h[/] [#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[/] [b][#e8eaed]0%[/] [b][#e8eaed]--[/][/]\n",
+                "[b][#e8eaed]5h[/] [#aa5aaf]■[#af63b3]■[#b46cb8]■[#b876bc]▪[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[#e2e5ea]■[/] [b][#e8eaed]50%[/] [b][#e8eaed]--[/][/]\n",
+                "[b][#e8eaed]5h[/] [#c83c5f]■[#ca4163]■[#cb4768]■[#cd4c6c]■[#ce5271]■[#d05775]■[#d15c79]▪[#e2e5ea]■[/] [b][#e8eaed]80%[/] [b][#e8eaed]--[/][/]\n",
+                "[b][#e8eaed]5h[/] [#c83c5f]■[#c94163]■[#cb4567]■[#cc4a6a]■[#cd4f6e]■[#cf5372]■[#d05876]■[#d15c79]▪[/] [b][#d15c79]100%[/] [b][#e8eaed]--[/][/]\n",
+                "[b][#e8eaed]5h[/] [#e2e5ea]■■■■■■■■[/] [b][#e8eaed]--%[/] [b][#e8eaed]--[/][/]\n",
+            ]
+        );
+    }
 }
