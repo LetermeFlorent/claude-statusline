@@ -2,7 +2,7 @@ use super::windows::wide;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::ffi::c_void;
-use core::ptr::{null, null_mut};
+use core::ptr::null_mut;
 
 type Handle = isize;
 
@@ -10,28 +10,44 @@ type Handle = isize;
 extern "system" {
     fn CreateProcessW(
         app: *const u16,
-        cmd: *mut u16,
-        pa: *mut c_void,
-        ta: *mut c_void,
-        inherit: i32,
+        command: *mut u16,
+        process_security: *mut c_void,
+        thread_security: *mut c_void,
+        inherit_handles: i32,
         flags: u32,
-        env: *mut c_void,
-        dir: *const u16,
-        si: *mut u64,
-        pi: *mut Handle,
+        environment: *mut c_void,
+        directory: *const u16,
+        startup: *mut StartupInfo,
+        child: *mut ProcessInfo,
     ) -> i32;
-    fn WaitForSingleObject(h: Handle, ms: u32) -> u32;
-    fn GetExitCodeProcess(h: Handle, code: *mut u32) -> i32;
-    fn TerminateProcess(h: Handle, code: u32) -> i32;
-    fn CloseHandle(h: Handle) -> i32;
+    fn WaitForSingleObject(handle: Handle, ms: u32) -> u32;
+    fn GetExitCodeProcess(process: Handle, code: *mut u32) -> i32;
+    fn TerminateProcess(process: Handle, code: u32) -> i32;
+    fn CloseHandle(handle: Handle) -> i32;
     fn Sleep(ms: u32);
 }
 
 const NO_WINDOW: u32 = 0x0800_0000;
 const BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
 const BELOW_NORMAL_PRIORITY: u32 = 0x4000;
-const STARTUP_INFO_SIZE: u64 = 104;
 const SIGNALED: u32 = 0;
+const TIMED_OUT_EXIT_CODE: u32 = 1;
+const MS_PER_SECOND: u32 = 1000;
+
+#[repr(C)]
+struct StartupInfo {
+    size: u32,
+    zeroed: [u64; 12],
+}
+
+#[repr(C)]
+#[derive(Default)]
+struct ProcessInfo {
+    process: Handle,
+    thread: Handle,
+    process_id: u32,
+    thread_id: u32,
+}
 
 fn quote(arg: &str, out: &mut String) {
     if !arg.is_empty() && !arg.contains([' ', '\t', '"']) {
@@ -57,73 +73,73 @@ fn quote(arg: &str, out: &mut String) {
 fn command_line(exe: &str, args: &[&str]) -> Vec<u16> {
     let mut line = String::new();
     quote(exe, &mut line);
-    for a in args {
+    for arg in args {
         line.push(' ');
-        quote(a, &mut line);
+        quote(arg, &mut line);
     }
     wide(&line)
 }
 
-fn start(exe: &str, args: &[&str], flags: u32) -> Option<[Handle; 3]> {
-    let app = if exe.contains(['\\', '/']) {
-        Some(wide(exe))
-    } else {
-        None
+fn start(exe: &str, args: &[&str], dir: &str, flags: u32) -> Option<ProcessInfo> {
+    let app = wide(exe);
+    let folder = wide(dir);
+    let mut command = command_line(exe, args);
+    let mut startup = StartupInfo {
+        size: size_of::<StartupInfo>() as u32,
+        zeroed: [0; 12],
     };
-    let mut cmd = command_line(exe, args);
-    let mut si = [0u64; 13];
-    si[0] = STARTUP_INFO_SIZE;
-    let mut pi: [Handle; 3] = [0; 3];
-    let app_ptr = app.as_ref().map_or(null(), |a| a.as_ptr());
+    let mut child = ProcessInfo::default();
     let ok = unsafe {
         CreateProcessW(
-            app_ptr,
-            cmd.as_mut_ptr(),
+            app.as_ptr(),
+            command.as_mut_ptr(),
             null_mut(),
             null_mut(),
             0,
             flags,
             null_mut(),
-            null(),
-            si.as_mut_ptr(),
-            pi.as_mut_ptr(),
+            folder.as_ptr(),
+            &mut startup,
+            &mut child,
         )
     };
     if ok == 0 {
         None
     } else {
-        Some(pi)
+        Some(child)
     }
 }
 
-fn close(pi: [Handle; 3]) {
+fn close(child: ProcessInfo) {
     unsafe {
-        CloseHandle(pi[1]);
-        CloseHandle(pi[0]);
+        CloseHandle(child.thread);
+        CloseHandle(child.process);
     }
 }
 
-pub fn spawn(exe: &str, args: &[&str]) -> bool {
+pub fn spawn(exe: &str, args: &[&str], dir: &str) -> bool {
     let flags = NO_WINDOW | BELOW_NORMAL_PRIORITY;
-    match start(exe, args, flags | BREAKAWAY_FROM_JOB).or_else(|| start(exe, args, flags)) {
-        Some(pi) => {
-            close(pi);
+    let detached = start(exe, args, dir, flags | BREAKAWAY_FROM_JOB);
+    match detached.or_else(|| start(exe, args, dir, flags)) {
+        Some(child) => {
+            close(child);
             true
         }
         None => false,
     }
 }
 
-pub fn call(exe: &str, args: &[&str], secs: u32) -> Option<i32> {
-    let pi = start(exe, args, NO_WINDOW)?;
+pub fn call(exe: &str, args: &[&str], dir: &str, secs: u32) -> Option<i32> {
+    let child = start(exe, args, dir, NO_WINDOW)?;
     let mut code = 0u32;
-    let done = unsafe { WaitForSingleObject(pi[0], secs.saturating_mul(1000)) } == SIGNALED;
+    let timeout = secs.saturating_mul(MS_PER_SECOND);
+    let done = unsafe { WaitForSingleObject(child.process, timeout) } == SIGNALED;
     if done {
-        unsafe { GetExitCodeProcess(pi[0], &mut code) };
+        unsafe { GetExitCodeProcess(child.process, &mut code) };
     } else {
-        unsafe { TerminateProcess(pi[0], 1) };
+        unsafe { TerminateProcess(child.process, TIMED_OUT_EXIT_CODE) };
     }
-    close(pi);
+    close(child);
     if done {
         Some(code as i32)
     } else {

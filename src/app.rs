@@ -1,6 +1,8 @@
+use crate::backup;
 use crate::compact;
 use crate::config::{Config, Metric};
-use crate::os;
+use crate::global_config::{self, Repair};
+use crate::os::{self, Contents};
 use crate::portable;
 use crate::render::{self, Data, SysValue};
 use crate::session::Session;
@@ -46,6 +48,9 @@ const TEMPLATE: &str = "{
 }
 ";
 
+const MS_PER_SECOND: f64 = 1000.0;
+const DEFAULT_BENCH_RUNS: usize = 200;
+
 fn config_path() -> Option<String> {
     if let Some(p) = os::env("STATUSLINE_CONFIG") {
         return Some(p);
@@ -75,36 +80,49 @@ fn save_state(state: &State) -> bool {
     if !state.changed() {
         return false;
     }
-    let Some(p) = state_path() else { return false };
-    if let Some(d) = os::parent(&p) {
+    let Some(path) = state_path() else {
+        return false;
+    };
+    if let Some(d) = os::parent(&path) {
         if !os::exists(d) {
             os::mkdirs(d);
         }
     }
-    os::write_atomic(&p, state.text().as_bytes())
+    os::write_atomic(&path, state.text().as_bytes())
 }
 
 fn load_config() -> Config {
     Config::parse(config_path().and_then(|p| os::read_text(&p)).as_deref())
 }
 
-// Temps passe par etape, pour --bench : etat, config, session, rendu
+enum Stage {
+    State,
+    Config,
+    Session,
+    Render,
+}
+
+const STAGE_COUNT: usize = Stage::Render as usize + 1;
+
 struct Laps {
-    t: [f64; 4],
+    seconds: [f64; STAGE_COUNT],
     last: f64,
 }
 
 impl Laps {
     fn new() -> Laps {
         Laps {
-            t: [0.0; 4],
+            seconds: [0.0; STAGE_COUNT],
             last: os::ticks(),
         }
     }
-    fn lap(&mut self, i: usize) {
+    fn lap(&mut self, stage: Stage) {
         let now = os::ticks();
-        self.t[i] += now - self.last;
+        self.seconds[stage as usize] += now - self.last;
         self.last = now;
+    }
+    fn spent(&self, stage: Stage) -> f64 {
+        self.seconds[stage as usize]
     }
 }
 
@@ -113,25 +131,25 @@ fn sample(cfg: &Config, state: &mut State) -> Vec<SysValue> {
     if !cfg.sys_enabled {
         return out;
     }
-    for m in &cfg.metrics {
-        let v = match m {
+    for metric in &cfg.metrics {
+        let value = match metric {
             Metric::Ram => SysValue {
-                metric: *m,
+                metric: *metric,
                 pct: None,
                 ram: os::memory(),
             },
             Metric::Io => SysValue {
-                metric: *m,
+                metric: *metric,
                 pct: state.counter("io", os::disk(&cfg.disk_path)),
                 ram: None,
             },
             Metric::Cpu => SysValue {
-                metric: *m,
+                metric: *metric,
                 pct: state.counter("cpu", os::cpu()),
                 ram: None,
             },
         };
-        out.push(v);
+        out.push(value);
     }
     out
 }
@@ -171,19 +189,19 @@ fn read_file(p: &str) -> Option<String> {
 
 fn run(input: &str, now: f64, laps: &mut Laps) -> (String, State, bool) {
     let cfg = load_config();
-    laps.lap(1);
-    let s = Session::parse(input);
-    laps.lap(2);
+    laps.lap(Stage::Config);
+    let session = Session::parse(input);
+    laps.lap(Stage::Session);
     let mut state = load_state();
-    let light = theme::detect(cfg.background, &mut state);
+    let light = theme::detect_light(cfg.light_override, &mut state);
     let quotas = state.quotas(
-        s.live,
+        session.live,
         now,
-        &state::tag(&os::claude_dir().unwrap_or_default()),
+        &state::account_tag(&os::claude_dir().unwrap_or_default()),
     );
     let window = if cfg.seg_ctx {
         let env = os::env("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
-        let files = compact_files(s.cwd.as_deref());
+        let files = compact_files(session.cwd.as_deref());
         compact::window(
             env.as_deref(),
             &files,
@@ -196,96 +214,130 @@ fn run(input: &str, now: f64, laps: &mut Laps) -> (String, State, bool) {
         None
     };
     let sys = sample(&cfg, &mut state);
-    laps.lap(0);
+    laps.lap(Stage::State);
     let updating = update_watch::busy(now);
     let data = Data {
-        ctx: s.ctx,
+        ctx: session.ctx,
         window,
         quotas,
-        model: s.model,
-        effort: s.effort,
+        model: session.model,
+        effort: session.effort,
         sys,
         updating,
     };
     let out = render::render(&cfg, &cfg.colors(light), &data, now);
-    laps.lap(3);
+    laps.lap(Stage::Render);
     (out, state, cfg.auto_update)
 }
 
 fn demo_input(now: f64) -> String {
-    let t = now as i64;
+    let now = now as i64;
     format!(
         "{{\"model\":{{\"id\":\"claude-opus-5\",\"display_name\":\"Opus 5\"}},\"effort\":{{\"level\":\"max\"}},\
 \"context_window\":{{\"context_window_size\":1000000,\"used_percentage\":34,\
 \"current_usage\":{{\"input_tokens\":12000,\"cache_creation_input_tokens\":48000,\"cache_read_input_tokens\":280000}}}},\
 \"rate_limits\":{{\"five_hour\":{{\"used_percentage\":36,\"resets_at\":{}}},\"seven_day\":{{\"used_percentage\":61,\"resets_at\":{}}}}}}}",
-        t + 12600,
-        t + 320400
+        now + 12600,
+        now + 320400
     )
 }
 
-fn bench(n: usize) {
+fn bench(runs: usize) {
     let input = demo_input(os::now());
     let target = state_path().map(|p| format!("{}.bench", p));
     let mut laps = Laps::new();
     let mut write = 0.0;
     let mut bytes = 0;
     let start = os::ticks();
-    for _ in 0..n {
+    for _ in 0..runs {
         laps.last = os::ticks();
         let (out, state, _) = run(&input, os::now(), &mut laps);
         bytes = out.len();
-        let w = os::ticks();
-        if let Some(t) = &target {
-            os::write_atomic(t, state.text().as_bytes());
+        let write_start = os::ticks();
+        if let Some(path) = &target {
+            os::write_atomic(path, state.text().as_bytes());
         }
-        write += os::ticks() - w;
+        write += os::ticks() - write_start;
     }
     let total = os::ticks() - start;
-    if let Some(t) = &target {
-        os::remove(t);
+    if let Some(path) = &target {
+        os::remove(path);
     }
-    let ms = |x: f64| x * 1000.0 / n as f64;
-    let mut s = format!(
+    let per_run_ms = |seconds: f64| seconds * MS_PER_SECOND / runs as f64;
+    let mut report = format!(
         "{} rendus, {:.3} ms par rendu ({} octets produits)\n",
-        n,
-        ms(total),
+        runs,
+        per_run_ms(total),
         bytes
     );
-    for (label, v) in [
-        ("etat", laps.t[0]),
-        ("config", laps.t[1]),
-        ("session", laps.t[2]),
-        ("rendu", laps.t[3]),
+    for (label, seconds) in [
+        ("etat", laps.spent(Stage::State)),
+        ("config", laps.spent(Stage::Config)),
+        ("session", laps.spent(Stage::Session)),
+        ("rendu", laps.spent(Stage::Render)),
         ("ecriture", write),
     ] {
-        s.push_str(&format!("  {:<10}{:.3} ms\n", label, ms(v)));
+        report.push_str(&format!("  {:<10}{:.3} ms\n", label, per_run_ms(seconds)));
     }
-    os::out(&s);
+    os::out(&report);
 }
 
 fn settings_path() -> Option<String> {
     os::claude_dir().map(|d| os::join(&d, &["settings.json"]))
 }
 
-fn backup(path: &str, text: &[u8], now: f64) -> Option<String> {
-    let base = format!("{}.bak-{}", path, now as i64);
-    let mut name = base.clone();
-    let mut i = 1;
-    while os::exists(&name) {
-        name = format!("{}-{}", base, i);
-        i += 1;
-    }
-    if os::write(&name, text) {
-        Some(name)
-    } else {
-        None
-    }
-}
-
 fn fail(msg: &str) -> i32 {
     os::err(msg);
     1
+}
+
+fn unreadable_settings(path: &str) -> String {
+    format!("reglages illisibles, rien n'est modifie : {}\n", path)
+}
+
+fn store(path: &str, text: &str) -> Result<(), String> {
+    if os::write_atomic(path, text.as_bytes()) {
+        Ok(())
+    } else {
+        Err(format!("ecriture impossible : {}\n", path))
+    }
+}
+
+fn replace(path: &str, raw: &[u8], text: &str) -> Result<(), String> {
+    let saved = backup::save(path, raw, os::now())
+        .ok_or_else(|| format!("ecriture impossible : {}.bak\n", path))?;
+    os::out(&format!("sauvegarde : {}\n", saved));
+    store(path, text)
+}
+
+fn repair_global(path: &str, command: &str) -> Result<Option<String>, ()> {
+    let raw = match os::read_checked(path, global_config::MAX_GLOBAL_BYTES) {
+        Contents::Missing => return Ok(None),
+        Contents::Unreadable => return Err(()),
+        Contents::Bytes(raw) => raw,
+    };
+    let text = core::str::from_utf8(&raw).map_err(|_| ())?;
+    match global_config::repair(text, command, global_config::present) {
+        Repair::Kept => Ok(None),
+        Repair::Unreadable => Err(()),
+        Repair::Repaired { text: next, was } => replace(path, &raw, &next)
+            .map(|()| Some(was))
+            .map_err(|message| os::err(&message)),
+    }
+}
+
+fn repair_globals(command: &str) {
+    let Some(dir) = os::claude_dir() else { return };
+    for path in global_config::candidates(&dir, os::home().as_deref()) {
+        match repair_global(&path, command) {
+            Ok(Some(was)) => os::out(&format!(
+                "statusLine global repare dans {} (etait : {})\n",
+                path, was
+            )),
+            Ok(None) => {}
+            Err(()) => os::err(&format!("fichier global laisse tel quel : {}\n", path)),
+        }
+    }
 }
 
 fn install() -> i32 {
@@ -296,28 +348,31 @@ fn install() -> i32 {
         return fail("chemin du binaire introuvable\n");
     };
     let command = portable::command(&exe);
-    let raw = os::read(&path);
+    let raw = match os::read_checked(&path, os::MAX_READ_BYTES) {
+        Contents::Missing => None,
+        Contents::Bytes(raw) => Some(raw),
+        Contents::Unreadable => return fail(&unreadable_settings(&path)),
+    };
     let current = raw
         .as_ref()
         .map(|r| String::from_utf8_lossy(r).into_owned());
     let Some(next) = settings::with_status_line(current.as_deref(), &command) else {
-        return fail(&format!(
-            "reglages illisibles, rien n'est modifie : {}\n",
-            path
-        ));
+        return fail(&unreadable_settings(&path));
     };
-    if let Some(raw) = raw {
-        match backup(&path, &raw, os::now()) {
-            Some(b) => os::out(&format!("sauvegarde : {}\n", b)),
-            None => return fail(&format!("ecriture impossible : {}.bak\n", path)),
+    let written = match raw {
+        Some(raw) => replace(&path, &raw, &next),
+        None => {
+            if let Some(d) = os::parent(&path) {
+                os::mkdirs(d);
+            }
+            store(&path, &next)
         }
-    } else if let Some(d) = os::parent(&path) {
-        os::mkdirs(d);
-    }
-    if !os::write(&path, next.as_bytes()) {
-        return fail(&format!("ecriture impossible : {}\n", path));
+    };
+    if let Err(message) = written {
+        return fail(&message);
     }
     os::out(&format!("statusLine posee dans {}\n", path));
+    repair_globals(&command);
     let conf = config_path();
     if let Some(c) = conf.filter(|c| !os::exists(c)) {
         let target = os::claude_dir()
@@ -343,12 +398,8 @@ fn uninstall() -> i32 {
         os::out("aucune statusLine a retirer\n");
         return 0;
     };
-    match backup(&path, &raw, os::now()) {
-        Some(b) => os::out(&format!("sauvegarde : {}\n", b)),
-        None => return fail(&format!("ecriture impossible : {}.bak\n", path)),
-    }
-    if !os::write(&path, next.as_bytes()) {
-        return fail(&format!("ecriture impossible : {}\n", path));
+    if let Err(message) = replace(&path, &raw, &next) {
+        return fail(&message);
     }
     os::out(&format!("statusLine retiree de {}\n", path));
     0
@@ -374,18 +425,18 @@ pub fn main(args: Vec<String>) -> i32 {
             0
         }
         Some("--bench") => {
-            let n = args
+            let runs = args
                 .get(2)
                 .and_then(|s| s.parse::<usize>().ok())
                 .filter(|n| *n > 0)
-                .unwrap_or(200);
-            bench(n);
+                .unwrap_or(DEFAULT_BENCH_RUNS);
+            bench(runs);
             0
         }
         Some("--theme") => {
             let cfg = load_config();
             let mut state = load_state();
-            let light = theme::detect(cfg.background, &mut state);
+            let light = theme::detect_light(cfg.light_override, &mut state);
             save_state(&state);
             os::out(if light { "light\n" } else { "dark\n" });
             0

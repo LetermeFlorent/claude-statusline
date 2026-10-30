@@ -1,16 +1,15 @@
-use crate::json;
+use crate::json::{self, Syntax};
 use crate::num;
-use crate::state::State;
+use crate::state::{fingerprint, State};
 use alloc::format;
 use alloc::string::String;
+
+const RECHECK_AFTER: f64 = 30.0;
 
 fn positive(s: &str) -> Option<u64> {
     s.trim().parse::<u64>().ok().filter(|n| *n > 0)
 }
 
-// Fenetre d'auto-compactage : la variable d'environnement d'abord, sinon les
-// reglages (dossier de config, puis projet, puis projet local), relus seulement
-// quand leur taille ou leur date change.
 pub fn window(
     env: Option<&str>,
     files: &[String; 3],
@@ -26,12 +25,10 @@ pub fn window(
         .get("compact_window")
         .and_then(|s| s.parse::<u64>().ok())
         .filter(|n| *n > 0);
-    // Plusieurs sessions dans des dossiers differents partagent l'etat : le cache
-    // ne vaut que pour le meme trio de fichiers
-    let key = format!("{:016x}", fnv(files));
-    let same = state.get("compact_key") == Some(key.as_str());
-    if let Some(at) = state.num("compact_at").filter(|_| same) {
-        if now - at < 30.0 {
+    let files_key = fingerprint(files.iter().map(String::as_str));
+    let same_files = state.get("compact_key") == Some(files_key.as_str());
+    if let Some(at) = state.num("compact_at").filter(|_| same_files) {
+        if now - at < RECHECK_AFTER {
             return cached;
         }
     }
@@ -43,54 +40,44 @@ pub fn window(
         }
     }
     let now_s = format!("{}", now as i64);
-    if same && state.get("compact_stamp") == Some(stamp.as_str()) {
+    if same_files && state.get("compact_stamp") == Some(stamp.as_str()) {
         state.set("compact_at", &now_s);
         return cached;
     }
-    let mut w: Option<u64> = None;
+    let mut configured: Option<u64> = None;
     for f in files {
-        let Some(v) = read(f)
-            .and_then(|t| json::parse(&t, true))
+        let Some(settings) = read(f)
+            .and_then(|t| json::parse(&t, Syntax::Commented))
             .filter(|v| v.is_obj())
         else {
             continue;
         };
-        if v.get("autoCompactEnabled").and_then(|x| x.bool()) == Some(false) {
-            w = None;
+        if settings.get("autoCompactEnabled").and_then(|x| x.bool()) == Some(false) {
+            configured = None;
             continue;
         }
-        if let Some(n) = v
+        if let Some(n) = settings
             .at(&["env", "CLAUDE_CODE_AUTO_COMPACT_WINDOW"])
             .and_then(|x| x.str())
             .and_then(positive)
         {
-            w = Some(n);
+            configured = Some(n);
             continue;
         }
-        if let Some(n) = v.get("autoCompactWindow").and_then(|x| x.num()) {
+        if let Some(n) = settings.get("autoCompactWindow").and_then(|x| x.num()) {
             if n > 0.0 && num::is_integral(n) {
-                w = Some(n as u64);
+                configured = Some(n as u64);
             }
         }
     }
-    state.set("compact_key", &key);
+    state.set("compact_key", &files_key);
     state.set("compact_stamp", &stamp);
     state.set("compact_at", &now_s);
-    match w {
+    match configured {
         Some(n) => state.set("compact_window", &format!("{}", n)),
         None => state.remove("compact_window"),
     }
-    w
-}
-
-fn fnv(files: &[String; 3]) -> u64 {
-    let mut h: u64 = 0xcbf29ce484222325;
-    for f in files {
-        for b in f.bytes().chain(core::iter::once(0)) {
-            h = (h ^ b as u64).wrapping_mul(0x100000001b3);
-        }
-    }
-    h
+    configured
 }
 
 #[cfg(test)]
@@ -102,7 +89,7 @@ mod tests {
     }
 
     #[test]
-    fn reglages() {
+    fn reads_compact_window_from_settings() {
         let read = |f: &str| match f {
             "a" => Some(String::from("{\"autoCompactWindow\": 1.5e5}")),
             "b" => Some(String::from(
@@ -111,36 +98,33 @@ mod tests {
             _ => None,
         };
         let stat = |f: &str| if f == "c" { None } else { Some((10, 20)) };
-        let mut s = State::parse("");
+        let mut state = State::parse("");
         assert_eq!(
-            window(None, &files(), &mut s, 1000.0, &stat, &read),
+            window(None, &files(), &mut state, 1000.0, &stat, &read),
             Some(90000)
         );
-        assert_eq!(s.get("compact_stamp"), Some("10:20;10:20;0;"));
-        // Dans les 30 s : aucune lecture
-        let none = |_: &str| -> Option<String> { panic!() };
+        assert_eq!(state.get("compact_stamp"), Some("10:20;10:20;0;"));
+        let no_read = |_: &str| -> Option<String> { panic!() };
         assert_eq!(
-            window(None, &files(), &mut s, 1010.0, &stat, &none),
-            Some(90000)
-        );
-        // Fichiers inchanges : pas de relecture
-        assert_eq!(
-            window(None, &files(), &mut s, 2000.0, &stat, &none),
+            window(None, &files(), &mut state, 1010.0, &stat, &no_read),
             Some(90000)
         );
         assert_eq!(
-            window(Some(" 5 "), &files(), &mut s, 2000.0, &stat, &none),
+            window(None, &files(), &mut state, 2000.0, &stat, &no_read),
+            Some(90000)
+        );
+        assert_eq!(
+            window(Some(" 5 "), &files(), &mut state, 2000.0, &stat, &no_read),
             Some(5)
         );
-        // Autre dossier de travail, meme dans les 30 s : relu
-        let other = [String::from("a"), String::from("x"), String::from("y")];
+        let other_folder = [String::from("a"), String::from("x"), String::from("y")];
         let only_a = |f: &str| if f == "a" { read(f) } else { None };
         assert_eq!(
-            window(None, &other, &mut s, 2001.0, &stat, &only_a),
+            window(None, &other_folder, &mut state, 2001.0, &stat, &only_a),
             Some(150000)
         );
         assert_eq!(
-            window(None, &files(), &mut s, 2002.0, &stat, &read),
+            window(None, &files(), &mut state, 2002.0, &stat, &read),
             Some(90000)
         );
         let off = |_: &str| {
@@ -150,9 +134,9 @@ mod tests {
         };
         let stat2 = |_: &str| Some((1, 1));
         assert_eq!(
-            window(Some("1.5"), &files(), &mut s, 3000.0, &stat2, &off),
+            window(Some("1.5"), &files(), &mut state, 3000.0, &stat2, &off),
             None
         );
-        assert_eq!(s.get("compact_window"), None);
+        assert_eq!(state.get("compact_window"), None);
     }
 }

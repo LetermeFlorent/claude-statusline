@@ -1,10 +1,9 @@
-// Couche systeme Linux et macOS, sur la bibliotheque standard
-
 use std::io::{IsTerminal, Read, Write};
 use std::string::String;
 use std::vec::Vec;
 
 pub const SEP: char = '/';
+pub const PRIVATE_MODE: u32 = 0o600;
 
 pub fn args() -> Vec<String> {
     std::env::args_os()
@@ -18,24 +17,49 @@ pub fn env(name: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-pub fn read(path: &str) -> Option<Vec<u8>> {
-    std::fs::read(path).ok()
+#[cfg(any(target_os = "linux", target_os = "android"))]
+const O_NONBLOCK: i32 = 0o4000;
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
+const O_NONBLOCK: i32 = 0x0004;
+
+pub fn read_limited(path: &str, limit: usize) -> Option<Vec<u8>> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(O_NONBLOCK)
+        .open(path)
+        .ok()?;
+    if !file.metadata().ok()?.is_file() {
+        return None;
+    }
+    let mut data = Vec::new();
+    file.take(limit as u64 + 1).read_to_end(&mut data).ok()?;
+    (data.len() <= limit).then_some(data)
 }
 
 pub fn write(path: &str, data: &[u8]) -> bool {
     std::fs::write(path, data).is_ok()
 }
 
-// Ecrit a cote puis renomme, pour qu'un lecteur concurrent ne voie jamais un fichier tronque
+fn resolved(path: &str) -> String {
+    let linked = std::fs::symlink_metadata(path).is_ok_and(|m| m.is_symlink());
+    let target = linked.then(|| std::fs::canonicalize(path).ok()).flatten();
+    target
+        .and_then(|t| t.into_os_string().into_string().ok())
+        .unwrap_or_else(|| String::from(path))
+}
+
 pub fn write_atomic(path: &str, data: &[u8]) -> bool {
-    let tmp = format!("{}.{}.tmp", path, std::process::id());
-    if write(&tmp, data) {
-        if std::fs::rename(&tmp, path).is_ok() {
-            return true;
-        }
+    let target = resolved(path);
+    let tmp = format!("{}.{}.tmp", target, std::process::id());
+    let permissions = std::fs::metadata(&target).ok().map(|m| m.permissions());
+    let swapped = create_private(&tmp, data)
+        && permissions.is_none_or(|p| std::fs::set_permissions(&tmp, p).is_ok())
+        && std::fs::rename(&tmp, &target).is_ok();
+    if !swapped {
         let _ = std::fs::remove_file(&tmp);
     }
-    write(path, data)
+    swapped || write(&target, data)
 }
 
 pub fn remove(path: &str) -> bool {
@@ -46,11 +70,14 @@ pub fn rename(from: &str, to: &str) -> bool {
     std::fs::rename(from, to).is_ok()
 }
 
-pub fn create_new(path: &str) -> bool {
+pub fn create_private(path: &str, data: &[u8]) -> bool {
+    use std::os::unix::fs::OpenOptionsExt;
     std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
+        .mode(PRIVATE_MODE)
         .open(path)
+        .and_then(|mut file| file.write_all(data))
         .is_ok()
 }
 
@@ -59,7 +86,6 @@ pub fn make_executable(path: &str) -> bool {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).is_ok()
 }
 
-// (taille, date de modification en secondes Unix)
 pub fn stamp(path: &str) -> Option<(u64, i64)> {
     use std::os::unix::fs::MetadataExt;
     let m = std::fs::metadata(path).ok()?;
@@ -84,14 +110,13 @@ pub fn list(dir: &str, prefix: &str) -> Vec<String> {
         .collect()
 }
 
-// Rien a lire quand l'entree est un terminal : on ne bloque pas
 pub fn stdin() -> Option<String> {
-    let mut i = std::io::stdin();
-    if i.is_terminal() {
+    let mut input = std::io::stdin();
+    if input.is_terminal() {
         return None;
     }
     let mut data = Vec::new();
-    let _ = i.read_to_end(&mut data);
+    let _ = input.read_to_end(&mut data);
     Some(String::from_utf8_lossy(&data).into_owned())
 }
 
@@ -166,7 +191,10 @@ mod sys {
         std::fs::read_to_string(p).ok()
     }
 
-    // Jiffies : (total hors invite, total moins repos et attente disque)
+    const FIELDS_BEFORE_GUEST: usize = 8;
+    const IDLE: usize = 3;
+    const IOWAIT: usize = 4;
+
     pub fn cpu() -> Option<(i64, i64)> {
         let s = read_str("/proc/stat")?;
         let line = s.lines().next()?;
@@ -174,12 +202,15 @@ mod sys {
         if it.next()? != "cpu" {
             return None;
         }
-        let v: Vec<i64> = it.take(8).filter_map(|x| x.parse().ok()).collect();
-        if v.len() < 5 {
+        let jiffies: Vec<i64> = it
+            .take(FIELDS_BEFORE_GUEST)
+            .filter_map(|x| x.parse().ok())
+            .collect();
+        if jiffies.len() <= IOWAIT {
             return None;
         }
-        let clock: i64 = v.iter().sum();
-        Some((clock, clock - v[3] - v[4]))
+        let clock: i64 = jiffies.iter().sum();
+        Some((clock, clock - jiffies[IDLE] - jiffies[IOWAIT]))
     }
 
     fn dev_numbers(path: &str) -> Option<(u64, u64)> {
@@ -190,29 +221,34 @@ mod sys {
         Some((major, minor))
     }
 
-    // Millisecondes : (temps ecoule, temps passe a faire des entrees-sorties)
+    const IO_MS_COLUMN: usize = 12;
+
     pub fn disk(path: &str) -> Option<(i64, i64)> {
         let up = read_str("/proc/uptime")?;
-        let secs: f64 = up.split_whitespace().next()?.parse().ok()?;
+        let uptime_secs: f64 = up.split_whitespace().next()?.parse().ok()?;
+        let uptime_ms = (uptime_secs * 1000.0) as i64;
         let stats = read_str("/proc/diskstats")?;
         let want = dev_numbers(path);
         let mut fallback: Option<i64> = None;
         for line in stats.lines() {
-            let f: Vec<&str> = line.split_whitespace().collect();
-            if f.len() < 13 {
+            let columns: Vec<&str> = line.split_whitespace().collect();
+            if columns.len() <= IO_MS_COLUMN {
                 continue;
             }
-            let ticks: i64 = match f[12].parse() {
+            let io_ms: i64 = match columns[IO_MS_COLUMN].parse() {
                 Ok(t) => t,
                 Err(_) => continue,
             };
-            let num = (f[0].parse::<u64>().ok(), f[1].parse::<u64>().ok());
+            let num = (
+                columns[0].parse::<u64>().ok(),
+                columns[1].parse::<u64>().ok(),
+            );
             if let (Some((a, b)), (Some(x), Some(y))) = (want, num) {
                 if a == x && b == y {
-                    return Some(((secs * 1000.0) as i64, ticks));
+                    return Some((uptime_ms, io_ms));
                 }
             }
-            let name = f[2];
+            let name = columns[2];
             let virt = ["loop", "ram", "zram", "sr", "fd", "nbd"]
                 .iter()
                 .any(|p| name.starts_with(p));
@@ -220,16 +256,16 @@ mod sys {
                 && !virt
                 && std::path::Path::new(&format!("/sys/block/{}", name)).exists()
             {
-                fallback = Some(ticks);
+                fallback = Some(io_ms);
             }
         }
-        fallback.map(|t| ((secs * 1000.0) as i64, t))
+        fallback.map(|io_ms| (uptime_ms, io_ms))
     }
 
     pub fn memory() -> Option<(f64, f64)> {
-        let s = read_str("/proc/meminfo")?;
+        let meminfo = read_str("/proc/meminfo")?;
         let get = |k: &str| -> Option<f64> {
-            let line = s.lines().find(|l| l.starts_with(k))?;
+            let line = meminfo.lines().find(|l| l.starts_with(k))?;
             let kb: f64 = line[k.len()..]
                 .trim()
                 .trim_end_matches("kB")
@@ -242,16 +278,16 @@ mod sys {
     }
 
     fn gsettings(key: &str) -> Option<String> {
-        let o = std::process::Command::new("gsettings")
+        let output = std::process::Command::new("gsettings")
             .args(["get", "org.gnome.desktop.interface", key])
             .stderr(std::process::Stdio::null())
             .output()
             .ok()?;
-        if !o.status.success() {
+        if !output.status.success() {
             return None;
         }
         Some(
-            String::from_utf8_lossy(&o.stdout)
+            String::from_utf8_lossy(&output.stdout)
                 .trim()
                 .trim_matches('\'')
                 .to_lowercase(),
@@ -275,9 +311,14 @@ mod sys {
             }
             if section == "[Colors:Window]" {
                 if let Some(v) = line.strip_prefix("BackgroundNormal=") {
-                    let c: Vec<f64> = v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
-                    if c.len() >= 3 {
-                        return Some(crate::theme::luminance_light([c[0], c[1], c[2]]));
+                    let channels: Vec<f64> =
+                        v.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+                    if channels.len() >= 3 {
+                        return Some(crate::theme::luminance_light([
+                            channels[0],
+                            channels[1],
+                            channels[2],
+                        ]));
                     }
                 }
             }
@@ -301,16 +342,21 @@ mod sys {
     }
 
     pub fn os_stamp() -> String {
-        let ch = config_home();
+        let config_dir = config_home();
         format!(
             "{}|{}|{}|{}",
             env("GTK_THEME").unwrap_or_default(),
             env("XDG_CURRENT_DESKTOP").unwrap_or_default(),
             stamp_text(
-                ch.as_ref()
+                config_dir
+                    .as_ref()
                     .map(|c| super::super::join(c, &["dconf", "user"]))
             ),
-            stamp_text(ch.as_ref().map(|c| super::super::join(c, &["kdeglobals"]))),
+            stamp_text(
+                config_dir
+                    .as_ref()
+                    .map(|c| super::super::join(c, &["kdeglobals"]))
+            ),
         )
     }
 }
@@ -363,16 +409,17 @@ mod sys {
         fn CFRelease(cf: *const c_void);
     }
 
-    // Ticks : (total, total moins repos)
+    const CPU_STATE_IDLE: usize = 2;
+
     pub fn cpu() -> Option<(i64, i64)> {
-        let mut t = [0i32; 4];
+        let mut ticks = [0i32; 4];
         let mut n = 4u32;
-        if unsafe { host_statistics(mach_host_self(), 3, t.as_mut_ptr(), &mut n) } != 0 {
+        if unsafe { host_statistics(mach_host_self(), 3, ticks.as_mut_ptr(), &mut n) } != 0 {
             return None;
         }
-        let v: Vec<i64> = t.iter().map(|x| *x as u32 as i64).collect();
-        let clock: i64 = v.iter().sum();
-        Some((clock, clock - v[2]))
+        let ticks: Vec<i64> = ticks.iter().map(|x| *x as u32 as i64).collect();
+        let clock: i64 = ticks.iter().sum();
+        Some((clock, clock - ticks[CPU_STATE_IDLE]))
     }
 
     fn cfstr(s: &[u8]) -> *const c_void {
@@ -388,7 +435,8 @@ mod sys {
         out
     }
 
-    // Nanosecondes : (temps ecoule, temps de lecture et d'ecriture de tous les disques)
+    const CLOCK_UPTIME_RAW: u32 = 8;
+
     pub fn disk(_path: &str) -> Option<(i64, i64)> {
         let mut iter = 0u32;
         let matching = unsafe { IOServiceMatching(c"IOBlockStorageDriver".as_ptr().cast()) };
@@ -400,24 +448,25 @@ mod sys {
         let k_stats = cfstr(b"Statistics\0");
         let k_read = cfstr(b"Total Time (Read)\0");
         let k_write = cfstr(b"Total Time (Write)\0");
-        let mut busy = 0i64;
+        let mut busy_ns = 0i64;
         let mut seen = false;
         loop {
-            let e = unsafe { IOIteratorNext(iter) };
-            if e == 0 {
+            let entry = unsafe { IOIteratorNext(iter) };
+            if entry == 0 {
                 break;
             }
-            let d = unsafe { IORegistryEntryCreateCFProperty(e, k_stats, std::ptr::null(), 0) };
-            if !d.is_null() {
-                if unsafe { CFGetTypeID(d) == CFDictionaryGetTypeID() } {
-                    busy = busy
-                        .wrapping_add(number(d, k_read))
-                        .wrapping_add(number(d, k_write));
+            let stats =
+                unsafe { IORegistryEntryCreateCFProperty(entry, k_stats, std::ptr::null(), 0) };
+            if !stats.is_null() {
+                if unsafe { CFGetTypeID(stats) == CFDictionaryGetTypeID() } {
+                    busy_ns = busy_ns
+                        .wrapping_add(number(stats, k_read))
+                        .wrapping_add(number(stats, k_write));
                     seen = true;
                 }
-                unsafe { CFRelease(d) };
+                unsafe { CFRelease(stats) };
             }
-            unsafe { IOObjectRelease(e) };
+            unsafe { IOObjectRelease(entry) };
         }
         unsafe {
             IOObjectRelease(iter);
@@ -428,10 +477,15 @@ mod sys {
         if !seen {
             return None;
         }
-        Some((unsafe { clock_gettime_nsec_np(8) } as i64, busy))
+        let uptime_ns = unsafe { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) } as i64;
+        Some((uptime_ns, busy_ns))
     }
 
-    // Memoire utilisee comme le Moniteur d'activite : applications, fixee et compressee
+    const WIRE_COUNT_OFFSET: usize = 12;
+    const PURGEABLE_COUNT_OFFSET: usize = 88;
+    const COMPRESSOR_PAGE_COUNT_OFFSET: usize = 128;
+    const INTERNAL_PAGE_COUNT_OFFSET: usize = 140;
+
     pub fn memory() -> Option<(f64, f64)> {
         let mut total = 0u64;
         let mut len = 8usize;
@@ -452,13 +506,14 @@ mod sys {
         if unsafe { host_page_size(host, &mut page) } != 0 {
             return None;
         }
-        let mut v = [0i32; 38];
+        let mut vm_stats = [0i32; 38];
         let mut n = 38u32;
-        if unsafe { host_statistics64(host, 4, v.as_mut_ptr(), &mut n) } != 0 {
+        if unsafe { host_statistics64(host, 4, vm_stats.as_mut_ptr(), &mut n) } != 0 {
             return None;
         }
-        let at = |off: usize| v[off / 4] as u32 as f64;
-        let pages = at(140) - at(88) + at(12) + at(128);
+        let at = |off: usize| vm_stats[off / 4] as u32 as f64;
+        let app_pages = at(INTERNAL_PAGE_COUNT_OFFSET) - at(PURGEABLE_COUNT_OFFSET);
+        let pages = app_pages + at(WIRE_COUNT_OFFSET) + at(COMPRESSOR_PAGE_COUNT_OFFSET);
         let used = pages * page as f64;
         let used = if used > total as f64 {
             total as f64
@@ -479,7 +534,7 @@ mod sys {
     }
 
     pub fn os_theme() -> Option<bool> {
-        let data = read(&prefs()?)?;
+        let data = super::super::read(&prefs()?)?;
         if data.starts_with(b"bplist") {
             let mut key = vec![0x5F, 0x10, 0x13];
             key.extend_from_slice(b"AppleInterfaceStyle");
@@ -488,11 +543,11 @@ mod sys {
             return Some(!(find(&data, &key).is_some() && find(&data, &dark).is_some()));
         }
         let text = String::from_utf8_lossy(&data);
-        let Some(i) = text.find("<key>AppleInterfaceStyle</key>") else {
+        let Some(key_at) = text.find("<key>AppleInterfaceStyle</key>") else {
             return Some(true);
         };
         Some(
-            !text[i..]
+            !text[key_at..]
                 .trim_start_matches("<key>AppleInterfaceStyle</key>")
                 .trim_start()
                 .starts_with("<string>Dark</string>"),

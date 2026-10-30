@@ -5,7 +5,6 @@ use alloc::vec::Vec;
 pub enum Value {
     Null,
     Bool(bool),
-    // Le texte d'origine est garde pour reecrire un nombre tel que l'utilisateur l'a saisi
     Num(f64, String),
     Str(String),
     Arr(Vec<Value>),
@@ -13,7 +12,6 @@ pub enum Value {
 }
 
 impl Value {
-    // Cle en double : la derniere gagne, comme dans l'ancien binaire
     pub fn get(&self, key: &str) -> Option<&Value> {
         match self {
             Value::Obj(m) => m.iter().rev().find(|(k, _)| k == key).map(|(_, v)| v),
@@ -62,82 +60,96 @@ impl Value {
     }
 
     pub fn set(&mut self, key: &str, val: Value) {
-        let Value::Obj(m) = self else {
+        let Value::Obj(members) = self else {
             return;
         };
-        let Some(first) = m.iter().position(|(k, _)| k == key) else {
-            m.push((String::from(key), val));
+        let Some(first) = members.iter().position(|(k, _)| k == key) else {
+            members.push((String::from(key), val));
             return;
         };
         let mut index = 0;
-        m.retain(|(k, _)| {
+        members.retain(|(k, _)| {
             index += 1;
             index - 1 == first || k != key
         });
-        m[first].1 = val;
+        members[first].1 = val;
     }
 
     pub fn remove(&mut self, key: &str) -> bool {
-        if let Value::Obj(m) = self {
-            let n = m.len();
-            m.retain(|(k, _)| k != key);
-            return m.len() != n;
+        if let Value::Obj(members) = self {
+            let n = members.len();
+            members.retain(|(k, _)| k != key);
+            return members.len() != n;
         }
         false
     }
 }
 
-// lenient : commentaires // et /* */ (fichiers de reglages).
-// Le texte qui suit la premiere valeur est ignore.
-pub fn parse(text: &str, lenient: bool) -> Option<Value> {
-    let b = text.as_bytes();
-    let mut p = Parser {
-        b,
-        i: 0,
-        lenient,
+#[derive(Clone, Copy, PartialEq)]
+pub enum Syntax {
+    Tolerant,
+    Commented,
+    Strict,
+}
+
+pub fn parse(text: &str, syntax: Syntax) -> Option<Value> {
+    let bytes = text.as_bytes();
+    let mut parser = Parser {
+        bytes,
+        pos: 0,
+        syntax,
         depth: 0,
+        dropped_surrogate: false,
     };
-    if b.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        p.i = 3;
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        parser.pos = 3;
     }
-    p.ws();
-    p.value()
+    parser.ws();
+    let value = parser.value()?;
+    parser.ws();
+    let complete = parser.pos == bytes.len() && !parser.dropped_surrogate;
+    (syntax != Syntax::Strict || complete).then_some(value)
 }
 
 struct Parser<'a> {
-    b: &'a [u8],
-    i: usize,
-    lenient: bool,
+    bytes: &'a [u8],
+    pos: usize,
+    syntax: Syntax,
     depth: u32,
+    dropped_surrogate: bool,
 }
 
 impl Parser<'_> {
     fn peek(&self) -> Option<u8> {
-        self.b.get(self.i).copied()
+        self.bytes.get(self.pos).copied()
     }
 
     fn ws(&mut self) {
         loop {
             match self.peek() {
-                Some(b' ' | b'\t' | b'\n' | b'\r') => self.i += 1,
-                Some(b'/') if self.lenient => match self.b.get(self.i + 1) {
-                    Some(b'/') => {
-                        while let Some(c) = self.peek() {
-                            if c == b'\n' {
-                                break;
+                Some(b' ' | b'\t' | b'\n' | b'\r') => self.pos += 1,
+                Some(b'/') if self.syntax == Syntax::Commented => {
+                    match self.bytes.get(self.pos + 1) {
+                        Some(b'/') => {
+                            while let Some(c) = self.peek() {
+                                if c == b'\n' {
+                                    break;
+                                }
+                                self.pos += 1;
                             }
-                            self.i += 1;
                         }
-                    }
-                    Some(b'*') => {
-                        self.i += 2;
-                        while self.i < self.b.len() && !self.b[self.i..].starts_with(b"*/") {
-                            self.i += 1;
+                        Some(b'*') => {
+                            self.pos += 2;
+                            while self.pos < self.bytes.len()
+                                && !self.bytes[self.pos..].starts_with(b"*/")
+                            {
+                                self.pos += 1;
+                            }
+                            self.pos = (self.pos + 2).min(self.bytes.len());
                         }
-                        self.i = (self.i + 2).min(self.b.len());
+                        _ => return,
                     }
-                    _ => return,
-                },
+                }
                 _ => return,
             }
         }
@@ -157,8 +169,8 @@ impl Parser<'_> {
     }
 
     fn word(&mut self, w: &[u8], v: Value) -> Option<Value> {
-        if self.b[self.i..].starts_with(w) {
-            self.i += w.len();
+        if self.bytes[self.pos..].starts_with(w) {
+            self.pos += w.len();
             Some(v)
         } else {
             None
@@ -174,81 +186,97 @@ impl Parser<'_> {
         }
     }
 
-    // Les virgules entre elements sont facultatives et peuvent se repeter,
-    // comme dans l'ancien binaire
-    fn seps(&mut self) {
+    fn skip_commas(&mut self) {
         loop {
             self.ws();
             if self.peek() != Some(b',') {
                 return;
             }
-            self.i += 1;
+            self.pos += 1;
         }
+    }
+
+    fn item_follows(&mut self, close: u8, first: bool) -> Option<bool> {
+        if self.syntax != Syntax::Strict {
+            self.skip_commas();
+            return Some(self.peek()? != close);
+        }
+        self.ws();
+        if self.peek()? == close {
+            return Some(false);
+        }
+        if !first {
+            if self.peek()? != b',' {
+                return None;
+            }
+            self.pos += 1;
+            self.ws();
+        }
+        (self.peek()? != close).then_some(true)
     }
 
     fn object(&mut self) -> Option<Value> {
         self.enter()?;
-        self.i += 1;
-        let mut m = Vec::new();
+        self.pos += 1;
+        let mut members = Vec::new();
         loop {
-            self.seps();
-            match self.peek()? {
-                b'}' => break,
-                b'"' => {}
-                _ => return None,
+            if !self.item_follows(b'}', members.is_empty())? {
+                break;
+            }
+            if self.peek()? != b'"' {
+                return None;
             }
             let k = self.string()?;
             self.ws();
             if self.peek()? != b':' {
                 return None;
             }
-            self.i += 1;
+            self.pos += 1;
             self.ws();
             let v = self.value()?;
-            m.push((k, v));
+            members.push((k, v));
         }
-        self.i += 1;
+        self.pos += 1;
         self.depth -= 1;
-        Some(Value::Obj(m))
+        Some(Value::Obj(members))
     }
 
     fn array(&mut self) -> Option<Value> {
         self.enter()?;
-        self.i += 1;
-        let mut a = Vec::new();
+        self.pos += 1;
+        let mut items = Vec::new();
         loop {
-            self.seps();
-            if self.peek()? == b']' {
+            if !self.item_follows(b']', items.is_empty())? {
                 break;
             }
-            a.push(self.value()?);
+            items.push(self.value()?);
         }
-        self.i += 1;
+        self.pos += 1;
         self.depth -= 1;
-        Some(Value::Arr(a))
+        Some(Value::Arr(items))
     }
 
     fn hex4(&mut self) -> Option<u32> {
-        let s = self.b.get(self.i..self.i + 4)?;
+        let s = self.bytes.get(self.pos..self.pos + 4)?;
         let mut n = 0u32;
         for &c in s {
             n = n * 16 + (c as char).to_digit(16)?;
         }
-        self.i += 4;
+        self.pos += 4;
         Some(n)
     }
 
     fn string(&mut self) -> Option<String> {
-        self.i += 1;
+        self.pos += 1;
         let mut out: Vec<u8> = Vec::new();
         loop {
             let c = self.peek()?;
-            self.i += 1;
+            self.pos += 1;
             match c {
                 b'"' => break,
                 b'\\' => {
                     let e = self.peek()?;
-                    self.i += 1;
+                    self.pos += 1;
                     match e {
                         b'"' => out.push(b'"'),
                         b'\\' => out.push(b'\\'),
@@ -261,24 +289,27 @@ impl Parser<'_> {
                         b'u' => {
                             let mut cp = self.hex4()?;
                             if (0xD800..0xDC00).contains(&cp) {
-                                if self.b[self.i..].starts_with(b"\\u") {
-                                    let save = self.i;
-                                    self.i += 2;
+                                if self.bytes[self.pos..].starts_with(b"\\u") {
+                                    let save = self.pos;
+                                    self.pos += 2;
                                     let lo = self.hex4()?;
                                     if (0xDC00..0xE000).contains(&lo) {
                                         cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
                                     } else {
-                                        self.i = save;
+                                        self.pos = save;
+                                        self.dropped_surrogate = true;
                                         continue;
                                     }
                                 } else {
+                                    self.dropped_surrogate = true;
                                     continue;
                                 }
                             }
-                            // Demi-paire orpheline : abandonnee, comme avant
                             if let Some(ch) = char::from_u32(cp) {
                                 let mut buf = [0u8; 4];
                                 out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+                            } else {
+                                self.dropped_surrogate = true;
                             }
                         }
                         _ => return None,
@@ -291,45 +322,44 @@ impl Parser<'_> {
     }
 
     fn number(&mut self) -> Option<Value> {
-        let start = self.i;
+        let start = self.pos;
         if self.peek() == Some(b'-') {
-            self.i += 1;
+            self.pos += 1;
         }
         match self.peek()? {
-            b'0' => self.i += 1,
+            b'0' => self.pos += 1,
             b'1'..=b'9' => self.digits(),
             _ => return None,
         }
         if self.peek() == Some(b'.') {
-            self.i += 1;
+            self.pos += 1;
             if !matches!(self.peek(), Some(b'0'..=b'9')) {
                 return None;
             }
             self.digits();
         }
         if matches!(self.peek(), Some(b'e' | b'E')) {
-            self.i += 1;
+            self.pos += 1;
             if matches!(self.peek(), Some(b'+' | b'-')) {
-                self.i += 1;
+                self.pos += 1;
             }
             if !matches!(self.peek(), Some(b'0'..=b'9')) {
                 return None;
             }
             self.digits();
         }
-        let raw = core::str::from_utf8(&self.b[start..self.i]).ok()?;
-        let n: f64 = raw.parse().ok()?;
+        let raw = core::str::from_utf8(&self.bytes[start..self.pos]).ok()?;
+        let n: f64 = raw.parse().ok().filter(|n: &f64| n.is_finite())?;
         Some(Value::Num(n, String::from(raw)))
     }
 
     fn digits(&mut self) {
         while matches!(self.peek(), Some(b'0'..=b'9')) {
-            self.i += 1;
+            self.pos += 1;
         }
     }
 }
 
-// Ecriture indentee de 2 espaces, cles triees, comme serde_json avec une BTreeMap
 pub fn pretty(v: &Value) -> String {
     let mut out = String::new();
     write_value(v, 0, &mut out);
@@ -343,22 +373,22 @@ fn indent(n: usize, out: &mut String) {
     }
 }
 
-fn write_value(v: &Value, ind: usize, out: &mut String) {
-    match v {
+fn write_value(value: &Value, ind: usize, out: &mut String) {
+    match value {
         Value::Null => out.push_str("null"),
         Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
         Value::Num(_, raw) => out.push_str(raw),
         Value::Str(s) => quote(s, out),
-        Value::Arr(a) => {
-            if a.is_empty() {
+        Value::Arr(items) => {
+            if items.is_empty() {
                 out.push_str("[]");
                 return;
             }
             out.push_str("[\n");
-            for (i, x) in a.iter().enumerate() {
+            for (i, x) in items.iter().enumerate() {
                 indent(ind + 2, out);
                 write_value(x, ind + 2, out);
-                if i + 1 < a.len() {
+                if i + 1 < items.len() {
                     out.push(',');
                 }
                 out.push('\n');
@@ -366,9 +396,9 @@ fn write_value(v: &Value, ind: usize, out: &mut String) {
             indent(ind, out);
             out.push(']');
         }
-        Value::Obj(m) => {
+        Value::Obj(members) => {
             let mut keys: Vec<&String> = Vec::new();
-            for (k, _) in m {
+            for (k, _) in members {
                 if !keys.contains(&k) {
                     keys.push(k);
                 }
@@ -382,7 +412,7 @@ fn write_value(v: &Value, ind: usize, out: &mut String) {
                 indent(ind + 2, out);
                 quote(k, out);
                 out.push_str(": ");
-                write_value(v.get(k).unwrap_or(&Value::Null), ind + 2, out);
+                write_value(value.get(k).unwrap_or(&Value::Null), ind + 2, out);
                 if i + 1 < keys.len() {
                     out.push(',');
                 }
@@ -422,26 +452,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lecture() {
-        let v = parse("{\"a\":1,\"a\":2,\"s\":\"\\u00e9\\ud83d\\ude00\"}", false).unwrap();
-        assert_eq!(v.get("a").unwrap().num(), Some(2.0));
-        assert_eq!(v.get("s").unwrap().str(), Some("\u{e9}\u{1f600}"));
-        assert!(parse("{,\"a\":1,,}", false).is_some());
-        assert!(parse("[1,,2,]", false).unwrap().arr().unwrap().len() == 2);
-        assert!(parse("{\"a\" 1}", false).is_none());
-        assert!(parse("{\"a\":1, // x\n}", true).is_some());
-        assert!(parse("\u{feff}{\"a\":1}", false).is_some());
+    fn tolerant_syntax_reads_loose_json() {
+        let parsed = parse(
+            "{\"a\":1,\"a\":2,\"s\":\"\\u00e9\\ud83d\\ude00\"}",
+            Syntax::Tolerant,
+        )
+        .unwrap();
+        assert_eq!(parsed.get("a").unwrap().num(), Some(2.0));
+        assert_eq!(parsed.get("s").unwrap().str(), Some("\u{e9}\u{1f600}"));
+        assert!(parse("{,\"a\":1,,}", Syntax::Tolerant).is_some());
+        assert!(
+            parse("[1,,2,]", Syntax::Tolerant)
+                .unwrap()
+                .arr()
+                .unwrap()
+                .len()
+                == 2
+        );
+        assert!(parse("{\"a\" 1}", Syntax::Tolerant).is_none());
+        assert!(parse("{\"a\":1, // x\n}", Syntax::Commented).is_some());
+        assert!(parse("\u{feff}{\"a\":1}", Syntax::Tolerant).is_some());
         assert_eq!(
-            parse("{\"s\":\"a\\ud83db\"}", false)
+            parse("{\"s\":\"a\\ud83db\"}", Syntax::Tolerant)
                 .unwrap()
                 .get("s")
                 .unwrap()
                 .str(),
             Some("ab")
         );
-        assert!(parse("[1.]", false).is_none());
+        assert!(parse("[1.]", Syntax::Tolerant).is_none());
         assert_eq!(
-            parse("{\"x\":1} reste", false)
+            parse("{\"x\":1} reste", Syntax::Tolerant)
                 .unwrap()
                 .get("x")
                 .unwrap()
@@ -451,19 +492,50 @@ mod tests {
     }
 
     #[test]
-    fn ecriture() {
-        let v = parse(
+    fn pretty_keeps_key_order_and_number_text() {
+        let document = parse(
             "{\"b\":[1,2.50],\"a\":{},\"c\":\"x\\u0001\\\"\",\"d\":[]}",
-            false,
+            Syntax::Tolerant,
         )
         .unwrap();
-        assert_eq!(pretty(&v), "{\n  \"b\": [\n    1,\n    2.50\n  ],\n  \"a\": {},\n  \"c\": \"x\\u0001\\\"\",\n  \"d\": []\n}\n");
-        let mut v = parse("{\"a\":1,\"b\":2,\"a\":3}", false).unwrap();
-        v.set("a", Value::Bool(true));
-        v.set("c", Value::Null);
+        assert_eq!(pretty(&document), "{\n  \"b\": [\n    1,\n    2.50\n  ],\n  \"a\": {},\n  \"c\": \"x\\u0001\\\"\",\n  \"d\": []\n}\n");
+        let mut document = parse("{\"a\":1,\"b\":2,\"a\":3}", Syntax::Tolerant).unwrap();
+        document.set("a", Value::Bool(true));
+        document.set("c", Value::Null);
         assert_eq!(
-            pretty(&v),
+            pretty(&document),
             "{\n  \"a\": true,\n  \"b\": 2,\n  \"c\": null\n}\n"
         );
+    }
+
+    #[test]
+    fn strict_syntax_needs_single_commas_and_nothing_after() {
+        for text in [
+            "{\"a\":1}{\"b\":2}",
+            "{\"a\":1} x",
+            "{\"a\":1 \"b\":2}",
+            "[1 2]",
+            "[1,,2]",
+            "{,\"a\":1}",
+            "[1,]",
+            "{\"a\":1,}",
+            "[,]",
+            "{\"a\":1} // x",
+            "[\"a\\ud83db\"]",
+            "[\"\\ude00\"]",
+        ] {
+            assert!(parse(text, Syntax::Strict).is_none(), "{}", text);
+        }
+        let ok = parse(" {\"a\": [1, 2], \"b\": {}, \"c\": []} \n", Syntax::Strict).unwrap();
+        assert_eq!(ok.get("a").and_then(Value::arr).map(|a| a.len()), Some(2));
+        assert!(parse("\u{feff}[\"\\ud83d\\ude00\"]", Syntax::Strict).is_some());
+    }
+
+    #[test]
+    fn out_of_range_numbers_are_refused() {
+        assert!(parse("{\"a\": 1e999}", Syntax::Tolerant).is_none());
+        assert!(parse("[-1e999]", Syntax::Tolerant).is_none());
+        let tiny = parse("[1e-999]", Syntax::Tolerant).unwrap();
+        assert_eq!(tiny.arr().unwrap()[0].num(), Some(0.0));
     }
 }

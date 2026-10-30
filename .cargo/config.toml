@@ -1,4 +1,10 @@
-# Windows : pas de CRT, l'entree est `start` (src/os/windows.rs), liaison par rust-lld fourni avec rustup
 [target.x86_64-pc-windows-msvc]
 linker = "rust-lld"
-rustflags = ["-C", "link-arg=/NODEFAULTLIB", "-C", "link-arg=/ENTRY:start", "-C", "link-arg=/SUBSYSTEM:CONSOLE"]
+rustflags = [
+    "-C", "link-arg=/NODEFAULTLIB",
+    "-C", "link-arg=/ENTRY:start",
+    "-C", "link-arg=/SUBSYSTEM:CONSOLE",
+    "-C", "link-arg=/DEBUG:NONE",
+    "-C", "link-arg=/Brepro",
+    "-C", "link-arg=/CETCOMPAT",
+]

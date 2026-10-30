@@ -1,16 +1,10 @@
 use crate::config::{background_word, hex};
-use crate::json::{self, Value};
+use crate::json::{self, Syntax, Value};
 use crate::os;
-use crate::state::State;
+use crate::state::{fingerprint, State};
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-
-// Fond clair ou sombre. L'ordre : STATUSLINE_BG, le reglage terminal_background,
-// COLORFGBG, puis le terminal hote (VS Code et derives, Windows Terminal, Zed,
-// Ghostty) avec le theme du systeme en repli, et sombre si rien ne repond.
-// Le resultat de la detection est garde dans l'etat tant que les fichiers lus
-// et le theme du systeme ne bougent pas.
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Mode {
@@ -68,8 +62,7 @@ fn name_mode(name: &str) -> Mode {
     }
 }
 
-// Cle a plat ("workbench.colorTheme") comme l'ecrit VS Code, sinon imbriquee
-fn dotted<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
+fn flat_or_nested<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
     v.get(key).or_else(|| {
         let parts: Vec<&str> = key.split('.').collect();
         v.at(&parts)
@@ -77,10 +70,10 @@ fn dotted<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
 }
 
 pub fn vscode(v: &Value) -> Mode {
-    if dotted(v, "window.autoDetectColorScheme").and_then(|x| x.bool()) == Some(true) {
+    if flat_or_nested(v, "window.autoDetectColorScheme").and_then(|x| x.bool()) == Some(true) {
         return Mode::System;
     }
-    match dotted(v, "workbench.colorTheme").and_then(|x| x.str()) {
+    match flat_or_nested(v, "workbench.colorTheme").and_then(|x| x.str()) {
         Some(t) => name_mode(t),
         None => Mode::Dark,
     }
@@ -88,8 +81,8 @@ pub fn vscode(v: &Value) -> Mode {
 
 const WT_LIGHT: [&str; 3] = ["One Half Light", "Solarized Light", "Tango Light"];
 
-pub fn wt(v: &Value, profile_id: Option<&str>, os_light: &dyn Fn() -> bool) -> Mode {
-    let (list, defaults) = match v.get("profiles") {
+pub fn wt(settings: &Value, profile_id: Option<&str>, os_light: &dyn Fn() -> bool) -> Mode {
+    let (list, defaults) = match settings.get("profiles") {
         Some(Value::Arr(a)) => (Some(a.as_slice()), None),
         Some(p) if p.is_obj() => (
             p.get("list").and_then(|l| l.arr()),
@@ -98,7 +91,8 @@ pub fn wt(v: &Value, profile_id: Option<&str>, os_light: &dyn Fn() -> bool) -> M
         _ => (None, None),
     };
     let wanted = profile_id.map(String::from).or_else(|| {
-        v.get("defaultProfile")
+        settings
+            .get("defaultProfile")
             .and_then(|d| d.str())
             .map(String::from)
     });
@@ -125,7 +119,7 @@ pub fn wt(v: &Value, profile_id: Option<&str>, os_light: &dyn Fn() -> bool) -> M
     let scheme = match pick("colorScheme") {
         Some(Value::Str(s)) => String::from(s.as_str()),
         Some(o) if o.is_obj() => {
-            let light = match v.get("theme").and_then(|t| t.str()) {
+            let light = match settings.get("theme").and_then(|t| t.str()) {
                 Some("light") => true,
                 Some("dark") => false,
                 _ => os_light(),
@@ -135,7 +129,7 @@ pub fn wt(v: &Value, profile_id: Option<&str>, os_light: &dyn Fn() -> bool) -> M
         }
         _ => String::from("Campbell"),
     };
-    let custom = v.get("schemes").and_then(|s| s.arr()).and_then(|a| {
+    let custom = settings.get("schemes").and_then(|s| s.arr()).and_then(|a| {
         a.iter()
             .find(|s| s.get("name").and_then(|n| n.str()) == Some(scheme.as_str()))
     });
@@ -213,8 +207,7 @@ fn vscode_files() -> Vec<String> {
         config_home()
     };
     let Some(base) = base else { return Vec::new() };
-    // Le produit qui a lance le terminal passe en premier
-    let hint = [
+    let launcher_hint = [
         "VSCODE_GIT_ASKPASS_NODE",
         "VSCODE_GIT_ASKPASS_MAIN",
         "VSCODE_CWD",
@@ -224,13 +217,13 @@ fn vscode_files() -> Vec<String> {
     .map(|s| s.to_lowercase())
     .collect::<Vec<_>>()
     .join(" ");
-    let first = if hint.contains("cursor") {
+    let first = if launcher_hint.contains("cursor") {
         3
-    } else if hint.contains("windsurf") {
+    } else if launcher_hint.contains("windsurf") {
         4
-    } else if hint.contains("vscodium") {
+    } else if launcher_hint.contains("vscodium") {
         2
-    } else if hint.contains("insiders") {
+    } else if launcher_hint.contains("insiders") {
         1
     } else {
         0
@@ -243,6 +236,10 @@ fn vscode_files() -> Vec<String> {
         .collect()
 }
 
+fn stable_before_preview(names: &mut [String]) {
+    names.sort_by_key(|name| (name.len(), name.clone()));
+}
+
 fn wt_files() -> Vec<String> {
     let mut out = Vec::new();
     let Some(local) = os::env("LOCALAPPDATA")
@@ -253,8 +250,7 @@ fn wt_files() -> Vec<String> {
     };
     let packages = os::join(&local, &["Packages"]);
     let mut names = os::list(&packages, "Microsoft.WindowsTerminal");
-    // La version stable avant Preview et Canary
-    names.sort_by_key(|n| (n.len(), n.clone()));
+    stable_before_preview(&mut names);
     for n in names {
         out.push(os::join(&packages, &[&n, "LocalState", "settings.json"]));
     }
@@ -266,14 +262,14 @@ fn wt_files() -> Vec<String> {
 }
 
 fn zed_files() -> Vec<String> {
-    let p = if cfg!(windows) {
+    let file = if cfg!(windows) {
         os::env("APPDATA")
             .filter(|s| !s.is_empty())
             .map(|a| os::join(&a, &["Zed", "settings.json"]))
     } else {
         config_home().map(|c| os::join(&c, &["zed", "settings.json"]))
     };
-    p.into_iter().collect()
+    file.into_iter().collect()
 }
 
 fn ghostty_files() -> Vec<String> {
@@ -299,11 +295,11 @@ fn ghostty_files() -> Vec<String> {
 
 fn read_json(path: &str) -> Option<Value> {
     let t = os::read_text(path)?;
-    json::parse(&t, true).filter(|v| v.is_obj())
+    json::parse(&t, Syntax::Commented).filter(|v| v.is_obj())
 }
 
-fn host_mode(h: Host, files: &[String]) -> Mode {
-    match h {
+fn host_mode(terminal: Host, files: &[String]) -> Mode {
+    match terminal {
         Host::Vscode => files
             .iter()
             .find_map(|f| read_json(f))
@@ -324,43 +320,43 @@ fn host_mode(h: Host, files: &[String]) -> Mode {
             .map(|v| zed(&v))
             .unwrap_or(Mode::System),
         Host::Ghostty => {
-            let mut m = Mode::Dark;
+            let mut mode = Mode::Dark;
             for f in files {
                 if let Some(t) = os::read_text(f) {
-                    m = ghostty(&t);
+                    mode = ghostty(&t);
                 }
             }
-            m
+            mode
         }
         Host::Other => Mode::System,
     }
 }
 
-// true : fond clair
-pub fn detect(config: Option<bool>, state: &mut State) -> bool {
-    // Cle de la version 1
-    state.remove("bg_at");
+const LEGACY_BACKGROUND_KEY: &str = "bg_at";
+
+pub fn detect_light(light_override: Option<bool>, state: &mut State) -> bool {
+    state.remove(LEGACY_BACKGROUND_KEY);
     if let Some(b) = os::env("STATUSLINE_BG")
         .as_deref()
         .and_then(background_word)
     {
         return b;
     }
-    if let Some(b) = config {
+    if let Some(b) = light_override {
         return b;
     }
     if let Some(b) = os::env("COLORFGBG").as_deref().and_then(colorfgbg) {
         return b;
     }
-    let h = host();
-    let files = match h {
+    let terminal = host();
+    let files = match terminal {
         Host::Vscode => vscode_files(),
         Host::Wt => wt_files(),
         Host::Zed => zed_files(),
         Host::Ghostty => ghostty_files(),
         Host::Other => Vec::new(),
     };
-    let mut stamp = String::from(match h {
+    let mut stamp = String::from(match terminal {
         Host::Vscode => "vscode|",
         Host::Wt => "wt|",
         Host::Zed => "zed|",
@@ -375,6 +371,7 @@ pub fn detect(config: Option<bool>, state: &mut State) -> bool {
     }
     stamp.push('|');
     stamp.push_str(&os::os_stamp());
+    let stamp = fingerprint([stamp.as_str()]);
     if state.get("bg_stamp") == Some(stamp.as_str()) {
         match state.get("bg_host") {
             Some("light") => return true,
@@ -382,7 +379,7 @@ pub fn detect(config: Option<bool>, state: &mut State) -> bool {
             _ => {}
         }
     }
-    let light = match host_mode(h, &files) {
+    let light = match host_mode(terminal, &files) {
         Mode::Light => true,
         Mode::Dark => false,
         Mode::System => os::os_theme().unwrap_or(false),
@@ -397,11 +394,11 @@ mod tests {
     use super::*;
 
     fn j(s: &str) -> Value {
-        json::parse(s, true).unwrap()
+        json::parse(s, Syntax::Commented).unwrap()
     }
 
     #[test]
-    fn terminaux() {
+    fn terminal_settings_map_to_light_dark_or_system() {
         assert_eq!(colorfgbg("0;15"), Some(true));
         assert_eq!(colorfgbg("15;0"), Some(false));
         assert_eq!(colorfgbg("15;default;7"), Some(true));
