@@ -10,7 +10,7 @@ checksum = "1454db4f2edb7f0e8fe0c5b375b0c978fc63244cc9f010d160e417eb10139aa8"
 
 [[package]]
 name = "statusline"
-version = "2.2.0"
+version = "2.2.1"
 dependencies = [
  "ed25519-compact",
 ]
