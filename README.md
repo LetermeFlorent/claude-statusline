@@ -27,7 +27,7 @@ cd claude-statusline
 sh install.sh
 ```
 
-Les deux scripts posent la barre dans `.claude`, dans chaque dossier `.claude-compte*` et dans chaque compte listé par le menu multi-comptes ([claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)). `install.ps1` prend le binaire fourni dans `bin`, ou compile les sources avec `-Build`. `install.sh` compile quand `cargo` est présent, et télécharge le binaire de la dernière version publiée quand `cargo` manque ou que la compilation échoue.
+Les deux scripts posent la barre dans `.claude`, dans chaque dossier `.claude-compte*` et dans chaque compte listé par le menu multi-comptes ([claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)). `install.ps1` télécharge le binaire de la dernière version publiée et vérifie son empreinte SHA-256, ou compile les sources avec `-Build`. `install.sh` compile quand `cargo` est présent, et télécharge le binaire de la dernière version publiée, vérifié de la même façon, quand `cargo` manque ou que la compilation échoue.
 
 ## Ce que montre la barre
 
@@ -219,7 +219,7 @@ Une variable vide compte comme absente.
 cargo build --release
 ```
 
-Le binaire sort dans `target/release`. Sous Windows, `.cargo/config.toml` lie le programme avec `rust-lld` sans la bibliothèque C, et rien d'autre que Rust n'est nécessaire. Seule la cible `x86_64-pc-windows-msvc` y est prévue. Le même fichier active la protection CET (`/CETCOMPAT`), remplace l'horodatage du binaire par une empreinte de son contenu (`/Brepro`) et ne produit pas de `.pdb` : deux compilations du même code donnent le même fichier, quel que soit le dossier. Le profil de publication active `lto`, `panic = "abort"` et retire les symboles.
+Le binaire sort dans `target/release`. Sous Windows, `.cargo/config.toml` lie le programme avec `rust-lld` sans la bibliothèque C, et rien d'autre que Rust n'est nécessaire. Seule la cible `x86_64-pc-windows-msvc` y est prévue. Le même fichier active la protection CET (`/CETCOMPAT`), remplace l'horodatage du binaire par une empreinte de son contenu (`/Brepro`) et ne produit pas de `.pdb` : deux compilations du même code donnent le même fichier, quel que soit le dossier. Sous macOS, il passe `-S` à l'éditeur de liens, qui n'inscrit alors aucun chemin de fichier objet : l'identifiant UUID du binaire, calculé sur son contenu, ne dépend plus du dossier de compilation. Le profil de publication active `lto`, `panic = "abort"` et retire les symboles.
 
 Les tests (`cargo test`) tournent tels quels sous Linux et macOS. Sous Windows, ils ont besoin de la bibliothèque C de Visual Studio et d'une variable `RUSTFLAGS` qui remplace les options de liaison du fichier de configuration, comme le fait la CI (`RUSTFLAGS=-Cdebuginfo=0`).
 
@@ -237,7 +237,7 @@ Une étiquette `v*` publie une version avec les binaires ci-dessous. Elle doit r
 | `statusline-macos-x86_64` | macOS Intel |
 | `statusline-windows-x86_64.exe` | Windows 64 bits |
 
-La CI compile avec Rust 1.99.1, fixé par la variable `RUSTUP_TOOLCHAIN` du workflow. Chaque version publie aussi `SHA256SUMS`, qui donne l'empreinte SHA-256 de chaque binaire, et une attestation de provenance qui relie chaque fichier au workflow qui l'a compilé. Pour vérifier un binaire téléchargé avec GitHub CLI :
+La CI compile avec Rust 1.99.1, fixé par la variable `RUSTUP_TOOLCHAIN` du workflow. Elle recompile chaque binaire depuis une copie des sources placée dans un autre dossier, et échoue si le résultat diffère d'un seul octet. Chaque version publie aussi `SHA256SUMS`, qui donne l'empreinte SHA-256 de chaque binaire, et une attestation de provenance qui relie chaque fichier au workflow qui l'a compilé. Pour vérifier un binaire téléchargé avec GitHub CLI :
 
 ```sh
 gh attestation verify statusline-linux-x86_64 --repo LetermeFlorent/claude-statusline
@@ -245,7 +245,7 @@ gh attestation verify statusline-linux-x86_64 --repo LetermeFlorent/claude-statu
 
 Sous Linux, `sha256sum -c SHA256SUMS --ignore-missing` compare aussi les binaires présents dans le dossier à la liste.
 
-`install.sh` télécharge le fichier de son système dans la dernière version publiée. Sous Windows, `install.ps1` utilise le binaire `bin/statusline.exe` du dépôt, qui est le même programme.
+`install.ps1` et `install.sh` téléchargent le fichier de leur système dans la dernière version publiée, avec `SHA256SUMS`, et refusent un binaire dont l'empreinte manque à la liste ou en diffère.
 
 ## Limites
 

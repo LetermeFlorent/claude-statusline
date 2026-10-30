@@ -8,3 +8,6 @@ rustflags = [
     "-C", "link-arg=/Brepro",
     "-C", "link-arg=/CETCOMPAT",
 ]
+
+[target.'cfg(target_os = "macos")']
+rustflags = ["-C", "link-arg=-Wl,-S"]
