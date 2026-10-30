@@ -46,13 +46,13 @@ impl Config {
     }
 
     pub fn parse(text: Option<&str>) -> Config {
-        let raw = text
-            .and_then(|t| json::parse(t, Syntax::Commented))
-            .filter(|v| v.is_obj())
-            .unwrap_or(Value::Obj(Vec::new()));
+        let parsed = text.map(|t| json::parse(t, Syntax::Commented).filter(|v| v.is_obj()));
+        let broken = matches!(parsed, Some(None));
+        let raw = parsed.flatten().unwrap_or(Value::Obj(Vec::new()));
         let mut config = Config::defaults(&raw);
         apply(&mut config, &raw);
         config.raw = raw;
+        config.auto_update &= !broken;
         config
     }
 }

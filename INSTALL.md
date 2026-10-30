@@ -123,7 +123,7 @@ A mistake in the file does not show on the bar: invalid JSON brings every settin
 
 ## Updating
 
-Automatic updates are on by default. Unless `statusline.json` sets `"auto_update": false`, the bar looks for a newer release on GitHub at most every 6 hours, installs it in the background (at low priority on Windows, at the normal priority on Linux and macOS) and shows `update` during the swap, with no need to restart Claude Code. The "Automatic updates" section of the README has the details.
+Automatic updates are on by default. Unless `statusline.json` sets `"auto_update": false`, or exists but cannot be read or parsed, the bar looks for a newer release on GitHub at most every 6 hours, installs it in the background (at low priority on Windows, at the normal priority on Linux and macOS) and shows `update` during the swap, with no need to restart Claude Code. The "Automatic updates" section of the README has the details.
 
 `statusline --update` runs the same update by hand and prints the outcome: already up to date, the version change (for example `2.1.0 -> v2.2.0`), or the reason it failed.
 
