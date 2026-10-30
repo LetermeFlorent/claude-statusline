@@ -1,3 +1,4 @@
+use super::Claim;
 use std::io::{IsTerminal, Read, Write};
 use std::string::String;
 use std::vec::Vec;
@@ -53,7 +54,7 @@ fn resolved(path: &str) -> String {
 
 pub fn write_atomic(path: &str, data: &[u8]) -> bool {
     let target = resolved(path);
-    let tmp = format!("{}.{}.tmp", target, std::process::id());
+    let tmp = format!("{}.{}.tmp", target, pid());
     let permissions = std::fs::metadata(&target).ok().map(|m| m.permissions());
     let _ = std::fs::remove_file(&tmp);
     let swapped = create_private(&tmp, data)
@@ -63,6 +64,10 @@ pub fn write_atomic(path: &str, data: &[u8]) -> bool {
         let _ = std::fs::remove_file(&tmp);
     }
     swapped
+}
+
+pub fn pid() -> u32 {
+    std::process::id()
 }
 
 pub fn remove(path: &str) -> bool {
@@ -88,23 +93,26 @@ pub struct Lock {
     _file: std::fs::File,
 }
 
-pub fn lock(path: &str, wait_ms: u32) -> Option<Lock> {
+pub fn lock(path: &str, wait_ms: u32) -> Claim {
     use std::os::unix::fs::OpenOptionsExt;
-    let file = std::fs::OpenOptions::new()
+    let Ok(file) = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(false)
         .mode(PRIVATE_MODE)
         .open(path)
-        .ok()?;
+    else {
+        return Claim::Unavailable;
+    };
     let deadline = ticks() + f64::from(wait_ms) / MS_PER_SECOND;
     loop {
         match file.try_lock() {
-            Ok(()) => return Some(Lock { _file: file }),
+            Ok(()) => return Claim::Held(Lock { _file: file }),
             Err(std::fs::TryLockError::WouldBlock) if ticks() < deadline => {
                 super::sleep(LOCK_POLL_MS)
             }
-            Err(_) => return None,
+            Err(std::fs::TryLockError::WouldBlock) => return Claim::Busy,
+            Err(_) => return Claim::Unavailable,
         }
     }
 }
@@ -219,7 +227,10 @@ fn stamp_text(path: Option<String>) -> String {
 mod sys {
     use super::*;
     use crate::os::linux::disks::{self, Device};
+    use crate::os::linux::mounts;
     use crate::os::{Activity, CPU_SOURCE};
+
+    const MOUNT_TABLE: &str = "/proc/self/mountinfo";
 
     fn read_str(p: &str) -> Option<String> {
         std::fs::read_to_string(p).ok()
@@ -266,12 +277,16 @@ mod sys {
             return Some(device);
         }
         let folder = std::fs::canonicalize(path).ok()?;
-        let mounts = read_str("/proc/self/mountinfo")?;
-        let source = disks::mount_source(&mounts, folder.to_str()?)?;
+        let table = read_str(MOUNT_TABLE)?;
+        let source = mounts::source(&table, folder.to_str()?)?;
         let node = std::fs::metadata(source).ok()?;
         node.file_type()
             .is_block_device()
             .then(|| split_device(node.rdev()))
+    }
+
+    pub fn on_network(path: &str) -> bool {
+        read_str(MOUNT_TABLE).is_some_and(|table| mounts::on_network(&table, path))
     }
 
     fn physical(name: &str) -> bool {
@@ -296,17 +311,25 @@ mod sys {
         Some(crate::os::linux::cgroup::narrow(host, &read_str))
     }
 
+    const GSETTINGS_LIMIT: std::time::Duration = std::time::Duration::from_secs(1);
+
     fn gsettings(key: &str) -> Option<String> {
-        let output = std::process::Command::new("gsettings")
+        use std::process::{Command, Stdio};
+        let mut child = Command::new("gsettings")
             .args(["get", "org.gnome.desktop.interface", key])
-            .stderr(std::process::Stdio::null())
-            .output()
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
             .ok()?;
-        if !output.status.success() {
+        let status = crate::os::finish(&mut child, GSETTINGS_LIMIT)?;
+        if !status.success() {
             return None;
         }
+        let mut text = Vec::new();
+        child.stdout.take()?.read_to_end(&mut text).ok()?;
         Some(
-            String::from_utf8_lossy(&output.stdout)
+            String::from_utf8_lossy(&text)
                 .trim()
                 .trim_matches('\'')
                 .to_lowercase(),
@@ -401,6 +424,8 @@ mod sys {
             newlen: usize,
         ) -> i32;
         fn clock_gettime_nsec_np(clock: u32) -> u64;
+        #[cfg_attr(target_arch = "x86_64", link_name = "getfsstat$INODE64")]
+        fn getfsstat(entries: *mut u64, size: i32, mode: i32) -> i32;
     }
 
     #[link(name = "IOKit", kind = "framework")]
@@ -462,6 +487,52 @@ mod sys {
             unsafe { CFNumberGetValue(v, 4, &mut out as *mut i64 as *mut c_void) };
         }
         out
+    }
+
+    const MNT_NOWAIT: i32 = 2;
+    const MNT_LOCAL: u32 = 0x1000;
+    const WORD: usize = std::mem::size_of::<u64>();
+    const STATFS_SIZE: usize = 2168;
+    const STATFS_WORDS: usize = STATFS_SIZE / WORD;
+    const FLAGS_AT: usize = 64;
+    const FLAGS_LEN: usize = std::mem::size_of::<u32>();
+    const MOUNT_POINT_AT: usize = 88;
+    const MOUNT_POINT_LEN: usize = 1024;
+
+    fn mount(entry: &[u8]) -> Option<(String, bool)> {
+        let flags = entry.get(FLAGS_AT..FLAGS_AT + FLAGS_LEN)?;
+        let flags = u32::from_ne_bytes(flags.try_into().ok()?);
+        let name = entry.get(MOUNT_POINT_AT..MOUNT_POINT_AT + MOUNT_POINT_LEN)?;
+        let end = name.iter().position(|&b| b == 0).unwrap_or(name.len());
+        let point = String::from_utf8_lossy(&name[..end]).into_owned();
+        Some((point, flags & MNT_LOCAL != 0))
+    }
+
+    fn mounts() -> Vec<(String, bool)> {
+        let counted = unsafe { getfsstat(std::ptr::null_mut(), 0, MNT_NOWAIT) };
+        let Ok(count) = usize::try_from(counted) else {
+            return Vec::new();
+        };
+        let mut buffer = vec![0u64; count * STATFS_WORDS];
+        let Ok(size) = i32::try_from(buffer.len() * WORD) else {
+            return Vec::new();
+        };
+        let got = unsafe { getfsstat(buffer.as_mut_ptr(), size, MNT_NOWAIT) };
+        let Ok(filled) = usize::try_from(got) else {
+            return Vec::new();
+        };
+        let bytes: Vec<u8> = buffer.iter().flat_map(|w| w.to_ne_bytes()).collect();
+        bytes
+            .as_chunks::<STATFS_SIZE>()
+            .0
+            .iter()
+            .take(filled)
+            .filter_map(|entry| mount(entry))
+            .collect()
+    }
+
+    pub fn on_network(path: &str) -> bool {
+        crate::os::deepest_mount(mounts().into_iter(), path).is_some_and(|local| !local)
     }
 
     const CLOCK_UPTIME_RAW: u32 = 8;
@@ -623,6 +694,14 @@ mod sys {
             }
             assert_eq!(send_references(port), before);
         }
+
+        #[test]
+        fn the_mount_table_holds_the_root_as_a_local_mount() {
+            assert!(mounts().contains(&(String::from("/"), true)));
+            let temp = std::env::temp_dir();
+            assert!(!on_network(&temp.to_string_lossy()));
+            assert!(!on_network("/Users"));
+        }
     }
 }
 
@@ -636,6 +715,9 @@ mod sys {
     pub fn disk(_path: &str) -> Option<Activity> {
         None
     }
+    pub fn on_network(_path: &str) -> bool {
+        false
+    }
     pub fn memory() -> Option<(f64, f64)> {
         None
     }
@@ -647,4 +729,4 @@ mod sys {
     }
 }
 
-pub use sys::{cpu, disk, memory, os_stamp, os_theme};
+pub use sys::{cpu, disk, memory, on_network, os_stamp, os_theme};

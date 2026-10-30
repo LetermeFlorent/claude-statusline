@@ -122,7 +122,7 @@ jobs:
           sleep 1
           out=$(echo "$in" | "$b")
           echo "$out" | tail -n 1 | grep -q cpu
-          "$b" --bench 50
+          test "$("$b" --bench 50 | grep -c '^  [^ ].* ms')" -eq 8
           "$b" --install
           grep -q '"statusLine"' "$HOME/.claude/settings.json"
           "$b" --uninstall
