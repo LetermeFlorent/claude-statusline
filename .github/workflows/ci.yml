@@ -355,6 +355,26 @@ jobs:
           sed "s|^.releaseKey = .*|\$releaseKey = '$pub'|" install.ps1 > install-signed.ps1
           grep -qF "$pub" install-signed.sh
           grep -qF "$pub" install-signed.ps1
+          signing="$sign/manifest"
+          mkdir -p "$signing/tmp"
+          printf 'tag v%s\n' "$version" > "$signing/release-manifest"
+          sign_with() {
+            status=0
+            env "$@" RUNNER_TEMP="$signing/tmp" bash .github/sign-manifest.sh "$signing/release-manifest" "$pub" || status=$?
+            test -z "$(ls -A "$signing/tmp")" || { echo "sign-manifest.sh left files behind"; exit 1; }
+          }
+          sign_with RELEASE_SIGNING_KEY="$(cat "$sign/good")"
+          test "$status" -eq 0
+          printf 'statusline-release namespaces="statusline-release" %s\n' "$pub" > "$signing/allowed_signers"
+          ssh-keygen -Y verify -f "$signing/allowed_signers" -I statusline-release -n statusline-release -s "$signing/release-manifest.sig" < "$signing/release-manifest"
+          sign_with RELEASE_SIGNING_KEY="$(cat "$sign/other")"
+          test "$status" -eq 1
+          test ! -e "$signing/release-manifest.sig"
+          sign_with RELEASE_SIGNING_KEY=
+          test "$status" -eq 3
+          sign_with -u RELEASE_SIGNING_KEY
+          test "$status" -eq 3
+          test ! -e "$signing/release-manifest.sig"
           if [ "$RUNNER_OS" = Windows ]; then
             sed 's|OpenSSH|NoOpenSSH|' install-signed.ps1 > install-nokeygen.ps1
             grep -q NoOpenSSH install-nokeygen.ps1
@@ -610,6 +630,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
       id-token: write
@@ -628,12 +649,47 @@ jobs:
           sha256sum statusline-* > SHA256SUMS
           { printf 'tag %s\n' "$GITHUB_REF_NAME"; cat SHA256SUMS; } > release-manifest
           cat release-manifest
+      - name: release key
+        run: |
+          key=$(grep -oE '"ssh-ed25519 [A-Za-z0-9+/]+=*"' src/upgrade/sign/key.rs | tr -d '"')
+          test -n "$key" || { echo "no ssh-ed25519 key in src/upgrade/sign/key.rs"; exit 1; }
+          test "$(printf '%s\n' "$key" | wc -l)" -eq 1 || { echo "more than one key in src/upgrade/sign/key.rs"; exit 1; }
+          sh_key=$(sed -n "s/^release_key='\(ssh-ed25519 [^ ']*\).*/\1/p" install.sh)
+          ps_key=$(sed -n "s/^.releaseKey = '\(ssh-ed25519 [^ ']*\).*/\1/p" install.ps1)
+          test "$sh_key" = "$key" || { echo "install.sh does not embed the key of src/upgrade/sign/key.rs"; exit 1; }
+          test "$ps_key" = "$key" || { echo "install.ps1 does not embed the key of src/upgrade/sign/key.rs"; exit 1; }
+          grep -qF "$key" .github/release-notes.sh || { echo ".github/release-notes.sh does not show the key of src/upgrade/sign/key.rs"; exit 1; }
+          echo "RELEASE_PUBLIC_KEY=$key" >> "$GITHUB_ENV"
+      - name: sign
+        id: sign
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          if bash .github/sign-manifest.sh dist/release-manifest "$RELEASE_PUBLIC_KEY"; then
+            echo "signed=yes" >> "$GITHUB_OUTPUT"
+          else
+            status=$?
+            test "$status" -eq 3 || exit "$status"
+            echo "::warning::RELEASE_SIGNING_KEY is empty in the release environment, so the release stays an unsigned draft. Sign it with scripts/sign-release.sh or scripts/sign-release.ps1, then publish it by hand."
+            echo "signed=no" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-checksums: dist/SHA256SUMS
       - env:
           GH_TOKEN: ${{ github.token }}
+          SIGNED: ${{ steps.sign.outputs.signed }}
         run: |
           ls -l dist
           bash .github/release-notes.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
-          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md" --draft
+          if [ "$SIGNED" = yes ]; then
+            test -s dist/release-manifest.sig
+            case "$GITHUB_REF_NAME" in
+              *-*) publish=(--prerelease --latest=false) ;;
+              *) publish=(--latest) ;;
+            esac
+          else
+            test ! -e dist/release-manifest.sig
+            publish=(--draft)
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md" "${publish[@]}"
