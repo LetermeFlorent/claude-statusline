@@ -17,7 +17,7 @@ pub(crate) fn decode(text: &[u8]) -> Option<Vec<u8>> {
     }
     let last = text.len() / 4 - 1;
     let mut out = Vec::with_capacity(text.len() / 4 * 3);
-    for (index, quad) in text.chunks_exact(4).enumerate() {
+    for (index, quad) in text.as_chunks::<4>().0.iter().enumerate() {
         let pad = quad.iter().rev().take_while(|&&c| c == b'=').count();
         if pad > 2 || (pad > 0 && index != last) {
             return None;
