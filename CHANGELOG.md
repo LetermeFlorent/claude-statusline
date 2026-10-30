@@ -2,6 +2,10 @@
 
 All notable changes to this project are listed here, newest first. Versions follow the `version` in Cargo.toml and the git tag of the same name.
 
+## Unreleased
+
+- Releases are signed and published by CI. The release job signs the manifest with the key held in the `release` environment, checks the signature against the key embedded in the program, then publishes the release, so updates reach users with no step by hand. When the key is missing, the job leaves an unsigned draft for the signing scripts in `scripts/`, as before.
+
 ## 2.2.0 - 2026-10-30
 
 Changes since v2.1.1.
