@@ -76,6 +76,14 @@ impl Out<'_> {
         self.strong(text, ink);
     }
 
+    fn faint(&mut self, text: &str) {
+        self.line.push_str("\x1b[2m");
+        let ink = self.col.ink;
+        self.tint(ink);
+        self.line.push_str(text);
+        self.line.push_str(RESET);
+    }
+
     fn sep(&mut self, first: &mut bool) {
         if !*first {
             self.line.push(' ');

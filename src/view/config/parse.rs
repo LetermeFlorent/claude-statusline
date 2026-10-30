@@ -16,7 +16,7 @@ impl Config {
             filled: String::from("\u{25A0}"),
             empty: String::from("\u{25A0}"),
             half: String::from("\u{25AA}"),
-            marker: String::from("~"),
+            marker: String::from("\u{AA}"),
             effort_flat: false,
             seg_ctx: true,
             seg_5h: true,
