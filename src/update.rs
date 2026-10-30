@@ -1,6 +1,7 @@
 use crate::json::{self, Syntax};
 use crate::messages;
 use crate::os;
+use crate::state::recent;
 use crate::update_watch::{asset, newer, parts, MARKER, STALE_AFTER};
 use alloc::format;
 use alloc::string::String;
@@ -190,7 +191,7 @@ fn acquire(lock: &str) -> bool {
     if os::create_private(lock, &[]) {
         return true;
     }
-    let stale = os::stamp(lock).is_none_or(|(_, at)| os::now() - (at as f64) > STALE_AFTER);
+    let stale = os::stamp(lock).is_none_or(|(_, at)| !recent(at as f64, os::now(), STALE_AFTER));
     stale && os::remove(lock) && os::create_private(lock, &[])
 }
 

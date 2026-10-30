@@ -1,10 +1,20 @@
-use crate::config::{background_word, hex};
+use crate::config::{background_word, hex, hex_text};
 use crate::json::{self, Syntax, Value};
 use crate::os;
 use crate::state::{fingerprint, State};
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::cmp::Reverse;
+use places::{var, Places};
+
+#[cfg(test)]
+mod fixtures;
+mod lookup;
+mod names;
+mod paths;
+mod places;
+mod wsl;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Mode {
@@ -22,11 +32,20 @@ enum Host {
     Other,
 }
 
-const PRODUCTS: [&str; 5] = ["Code", "Code - Insiders", "VSCodium", "Cursor", "Windsurf"];
+type Lookup<'a> = dyn Fn(&str) -> Option<Mode> + 'a;
 
-fn set(name: &str) -> bool {
-    os::env(name).is_some_and(|v| !v.is_empty())
+struct Context<'a> {
+    places: &'a Places,
+    order: &'a [usize],
+    profile_id: Option<&'a str>,
+    workspace: Option<&'a str>,
 }
+
+const WT_LIGHT: [&str; 3] = ["One Half Light", "Solarized Light", "Tango Light"];
+const WT_DEFAULT_SCHEME: &str = "Campbell";
+const TERMINAL_BACKGROUND: &str = "terminal.background";
+const VSCODE_WORKSPACE: [&str; 2] = [".vscode", "settings.json"];
+const LEGACY_BACKGROUND_KEY: &str = "bg_at";
 
 fn host() -> Host {
     match os::env("TERM_PROGRAM").as_deref() {
@@ -35,10 +54,10 @@ fn host() -> Host {
         Some("ghostty") => return Host::Ghostty,
         _ => {}
     }
-    if set("VSCODE_INJECTION") || set("VSCODE_PID") {
+    if var("VSCODE_INJECTION").is_some() || var("VSCODE_PID").is_some() {
         return Host::Vscode;
     }
-    if set("WT_SESSION") {
+    if var("WT_SESSION").is_some() {
         return Host::Wt;
     }
     Host::Other
@@ -54,12 +73,29 @@ pub fn luminance_light(c: [f64; 3]) -> bool {
     0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] > 128.0
 }
 
-fn name_mode(name: &str) -> Mode {
-    if name.to_lowercase().contains("light") {
+fn shade(color: [f64; 3]) -> Mode {
+    if luminance_light(color) {
         Mode::Light
     } else {
         Mode::Dark
     }
+}
+
+fn color_mode(text: &str) -> Option<Mode> {
+    let text = text.trim();
+    let digits = text.strip_prefix('#').unwrap_or(text);
+    let opaque = match digits.len() {
+        8 => digits.get(..6),
+        4 => digits.get(..3),
+        _ => Some(digits),
+    };
+    hex_text(opaque?).map(shade)
+}
+
+fn named(name: &str, lookup: &Lookup<'_>) -> Mode {
+    names::word_mode(name)
+        .or_else(|| lookup(name))
+        .unwrap_or(Mode::Dark)
 }
 
 fn flat_or_nested<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
@@ -69,87 +105,130 @@ fn flat_or_nested<'a>(v: &'a Value, key: &str) -> Option<&'a Value> {
     })
 }
 
-pub fn vscode(v: &Value) -> Mode {
-    if flat_or_nested(v, "window.autoDetectColorScheme").and_then(|x| x.bool()) == Some(true) {
+fn setting<'a>(layers: &'a [Value], key: &str) -> Option<&'a Value> {
+    layers.iter().find_map(|layer| flat_or_nested(layer, key))
+}
+
+fn terminal_background(layers: &[Value], theme: Option<&str>) -> Option<Mode> {
+    let colors = setting(layers, "workbench.colorCustomizations")?;
+    theme
+        .and_then(|name| colors.get(&format!("[{}]", name)))
+        .and_then(|scope| scope.get(TERMINAL_BACKGROUND))
+        .or_else(|| colors.get(TERMINAL_BACKGROUND))
+        .and_then(|color| color.str())
+        .and_then(color_mode)
+}
+
+pub fn vscode(layers: &[Value], lookup: &Lookup<'_>) -> Mode {
+    let theme = setting(layers, "workbench.colorTheme").and_then(|v| v.str());
+    if let Some(mode) = terminal_background(layers, theme) {
+        return mode;
+    }
+    if setting(layers, "window.autoDetectColorScheme").and_then(|v| v.bool()) == Some(true) {
         return Mode::System;
     }
-    match flat_or_nested(v, "workbench.colorTheme").and_then(|x| x.str()) {
-        Some(t) => name_mode(t),
+    theme.map_or(Mode::Dark, |name| named(name, lookup))
+}
+
+fn wt_profiles(settings: &Value) -> (Option<&[Value]>, Option<&Value>) {
+    match settings.get("profiles") {
+        Some(Value::Arr(list)) => (Some(list.as_slice()), None),
+        Some(profiles) if profiles.is_obj() => (
+            profiles.get("list").and_then(|list| list.arr()),
+            profiles
+                .get("defaults")
+                .filter(|defaults| defaults.is_obj()),
+        ),
+        _ => (None, None),
+    }
+}
+
+fn wt_profile<'a>(settings: &'a Value, id: &str) -> Option<&'a Value> {
+    wt_profiles(settings).0?.iter().find(|profile| {
+        profile
+            .get("guid")
+            .and_then(|guid| guid.str())
+            .is_some_and(|guid| guid.eq_ignore_ascii_case(id))
+    })
+}
+
+fn app_theme(settings: &Value) -> Mode {
+    let name = settings
+        .get("theme")
+        .and_then(|t| t.str())
+        .unwrap_or("system");
+    let custom = settings
+        .get("themes")
+        .and_then(|themes| lookup::item_named(themes, &["name"], name))
+        .and_then(|theme| theme.at(&["window", "applicationTheme"]))
+        .and_then(|v| v.str());
+    match custom.unwrap_or(name) {
+        "light" | "legacyLight" => Mode::Light,
+        "dark" | "legacyDark" => Mode::Dark,
+        _ => Mode::System,
+    }
+}
+
+pub fn wt(settings: &Value, profile_id: Option<&str>, os_light: &dyn Fn() -> bool) -> Mode {
+    let defaults = wt_profiles(settings).1;
+    let wanted = profile_id.or_else(|| settings.get("defaultProfile").and_then(|d| d.str()));
+    let profile = wanted.and_then(|id| wt_profile(settings, id));
+    let pick = |key: &str| {
+        profile
+            .and_then(|p| p.get(key))
+            .or_else(|| defaults.and_then(|d| d.get(key)))
+    };
+    if let Some(background) = hex(pick("background")) {
+        return shade(background);
+    }
+    let scheme = match pick("colorScheme") {
+        Some(Value::Str(name)) => name.as_str(),
+        Some(pair) if pair.is_obj() => {
+            let light = match app_theme(settings) {
+                Mode::Light => true,
+                Mode::Dark => false,
+                Mode::System => os_light(),
+            };
+            let side = if light { "light" } else { "dark" };
+            pair.get(side)
+                .and_then(|s| s.str())
+                .unwrap_or(WT_DEFAULT_SCHEME)
+        }
+        _ => WT_DEFAULT_SCHEME,
+    };
+    let custom = settings
+        .get("schemes")
+        .and_then(|schemes| lookup::item_named(schemes, &["name"], scheme));
+    match custom {
+        Some(custom) => hex(custom.get("background")).map_or(Mode::Dark, shade),
+        None if WT_LIGHT.contains(&scheme) => Mode::Light,
         None => Mode::Dark,
     }
 }
 
-const WT_LIGHT: [&str; 3] = ["One Half Light", "Solarized Light", "Tango Light"];
-
-pub fn wt(settings: &Value, profile_id: Option<&str>, os_light: &dyn Fn() -> bool) -> Mode {
-    let (list, defaults) = match settings.get("profiles") {
-        Some(Value::Arr(a)) => (Some(a.as_slice()), None),
-        Some(p) if p.is_obj() => (
-            p.get("list").and_then(|l| l.arr()),
-            p.get("defaults").filter(|d| d.is_obj()),
-        ),
-        _ => (None, None),
-    };
-    let wanted = profile_id.map(String::from).or_else(|| {
-        settings
-            .get("defaultProfile")
-            .and_then(|d| d.str())
-            .map(String::from)
+fn wt_settings(files: &[String], profile_id: Option<&str>) -> Option<Value> {
+    let found: Vec<(Value, i64)> = files
+        .iter()
+        .filter_map(|file| Some((read_json(file)?, os::stamp(file)?.1)))
+        .collect();
+    let holder = profile_id.and_then(|id| {
+        found
+            .iter()
+            .position(|(settings, _)| wt_profile(settings, id).is_some())
     });
-    let profile = match (list, wanted) {
-        (Some(l), Some(id)) => l.iter().find(|p| {
-            p.get("guid")
-                .and_then(|g| g.str())
-                .is_some_and(|g| g.eq_ignore_ascii_case(&id))
-        }),
-        _ => None,
-    };
-    let pick = |k: &str| {
-        profile
-            .and_then(|p| p.get(k))
-            .or_else(|| defaults.and_then(|d| d.get(k)))
-    };
-    if let Some(bg) = hex(pick("background")) {
-        return if luminance_light(bg) {
-            Mode::Light
-        } else {
-            Mode::Dark
-        };
-    }
-    let scheme = match pick("colorScheme") {
-        Some(Value::Str(s)) => String::from(s.as_str()),
-        Some(o) if o.is_obj() => {
-            let light = match settings.get("theme").and_then(|t| t.str()) {
-                Some("light") => true,
-                Some("dark") => false,
-                _ => os_light(),
-            };
-            let k = if light { "light" } else { "dark" };
-            String::from(o.get(k).and_then(|s| s.str()).unwrap_or("Campbell"))
-        }
-        _ => String::from("Campbell"),
-    };
-    let custom = settings.get("schemes").and_then(|s| s.arr()).and_then(|a| {
-        a.iter()
-            .find(|s| s.get("name").and_then(|n| n.str()) == Some(scheme.as_str()))
-    });
-    if let Some(s) = custom {
-        return match hex(s.get("background")) {
-            Some(bg) if luminance_light(bg) => Mode::Light,
-            _ => Mode::Dark,
-        };
-    }
-    if WT_LIGHT.contains(&scheme.as_str()) {
-        Mode::Light
-    } else {
-        Mode::Dark
-    }
+    let newest = found
+        .iter()
+        .enumerate()
+        .max_by_key(|(index, (_, mtime))| (*mtime, Reverse(*index)))
+        .map(|(index, _)| index);
+    let index = holder.or(newest)?;
+    found.into_iter().nth(index).map(|(settings, _)| settings)
 }
 
-pub fn zed(v: &Value) -> Mode {
-    match v.get("theme") {
-        Some(Value::Str(s)) => name_mode(s),
-        Some(o) if o.is_obj() => match o.get("mode").and_then(|m| m.str()) {
+pub fn zed(settings: &Value, lookup: &Lookup<'_>) -> Mode {
+    match settings.get("theme") {
+        Some(Value::Str(name)) => named(name, lookup),
+        Some(choice) if choice.is_obj() => match choice.get("mode").and_then(|m| m.str()) {
             Some("light") => Mode::Light,
             Some("dark") => Mode::Dark,
             _ => Mode::System,
@@ -158,183 +237,120 @@ pub fn zed(v: &Value) -> Mode {
     }
 }
 
-pub fn ghostty(text: &str) -> Mode {
-    let mut theme: Option<Mode> = None;
-    let mut bg: Option<Mode> = None;
+pub fn ghostty_keys(text: &str) -> (Option<Mode>, Option<&str>) {
+    let mut background = None;
+    let mut theme = None;
     for line in text.lines() {
-        let Some((k, val)) = line.split_once('=') else {
+        let Some((key, value)) = line.split_once('=') else {
             continue;
         };
-        let val = val.trim().trim_matches('"');
-        match k.trim() {
-            "background" => {
-                if let Some(c) = hex(Some(&Value::Str(String::from(val)))) {
-                    bg = Some(if luminance_light(c) {
-                        Mode::Light
-                    } else {
-                        Mode::Dark
-                    });
-                }
-            }
-            "theme" if !val.is_empty() => {
-                theme = Some(if val.contains("light:") || val.contains("dark:") {
-                    Mode::System
-                } else {
-                    name_mode(val)
-                });
-            }
+        let value = value.trim().trim_matches('"');
+        match key.trim() {
+            "background" if value.is_empty() => background = None,
+            "background" => background = color_mode(value).or(background),
+            "theme" if value.is_empty() => theme = None,
+            "theme" => theme = Some(value),
             _ => {}
         }
     }
-    bg.or(theme).unwrap_or(Mode::Dark)
+    (background, theme)
 }
 
-fn config_home() -> Option<String> {
-    match os::env("XDG_CONFIG_HOME") {
-        Some(x) if !x.is_empty() => Some(x),
-        _ => os::home().map(|h| os::join(&h, &[".config"])),
+pub fn ghostty(text: &str, lookup: &Lookup<'_>) -> Mode {
+    match ghostty_keys(text) {
+        (Some(mode), _) => mode,
+        (None, Some(pair)) if pair.contains("light:") || pair.contains("dark:") => Mode::System,
+        (None, Some(name)) => named(name, lookup),
+        (None, None) => Mode::Dark,
     }
-}
-
-fn vscode_files() -> Vec<String> {
-    let base = if cfg!(windows) {
-        os::env("APPDATA")
-            .filter(|s| !s.is_empty())
-            .or_else(|| os::home().map(|h| os::join(&h, &["AppData", "Roaming"])))
-    } else if cfg!(target_os = "macos") {
-        os::home().map(|h| os::join(&h, &["Library", "Application Support"]))
-    } else {
-        config_home()
-    };
-    let Some(base) = base else { return Vec::new() };
-    let launcher_hint = [
-        "VSCODE_GIT_ASKPASS_NODE",
-        "VSCODE_GIT_ASKPASS_MAIN",
-        "VSCODE_CWD",
-    ]
-    .iter()
-    .filter_map(|k| os::env(k))
-    .map(|s| s.to_lowercase())
-    .collect::<Vec<_>>()
-    .join(" ");
-    let first = if launcher_hint.contains("cursor") {
-        3
-    } else if launcher_hint.contains("windsurf") {
-        4
-    } else if launcher_hint.contains("vscodium") {
-        2
-    } else if launcher_hint.contains("insiders") {
-        1
-    } else {
-        0
-    };
-    let mut order: Vec<usize> = alloc::vec![first];
-    order.extend((0..PRODUCTS.len()).filter(|i| *i != first));
-    order
-        .iter()
-        .map(|i| os::join(&base, &[PRODUCTS[*i], "User", "settings.json"]))
-        .collect()
-}
-
-fn stable_before_preview(names: &mut [String]) {
-    names.sort_by_key(|name| (name.len(), name.clone()));
-}
-
-fn wt_files() -> Vec<String> {
-    let mut out = Vec::new();
-    let Some(local) = os::env("LOCALAPPDATA")
-        .filter(|s| !s.is_empty())
-        .or_else(|| os::home().map(|h| os::join(&h, &["AppData", "Local"])))
-    else {
-        return out;
-    };
-    let packages = os::join(&local, &["Packages"]);
-    let mut names = os::list(&packages, "Microsoft.WindowsTerminal");
-    stable_before_preview(&mut names);
-    for n in names {
-        out.push(os::join(&packages, &[&n, "LocalState", "settings.json"]));
-    }
-    out.push(os::join(
-        &local,
-        &["Microsoft", "Windows Terminal", "settings.json"],
-    ));
-    out
-}
-
-fn zed_files() -> Vec<String> {
-    let file = if cfg!(windows) {
-        os::env("APPDATA")
-            .filter(|s| !s.is_empty())
-            .map(|a| os::join(&a, &["Zed", "settings.json"]))
-    } else {
-        config_home().map(|c| os::join(&c, &["zed", "settings.json"]))
-    };
-    file.into_iter().collect()
-}
-
-fn ghostty_files() -> Vec<String> {
-    let mut out: Vec<String> = config_home()
-        .map(|c| os::join(&c, &["ghostty", "config"]))
-        .into_iter()
-        .collect();
-    if cfg!(target_os = "macos") {
-        if let Some(h) = os::home() {
-            out.push(os::join(
-                &h,
-                &[
-                    "Library",
-                    "Application Support",
-                    "com.mitchellh.ghostty",
-                    "config",
-                ],
-            ));
-        }
-    }
-    out
 }
 
 fn read_json(path: &str) -> Option<Value> {
-    let t = os::read_text(path)?;
-    json::parse(&t, Syntax::Commented).filter(|v| v.is_obj())
+    let text = os::read_text(path)?;
+    json::parse(&text, Syntax::Commented).filter(|v| v.is_obj())
 }
 
-fn host_mode(terminal: Host, files: &[String]) -> Mode {
+fn host_files(terminal: Host, places: &Places, order: &[usize]) -> Vec<String> {
     match terminal {
-        Host::Vscode => files
-            .iter()
-            .find_map(|f| read_json(f))
-            .map(|v| vscode(&v))
-            .unwrap_or(Mode::Dark),
-        Host::Wt => {
-            let id = os::env("WT_PROFILE_ID").filter(|s| !s.is_empty());
-            let os_light = || os::os_theme().unwrap_or(false);
-            files
-                .iter()
-                .find_map(|f| read_json(f))
-                .map(|v| wt(&v, id.as_deref(), &os_light))
-                .unwrap_or(Mode::Dark)
-        }
-        Host::Zed => files
-            .iter()
-            .find_map(|f| read_json(f))
-            .map(|v| zed(&v))
-            .unwrap_or(Mode::System),
-        Host::Ghostty => {
-            let mut mode = Mode::Dark;
-            for f in files {
-                if let Some(t) = os::read_text(f) {
-                    mode = ghostty(&t);
-                }
+        Host::Vscode => places.vscode_files(order),
+        Host::Wt => places.wt_files(),
+        Host::Zed => places.zed_files(),
+        Host::Ghostty => places.ghostty_files(),
+        Host::Other => Vec::new(),
+    }
+}
+
+fn host_mode(terminal: Host, files: &[String], context: &Context<'_>) -> Mode {
+    let places = context.places;
+    let fallback = if places.unresolved {
+        Mode::System
+    } else {
+        Mode::Dark
+    };
+    let first_json = || files.iter().find_map(|file| read_json(file));
+    match terminal {
+        Host::Vscode => {
+            let layers: Vec<Value> = context
+                .workspace
+                .and_then(read_json)
+                .into_iter()
+                .chain(first_json())
+                .collect();
+            if layers.is_empty() {
+                return fallback;
             }
-            mode
+            let roots = places.vscode_extensions(context.order);
+            vscode(&layers, &|name| lookup::vscode_ui_theme(&roots, name))
+        }
+        Host::Wt => {
+            let os_light = || os::os_theme().unwrap_or(false);
+            wt_settings(files, context.profile_id).map_or(fallback, |settings| {
+                wt(&settings, context.profile_id, &os_light)
+            })
+        }
+        Host::Zed => first_json().map_or(Mode::System, |settings| {
+            zed(&settings, &|name| {
+                lookup::zed_appearance(&places.zed_theme_dirs(), name)
+            })
+        }),
+        Host::Ghostty => {
+            let texts: Vec<String> = files
+                .iter()
+                .filter_map(|file| os::read_text(file))
+                .collect();
+            let dirs = places.ghostty_theme_dirs();
+            ghostty(&texts.join("\n"), &|name| {
+                lookup::ghostty_theme(&dirs, name)
+            })
         }
         Host::Other => Mode::System,
     }
 }
 
-const LEGACY_BACKGROUND_KEY: &str = "bg_at";
+fn host_stamp(terminal: Host, files: &[String], context: &Context<'_>) -> String {
+    let mut stamp = String::from(match terminal {
+        Host::Vscode => "vscode|",
+        Host::Wt => "wt|",
+        Host::Zed => "zed|",
+        Host::Ghostty => "ghostty|",
+        Host::Other => "os|",
+    });
+    stamp.push_str(context.profile_id.unwrap_or_default());
+    stamp.push('|');
+    for file in files.iter().map(String::as_str).chain(context.workspace) {
+        let (size, mtime) = os::stamp(file).unwrap_or((0, 0));
+        stamp.push_str(&format!("{}:{}:{};", file, size, mtime));
+    }
+    stamp.push('|');
+    stamp.push_str(&os::os_stamp());
+    fingerprint([stamp.as_str()])
+}
 
-pub fn detect_light(light_override: Option<bool>, state: &mut State) -> bool {
+pub fn detect_light(
+    light_override: Option<bool>,
+    project: Option<&str>,
+    state: &mut State,
+) -> bool {
     state.remove(LEGACY_BACKGROUND_KEY);
     if let Some(b) = os::env("STATUSLINE_BG")
         .as_deref()
@@ -349,29 +365,20 @@ pub fn detect_light(light_override: Option<bool>, state: &mut State) -> bool {
         return b;
     }
     let terminal = host();
-    let files = match terminal {
-        Host::Vscode => vscode_files(),
-        Host::Wt => wt_files(),
-        Host::Zed => zed_files(),
-        Host::Ghostty => ghostty_files(),
-        Host::Other => Vec::new(),
+    let places = Places::current(state);
+    let order = paths::product_order();
+    let files = host_files(terminal, &places, &order);
+    let workspace = project
+        .filter(|_| terminal == Host::Vscode)
+        .map(|dir| os::join(dir, &VSCODE_WORKSPACE));
+    let profile_id = var("WT_PROFILE_ID").filter(|_| terminal == Host::Wt);
+    let context = Context {
+        places: &places,
+        order: &order,
+        profile_id: profile_id.as_deref(),
+        workspace: workspace.as_deref(),
     };
-    let mut stamp = String::from(match terminal {
-        Host::Vscode => "vscode|",
-        Host::Wt => "wt|",
-        Host::Zed => "zed|",
-        Host::Ghostty => "ghostty|",
-        Host::Other => "os|",
-    });
-    for f in &files {
-        match os::stamp(f) {
-            Some((size, mtime)) => stamp.push_str(&format!("{}:{};", size, mtime)),
-            None => stamp.push_str("0;"),
-        }
-    }
-    stamp.push('|');
-    stamp.push_str(&os::os_stamp());
-    let stamp = fingerprint([stamp.as_str()]);
+    let stamp = host_stamp(terminal, &files, &context);
     if state.get("bg_stamp") == Some(stamp.as_str()) {
         match state.get("bg_host") {
             Some("light") => return true,
@@ -379,7 +386,7 @@ pub fn detect_light(light_override: Option<bool>, state: &mut State) -> bool {
             _ => {}
         }
     }
-    let light = match host_mode(terminal, &files) {
+    let light = match host_mode(terminal, &files, &context) {
         Mode::Light => true,
         Mode::Dark => false,
         Mode::System => os::os_theme().unwrap_or(false),
@@ -397,6 +404,10 @@ mod tests {
         json::parse(s, Syntax::Commented).unwrap()
     }
 
+    fn none(_: &str) -> Option<Mode> {
+        None
+    }
+
     #[test]
     fn terminal_settings_map_to_light_dark_or_system() {
         assert_eq!(colorfgbg("0;15"), Some(true));
@@ -404,20 +415,29 @@ mod tests {
         assert_eq!(colorfgbg("15;default;7"), Some(true));
         assert_eq!(colorfgbg("0;-1"), None);
         assert_eq!(
-            vscode(&j("{\"workbench.colorTheme\": \"Default Light Modern\"}")),
+            vscode(
+                &[j("{\"workbench.colorTheme\": \"Default Light Modern\"}")],
+                &none
+            ),
             Mode::Light
         );
         assert_eq!(
-            vscode(&j("{\"workbench\": {\"colorTheme\": \"Monokai\"}}")),
+            vscode(
+                &[j("{\"workbench\": {\"colorTheme\": \"Monokai\"}}")],
+                &none
+            ),
             Mode::Dark
         );
         assert_eq!(
-            vscode(&j(
-                "{\"window.autoDetectColorScheme\": true, \"workbench.colorTheme\": \"x\"}"
-            )),
+            vscode(
+                &[j(
+                    "{\"window.autoDetectColorScheme\": true, \"workbench.colorTheme\": \"x\"}"
+                )],
+                &none
+            ),
             Mode::System
         );
-        assert_eq!(vscode(&j("{}")), Mode::Dark);
+        assert_eq!(vscode(&[j("{}")], &none), Mode::Dark);
         let dark = || false;
         let light = || true;
         let s = "{\"profiles\": {\"defaults\": {\"colorScheme\": \"Mine\"}, \"list\": [{\"guid\": \"{A}\", \"colorScheme\": \"Tango Light\"}]},
@@ -429,6 +449,8 @@ mod tests {
         let pair = "{\"profiles\": {\"defaults\": {\"colorScheme\": {\"light\": \"Solarized Light\", \"dark\": \"Campbell\"}}}}";
         assert_eq!(wt(&j(pair), None, &light), Mode::Light);
         assert_eq!(wt(&j(pair), None, &dark), Mode::Dark);
+        let legacy = pair.replacen('{', "{\"theme\": \"legacyLight\", ", 1);
+        assert_eq!(wt(&j(&legacy), None, &dark), Mode::Light);
         assert_eq!(
             wt(
                 &j("{\"profiles\": {\"defaults\": {\"background\": \"#ffffff\"}}}"),
@@ -437,16 +459,68 @@ mod tests {
             ),
             Mode::Light
         );
-        assert_eq!(zed(&j("{\"theme\": {\"mode\": \"system\"}}")), Mode::System);
-        assert_eq!(zed(&j("{\"theme\": \"One Light\"}")), Mode::Light);
         assert_eq!(
-            ghostty("theme = light:Builtin Light,dark:Builtin Dark\n"),
+            zed(&j("{\"theme\": {\"mode\": \"system\"}}"), &none),
+            Mode::System
+        );
+        assert_eq!(zed(&j("{\"theme\": \"One Light\"}"), &none), Mode::Light);
+        assert_eq!(
+            ghostty("theme = light:Builtin Light,dark:Builtin Dark\n", &none),
             Mode::System
         );
         assert_eq!(
-            ghostty("background = #fdf6e3\ntheme = Dracula\n"),
+            ghostty("background = #fdf6e3\ntheme = Dracula\n", &none),
             Mode::Light
         );
-        assert_eq!(ghostty(""), Mode::Dark);
+        assert_eq!(ghostty("", &none), Mode::Dark);
+    }
+
+    #[test]
+    fn vscode_reads_the_terminal_background_then_the_workspace_then_the_theme_file() {
+        let scoped = r##"{"workbench.colorTheme": "Solarized Light", "workbench.colorCustomizations":
+            {"[Solarized Light]": {"terminal.background": "#002b36"}, "terminal.background": "#ffffff"}}"##;
+        assert_eq!(vscode(&[j(scoped)], &none), Mode::Dark);
+        let workspace = j(r#"{"workbench.colorTheme": "Abyss"}"#);
+        let user = j(r#"{"workbench.colorTheme": "Quiet Light"}"#);
+        assert_eq!(vscode(&[workspace, user], &none), Mode::Dark);
+        let alabaster = |name: &str| (name == "Alabaster").then_some(Mode::Light);
+        let custom = j(r#"{"workbench.colorTheme": "Alabaster"}"#);
+        assert_eq!(vscode(&[custom], &alabaster), Mode::Light);
+    }
+
+    #[test]
+    fn colors_and_ghostty_keys_follow_the_last_valid_value() {
+        assert_eq!(color_mode("#fdf6e3cc"), Some(Mode::Light));
+        assert_eq!(color_mode("#fffa"), Some(Mode::Light));
+        assert_eq!(color_mode("282c34"), Some(Mode::Dark));
+        assert_eq!(color_mode("#12345"), None);
+        assert_eq!(color_mode("abcde\u{e9}x"), None);
+        let kept = ghostty_keys("background = #ffffff\nbackground = nope\n");
+        assert_eq!(kept.0, Some(Mode::Light));
+        assert_eq!(ghostty_keys("background = #ffffff\nbackground =\n").0, None);
+        assert_eq!(ghostty_keys("theme = Dracula\ntheme = \"\"\n").1, None);
+        assert_eq!(ghostty_keys("theme = Dracula\n").1, Some("Dracula"));
+    }
+
+    #[test]
+    fn each_windows_terminal_profile_has_its_own_cache_key() {
+        let places = Places {
+            windows: None,
+            unix: None,
+            macos: false,
+            unresolved: false,
+            ghostty_resources: None,
+        };
+        let key = |profile_id| {
+            let context = Context {
+                places: &places,
+                order: &[],
+                profile_id,
+                workspace: None,
+            };
+            host_stamp(Host::Wt, &[], &context)
+        };
+        assert_ne!(key(Some("{a}")), key(Some("{b}")));
+        assert_ne!(key(Some("{a}")), key(None));
     }
 }

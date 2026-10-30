@@ -1,3 +1,4 @@
+use super::{Activity, CPU_SOURCE};
 use alloc::format;
 use alloc::string::String;
 use alloc::vec;
@@ -48,11 +49,31 @@ extern "system" {
     ) -> Handle;
     fn CloseHandle(handle: Handle) -> i32;
     fn GetFileSizeEx(file: Handle, size: *mut i64) -> i32;
-    fn GetFileAttributesExW(name: *const u16, level: u32, data: *mut FileAttributeData) -> i32;
+    fn GetFileInformationByHandle(file: Handle, info: *mut HandleInformation) -> i32;
     fn GetFileAttributesW(name: *const u16) -> u32;
     fn GetFinalPathNameByHandleW(file: Handle, buf: *mut u16, size: u32, flags: u32) -> u32;
     fn MoveFileExW(from: *const u16, to: *const u16, flags: u32) -> i32;
     fn DeleteFileW(name: *const u16) -> i32;
+    fn SetFileInformationByHandle(file: Handle, class: u32, info: *const c_void, size: u32) -> i32;
+    fn CreateEventW(security: *mut c_void, manual: i32, initial: i32, name: *const u16) -> Handle;
+    fn LockFileEx(
+        file: Handle,
+        flags: u32,
+        reserved: u32,
+        low: u32,
+        high: u32,
+        overlapped: *mut Overlapped,
+    ) -> i32;
+    fn UnlockFile(file: Handle, offset: u32, offset_high: u32, low: u32, high: u32) -> i32;
+    fn GetOverlappedResultEx(
+        file: Handle,
+        overlapped: *mut Overlapped,
+        moved: *mut u32,
+        ms: u32,
+        alertable: i32,
+    ) -> i32;
+    fn CancelIoEx(file: Handle, overlapped: *mut Overlapped) -> i32;
+    fn GetLastError() -> u32;
     fn CreateDirectoryW(name: *const u16, security: *mut c_void) -> i32;
     fn FindFirstFileW(pattern: *const u16, data: *mut FindData) -> Handle;
     fn FindNextFileW(search: Handle, data: *mut FindData) -> i32;
@@ -64,6 +85,7 @@ extern "system" {
     fn GetSystemDirectoryW(buf: *mut u16, size: u32) -> u32;
     fn GetUserDefaultUILanguage() -> u16;
     fn GetCurrentDirectoryW(size: u32, buf: *mut u16) -> u32;
+    fn GetFullPathNameW(name: *const u16, size: u32, buf: *mut u16, file: *mut *mut u16) -> u32;
     fn GetCurrentProcessId() -> u32;
     fn GetSystemTimePreciseAsFileTime(time: *mut u64);
     fn QueryPerformanceCounter(count: *mut i64) -> i32;
@@ -102,6 +124,7 @@ extern "system" {
 
 const GENERIC_READ: u32 = 0x8000_0000;
 const GENERIC_WRITE: u32 = 0x4000_0000;
+const FILE_READ_ATTRIBUTES: u32 = 0x80;
 const DEVICE_ATTRIBUTES_ONLY: u32 = 0;
 const FILE_SHARE_READ: u32 = 1;
 const FILE_SHARE_WRITE: u32 = 2;
@@ -113,10 +136,24 @@ const CREATE_ALWAYS: u32 = 2;
 const CREATE_NEW: u32 = 1;
 const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
 const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
 const FILE_TYPE_DISK: u32 = 1;
 const FILE_TYPE_CHAR: u32 = 2;
 const MOVEFILE_REPLACE_EXISTING: u32 = 1;
-const GET_FILE_EX_INFO_STANDARD: u32 = 0;
+const DELETE: u32 = 0x0001_0000;
+const OPEN_ALWAYS: u32 = 4;
+const FILE_FLAG_OVERLAPPED: u32 = 0x4000_0000;
+const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+const FILE_RENAME_INFO_EX: u32 = 22;
+const FILE_RENAME_FLAG_REPLACE_IF_EXISTS: u32 = 1;
+const FILE_RENAME_FLAG_POSIX_SEMANTICS: u32 = 2;
+const LOCKFILE_EXCLUSIVE_LOCK: u32 = 2;
+const LOCKED_BYTES: u32 = 1;
+const ERROR_IO_PENDING: u32 = 997;
+const INFINITE: u32 = u32::MAX;
+const MANUAL_RESET: i32 = 1;
+const RENAME_TRIES: u32 = 3;
+const RENAME_RETRY_MS: u32 = 5;
 const STD_INPUT_HANDLE: u32 = -10i32 as u32;
 const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;
 const STD_ERROR_HANDLE: u32 = -12i32 as u32;
@@ -128,14 +165,37 @@ const ERROR_SUCCESS: i32 = 0;
 const VOLUME_NAME_DOS: u32 = 0;
 const ERROR_FILE_NOT_FOUND: i32 = 2;
 const MAX_PATH: u32 = 260;
+const LEGACY_PATH_UNITS: usize = 248;
+const VERBATIM_PREFIX: &str = "\\\\?\\";
+const VERBATIM_UNC_PREFIX: &str = "\\\\?\\UNC\\";
+const NT_PREFIX: &str = "\\??\\";
+const UNC_PREFIX: &str = "\\\\";
 const DRIVE_ROOT_INDEX: usize = 2;
 const MAX_BUFFER_UNITS: u32 = 1 << 20;
 const READ_CHUNK_BYTES: usize = 64 << 10;
 const MAX_WRITE_BYTES: usize = 1 << 30;
-const CONSOLE_CHUNK_UNITS: usize = 8192;
+const CONSOLE_CHUNK_UNITS: usize = 1024;
 const STDIN_SIZE_HINT: usize = 4096;
 const UNIX_EPOCH_TICKS: u64 = 116_444_736_000_000_000;
 const TICKS_PER_SECOND: i64 = 10_000_000;
+
+#[repr(C)]
+#[derive(Default)]
+struct Overlapped {
+    internal: usize,
+    internal_high: usize,
+    offset: u32,
+    offset_high: u32,
+    event: Handle,
+}
+
+#[repr(C)]
+struct RenameInfo {
+    flags: u32,
+    root: Handle,
+    name_bytes: u32,
+    name: [u16; 1],
+}
 
 #[repr(C)]
 #[derive(Default)]
@@ -159,6 +219,21 @@ struct FileAttributeData {
     written: FileTime,
     size_high: u32,
     size_low: u32,
+}
+
+#[repr(C)]
+#[derive(Default)]
+struct HandleInformation {
+    attributes: u32,
+    created: FileTime,
+    accessed: FileTime,
+    written: FileTime,
+    volume: u32,
+    size_high: u32,
+    size_low: u32,
+    links: u32,
+    index_high: u32,
+    index_low: u32,
 }
 
 #[repr(C)]
@@ -217,6 +292,25 @@ pub(super) fn wide(s: &str) -> Vec<u16> {
     v
 }
 
+fn verbatim(full: String) -> String {
+    match full.strip_prefix(UNC_PREFIX) {
+        Some(rest) if rest.starts_with(['?', '.']) => full,
+        Some(rest) => format!("{}{}", VERBATIM_UNC_PREFIX, rest),
+        None => format!("{}{}", VERBATIM_PREFIX, full),
+    }
+}
+
+fn wide_path(path: &str) -> Vec<u16> {
+    let plain = wide(path);
+    let prefixed = path.starts_with(VERBATIM_PREFIX) || path.starts_with(NT_PREFIX);
+    if prefixed || plain.len() < LEGACY_PATH_UNITS {
+        return plain;
+    }
+    let full =
+        with_growing_buffer(&|b, n| unsafe { GetFullPathNameW(plain.as_ptr(), n, b, null_mut()) });
+    full.map_or(plain, |full| wide(&verbatim(full)))
+}
+
 unsafe fn from_ptr(text: *const u16) -> String {
     let mut len = 0;
     while *text.add(len) != 0 {
@@ -264,16 +358,16 @@ pub fn env(name: &str) -> Option<String> {
     with_growing_buffer(&|b, n| unsafe { GetEnvironmentVariableW(wide_name.as_ptr(), b, n) })
 }
 
-fn open_read(path: &str) -> Handle {
-    let wide_path = wide(path);
+fn open_existing(path: &str, access: u32, flags: u32) -> Handle {
+    let wide_path = wide_path(path);
     unsafe {
         CreateFileW(
             wide_path.as_ptr(),
-            GENERIC_READ,
+            access,
             SHARE_ALL,
             null_mut(),
             OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL,
+            flags,
             0,
         )
     }
@@ -302,7 +396,7 @@ fn read_all(file: Handle, hint: usize, limit: usize) -> Vec<u8> {
 }
 
 pub fn read_limited(path: &str, limit: usize) -> Option<Vec<u8>> {
-    let file = open_read(path);
+    let file = open_existing(path, GENERIC_READ, FILE_ATTRIBUTE_NORMAL);
     if file == INVALID {
         return None;
     }
@@ -330,7 +424,7 @@ fn write_handle(file: Handle, data: &[u8]) -> bool {
 }
 
 fn write_with(path: &str, share: u32, disposition: u32, data: &[u8]) -> bool {
-    let wide_path = wide(path);
+    let wide_path = wide_path(path);
     let file = unsafe {
         CreateFileW(
             wide_path.as_ptr(),
@@ -355,10 +449,14 @@ pub fn write(path: &str, data: &[u8]) -> bool {
 }
 
 fn resolved(path: &str) -> String {
-    let wide_path = wide(path);
+    let wide_path = wide_path(path);
     let attributes = unsafe { GetFileAttributesW(wide_path.as_ptr()) };
     let linked = attributes != u32::MAX && attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0;
-    let file = if linked { open_read(path) } else { INVALID };
+    let file = if linked {
+        open_existing(path, GENERIC_READ, FILE_ATTRIBUTE_NORMAL)
+    } else {
+        INVALID
+    };
     if file == INVALID {
         return String::from(path);
     }
@@ -372,28 +470,134 @@ fn resolved(path: &str) -> String {
 pub fn write_atomic(path: &str, data: &[u8]) -> bool {
     let target = resolved(path);
     let tmp = format!("{}.{}.tmp", target, unsafe { GetCurrentProcessId() });
-    if write(&tmp, data) {
-        if rename(&tmp, &target) {
-            return true;
-        }
+    let swapped = write(&tmp, data)
+        && (0..RENAME_TRIES).any(|attempt| {
+            if attempt > 0 {
+                super::sleep(RENAME_RETRY_MS);
+            }
+            rename(&tmp, &target)
+        });
+    if !swapped {
         remove(&tmp);
     }
-    write(&target, data)
+    swapped
 }
 
 pub fn remove(path: &str) -> bool {
-    let wide_path = wide(path);
+    let wide_path = wide_path(path);
     unsafe { DeleteFileW(wide_path.as_ptr()) != 0 }
 }
 
 pub fn rename(from: &str, to: &str) -> bool {
-    let (wide_from, wide_to) = (wide(from), wide(to));
+    let (wide_from, wide_to) = (wide_path(from), wide_path(to));
     let flags = MOVEFILE_REPLACE_EXISTING;
-    unsafe { MoveFileExW(wide_from.as_ptr(), wide_to.as_ptr(), flags) != 0 }
+    posix_rename(from, &wide_to)
+        || unsafe { MoveFileExW(wide_from.as_ptr(), wide_to.as_ptr(), flags) != 0 }
+}
+
+fn posix_rename(from: &str, wide_to: &[u16]) -> bool {
+    let flags = FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS;
+    let source = open_existing(from, DELETE, flags);
+    if source == INVALID {
+        return false;
+    }
+    let info = rename_info(wide_to);
+    let size = (info.len() * core::mem::size_of::<u64>()) as u32;
+    let class = FILE_RENAME_INFO_EX;
+    let moved =
+        unsafe { SetFileInformationByHandle(source, class, info.as_ptr().cast(), size) } != 0;
+    unsafe { CloseHandle(source) };
+    moved
+}
+
+fn rename_info(wide_to: &[u16]) -> Vec<u64> {
+    let name = &wide_to[..wide_to.len() - 1];
+    let start = core::mem::offset_of!(RenameInfo, name);
+    let bytes = core::mem::size_of_val(wide_to);
+    let size = core::cmp::max(core::mem::size_of::<RenameInfo>(), start + bytes);
+    let mut info = vec![0u64; size.div_ceil(core::mem::size_of::<u64>())];
+    let header = RenameInfo {
+        flags: FILE_RENAME_FLAG_REPLACE_IF_EXISTS | FILE_RENAME_FLAG_POSIX_SEMANTICS,
+        root: 0,
+        name_bytes: core::mem::size_of_val(name) as u32,
+        name: [0],
+    };
+    unsafe {
+        info.as_mut_ptr().cast::<RenameInfo>().write(header);
+        let into = info.as_mut_ptr().cast::<u8>().add(start).cast::<u16>();
+        core::ptr::copy_nonoverlapping(name.as_ptr(), into, name.len());
+    }
+    info
 }
 
 pub fn create_private(path: &str, data: &[u8]) -> bool {
     write_with(path, SHARE_NONE, CREATE_NEW, data)
+}
+
+pub struct Lock(Handle);
+
+impl Drop for Lock {
+    fn drop(&mut self) {
+        unsafe {
+            UnlockFile(self.0, 0, 0, LOCKED_BYTES, 0);
+            CloseHandle(self.0);
+        }
+    }
+}
+
+pub fn lock(path: &str, wait_ms: u32) -> Option<Lock> {
+    let wide_path = wide_path(path);
+    let file = unsafe {
+        CreateFileW(
+            wide_path.as_ptr(),
+            GENERIC_READ | GENERIC_WRITE,
+            SHARE_ALL,
+            null_mut(),
+            OPEN_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
+            0,
+        )
+    };
+    if file == INVALID {
+        return None;
+    }
+    let held = Lock(file);
+    let event = unsafe { CreateEventW(null_mut(), MANUAL_RESET, 0, core::ptr::null()) };
+    if event == 0 {
+        return None;
+    }
+    let taken = wait_for_lock(file, event, wait_ms);
+    unsafe { CloseHandle(event) };
+    taken.then_some(held)
+}
+
+fn wait_for_lock(file: Handle, event: Handle, wait_ms: u32) -> bool {
+    let mut overlapped = Overlapped {
+        event,
+        ..Overlapped::default()
+    };
+    let mut moved = 0u32;
+    unsafe {
+        if LockFileEx(
+            file,
+            LOCKFILE_EXCLUSIVE_LOCK,
+            0,
+            LOCKED_BYTES,
+            0,
+            &mut overlapped,
+        ) != 0
+        {
+            return true;
+        }
+        if GetLastError() != ERROR_IO_PENDING {
+            return false;
+        }
+        if GetOverlappedResultEx(file, &mut overlapped, &mut moved, wait_ms, 0) != 0 {
+            return true;
+        }
+        CancelIoEx(file, &mut overlapped);
+        GetOverlappedResultEx(file, &mut overlapped, &mut moved, INFINITE, 0) != 0
+    }
 }
 
 pub fn make_executable(path: &str) -> bool {
@@ -401,37 +605,38 @@ pub fn make_executable(path: &str) -> bool {
 }
 
 pub fn stamp(path: &str) -> Option<(u64, i64)> {
-    let wide_path = wide(path);
-    let mut data = FileAttributeData::default();
-    let level = GET_FILE_EX_INFO_STANDARD;
-    if unsafe { GetFileAttributesExW(wide_path.as_ptr(), level, &mut data) } == 0 {
+    let file = open_existing(path, FILE_READ_ATTRIBUTES, FILE_FLAG_BACKUP_SEMANTICS);
+    if file == INVALID {
         return None;
     }
-    let since_epoch = data.written.ticks() as i64 - UNIX_EPOCH_TICKS as i64;
-    let size = (data.size_high as u64) << 32 | data.size_low as u64;
-    Some((size, since_epoch.div_euclid(TICKS_PER_SECOND)))
+    let mut info = HandleInformation::default();
+    let read = unsafe { GetFileInformationByHandle(file, &mut info) } != 0;
+    unsafe { CloseHandle(file) };
+    let since_epoch = info.written.ticks() as i64 - UNIX_EPOCH_TICKS as i64;
+    let size = (info.size_high as u64) << 32 | info.size_low as u64;
+    read.then_some((size, since_epoch.div_euclid(TICKS_PER_SECOND)))
 }
 
 pub fn exists(path: &str) -> bool {
-    let wide_path = wide(path);
+    let wide_path = wide_path(path);
     unsafe { GetFileAttributesW(wide_path.as_ptr()) != u32::MAX }
 }
 
 pub fn mkdirs(path: &str) -> bool {
     for (i, c) in path.char_indices() {
         if (c == '\\' || c == '/') && i > DRIVE_ROOT_INDEX {
-            let wide_parent = wide(&path[..i]);
+            let wide_parent = wide_path(&path[..i]);
             unsafe { CreateDirectoryW(wide_parent.as_ptr(), null_mut()) };
         }
     }
-    let wide_path = wide(path);
+    let wide_path = wide_path(path);
     unsafe { CreateDirectoryW(wide_path.as_ptr(), null_mut()) };
     exists(path)
 }
 
 pub fn list(dir: &str, prefix: &str) -> Vec<String> {
     let mut out = Vec::new();
-    let pattern = wide(&format!("{}\\{}*", dir, prefix));
+    let pattern = wide_path(&format!("{}\\{}*", dir, prefix));
     let mut data = FindData::new();
     let search = unsafe { FindFirstFileW(pattern.as_ptr(), &mut data) };
     if search == INVALID {
@@ -459,20 +664,41 @@ pub fn stdin() -> Option<String> {
     Some(String::from_utf8_lossy(&data).into_owned())
 }
 
-fn write_console(console: Handle, s: &str) {
-    let units: Vec<u16> = s.encode_utf16().collect();
+fn write_console_units(console: Handle, units: &[u16]) -> bool {
     let mut done = 0usize;
     while done < units.len() {
         let mut written = 0u32;
-        let len = core::cmp::min(units.len() - done, CONSOLE_CHUNK_UNITS) as u32;
+        let len = (units.len() - done) as u32;
         let text = unsafe { units.as_ptr().add(done) };
         if unsafe { WriteConsoleW(console, text, len, &mut written, null_mut()) } == 0
             || written == 0
         {
-            return;
+            return false;
         }
         done += written as usize;
     }
+    true
+}
+
+fn in_utf16_chunks(s: &str, buffer: &mut [u16], write: &mut dyn FnMut(&[u16]) -> bool) -> bool {
+    let mut filled = 0usize;
+    for c in s.chars() {
+        if filled + c.len_utf16() > buffer.len() {
+            if !write(&buffer[..filled]) {
+                return false;
+            }
+            filled = 0;
+        }
+        filled += c.encode_utf16(&mut buffer[filled..]).len();
+    }
+    filled == 0 || write(&buffer[..filled])
+}
+
+fn write_console(console: Handle, s: &str) {
+    let mut units = [0u16; CONSOLE_CHUNK_UNITS];
+    in_utf16_chunks(s, &mut units, &mut |chunk| {
+        write_console_units(console, chunk)
+    });
 }
 
 fn put(which: u32, s: &str) {
@@ -532,16 +758,20 @@ pub fn ticks() -> f64 {
     }
 }
 
-pub fn cpu() -> Option<(i64, i64)> {
+pub fn cpu() -> Option<Activity> {
     let (mut idle, mut kernel, mut user) = (0u64, 0u64, 0u64);
     if unsafe { GetSystemTimes(&mut idle, &mut kernel, &mut user) } == 0 {
         return None;
     }
     let clock = kernel.wrapping_add(user);
-    Some((clock as i64, clock.wrapping_sub(idle) as i64))
+    Some(Activity {
+        source: CPU_SOURCE,
+        clock: clock as i64,
+        busy: clock.wrapping_sub(idle) as i64,
+    })
 }
 
-pub fn disk(path: &str) -> Option<(i64, i64)> {
+pub fn disk(path: &str) -> Option<Activity> {
     let letter: String = path
         .chars()
         .take(1)
@@ -583,10 +813,17 @@ pub fn disk(path: &str) -> Option<(i64, i64)> {
     if ok == 0 || (got as usize) < needed {
         return None;
     }
-    Some((
-        perf.query_time,
-        perf.read_time.wrapping_add(perf.write_time),
-    ))
+    Some(perf.activity(letter.chars().next().map_or(0, u64::from)))
+}
+
+impl DiskPerformance {
+    fn activity(&self, source: u64) -> Activity {
+        Activity {
+            source,
+            clock: self.query_time,
+            busy: self.query_time.wrapping_sub(self.idle_time),
+        }
+    }
 }
 
 pub fn memory() -> Option<(f64, f64)> {
@@ -650,6 +887,7 @@ pub fn state_dir() -> Option<String> {
 mod rt {
     use super::*;
     use core::alloc::{GlobalAlloc, Layout};
+    use core::sync::atomic::{AtomicBool, Ordering};
 
     #[link(name = "kernel32", kind = "raw-dylib")]
     extern "system" {
@@ -694,8 +932,23 @@ mod rt {
     #[global_allocator]
     static ALLOCATOR: Heap = Heap;
 
+    struct StandardError;
+
+    impl core::fmt::Write for StandardError {
+        fn write_str(&mut self, s: &str) -> core::fmt::Result {
+            err(s);
+            Ok(())
+        }
+    }
+
+    static PANICKING: AtomicBool = AtomicBool::new(false);
+
     #[panic_handler]
-    fn panic(_: &core::panic::PanicInfo) -> ! {
+    fn panic(info: &core::panic::PanicInfo) -> ! {
+        let first = !PANICKING.swap(true, Ordering::Relaxed);
+        if let (true, Some(location)) = (first, info.location()) {
+            let _ = crate::messages::PANICKED.write_to(&mut StandardError, location);
+        }
         unsafe { ExitProcess(PANIC_EXIT_CODE) }
     }
 
@@ -713,8 +966,82 @@ mod rt {
     core::arch::global_asm!(include_str!("windows_aarch64.s"));
 
     #[no_mangle]
-    pub extern "system" fn start() -> ! {
+    pub extern "system" fn mainCRTStartup() -> ! {
         let code = crate::app::main(args());
         unsafe { ExitProcess(code as u32) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{in_utf16_chunks, verbatim, DiskPerformance};
+    use crate::state::State;
+    use alloc::string::String;
+    use alloc::vec::Vec;
+
+    #[test]
+    fn console_text_is_cut_between_characters() {
+        const HIGH_SURROGATES: core::ops::RangeInclusive<u16> = 0xD800..=0xDBFF;
+        let text = "a\u{10348}bc\u{e9}\u{10348}\u{10348}d";
+        let mut buffer = [0u16; 3];
+        let mut chunks: Vec<Vec<u16>> = Vec::new();
+        assert!(in_utf16_chunks(text, &mut buffer, &mut |chunk| {
+            chunks.push(chunk.to_vec());
+            true
+        }));
+        assert_eq!(chunks.concat(), text.encode_utf16().collect::<Vec<u16>>());
+        for chunk in &chunks {
+            assert!(!chunk.is_empty() && chunk.len() <= buffer.len());
+            assert!(!HIGH_SURROGATES.contains(chunk.last().unwrap()));
+        }
+    }
+
+    #[test]
+    fn a_failed_console_write_stops_the_text() {
+        let mut calls = 0;
+        let written = in_utf16_chunks("abcdef", &mut [0u16; 2], &mut |_| {
+            calls += 1;
+            false
+        });
+        assert!(!written);
+        assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn long_paths_take_the_verbatim_prefix_of_their_kind() {
+        let cases = [
+            ("C:\\deep\\settings.json", "\\\\?\\C:\\deep\\settings.json"),
+            (
+                "\\\\server\\share\\a.json",
+                "\\\\?\\UNC\\server\\share\\a.json",
+            ),
+            ("\\\\?\\C:\\deep\\a.json", "\\\\?\\C:\\deep\\a.json"),
+            ("\\\\.\\pipe\\name", "\\\\.\\pipe\\name"),
+        ];
+        for (full, expected) in cases {
+            assert_eq!(verbatim(String::from(full)), expected);
+        }
+    }
+
+    #[test]
+    fn overlapping_requests_count_the_busy_time_once() {
+        let before = DiskPerformance {
+            read_time: 40_000_000,
+            idle_time: 70_000_000,
+            query_time: 100_000_000,
+            ..Default::default()
+        };
+        let after = DiskPerformance {
+            read_time: 70_000_000,
+            idle_time: 75_000_000,
+            query_time: 110_000_000,
+            ..Default::default()
+        };
+        let mut state = State::parse("");
+        assert_eq!(state.counter("io", Some(before.activity(1)), 1000.0), None);
+        assert_eq!(
+            state.counter("io", Some(after.activity(1)), 1005.0),
+            Some(50.0)
+        );
     }
 }

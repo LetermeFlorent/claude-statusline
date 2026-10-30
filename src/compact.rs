@@ -1,6 +1,6 @@
 use crate::json::{self, Syntax};
 use crate::num;
-use crate::state::{fingerprint, State};
+use crate::state::{fingerprint, recent, State};
 use alloc::format;
 use alloc::string::String;
 
@@ -27,10 +27,9 @@ pub fn window(
         .filter(|n| *n > 0);
     let files_key = fingerprint(files.iter().map(String::as_str));
     let same_files = state.get("compact_key") == Some(files_key.as_str());
-    if let Some(at) = state.num("compact_at").filter(|_| same_files) {
-        if now - at < RECHECK_AFTER {
-            return cached;
-        }
+    let checked = state.num("compact_at");
+    if same_files && checked.is_some_and(|at| recent(at, now, RECHECK_AFTER)) {
+        return cached;
     }
     let mut stamp = String::new();
     for f in files {
@@ -138,5 +137,10 @@ mod tests {
             None
         );
         assert_eq!(state.get("compact_window"), None);
+        let back_in_time = |_: &str| Some((2, 2));
+        assert_eq!(
+            window(None, &files(), &mut state, 2990.0, &back_in_time, &read),
+            Some(90000)
+        );
     }
 }

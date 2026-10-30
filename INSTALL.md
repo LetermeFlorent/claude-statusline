@@ -49,7 +49,7 @@ The binary is first written as `statusline.new`, then renamed, so that a bar alr
 - The file is written back with a 2-space indent. Keys keep their order and values keep their exact text; a new `statusLine` block goes at the end.
 - When no `statusline.json` is found, a short template is written in the account folder.
 
-An unreadable `settings.json` (invalid JSON, comments, empty file) is never touched: the command says the settings cannot be read, changes nothing and exits with code 1.
+An empty `settings.json` counts as `{}`. A file that cannot be read, or that is not a JSON object (invalid JSON, comments, an array), is never touched: the command names the problem, changes nothing and exits with code 1.
 
 ## Checking
 
@@ -83,7 +83,9 @@ These are the settings most often changed:
 - `thresholds` and `palettes` change the thresholds and hues of the quotas;
 - in the `system` block, `metrics` picks the metrics and their order (`ram`, `io`, `cpu`), `"enabled": false` removes the second line, and `disk_path` picks the disk to watch on Windows and Linux.
 
-An empty `metrics` list falls back to the three metrics: to hide them all, use `"enabled": false`. To use another settings file, set `STATUSLINE_CONFIG` to its path. The README lists every key with its default value.
+An empty `metrics` list, or one with no known name, falls back to the three metrics: to hide them all, use `"enabled": false`. To use another settings file, set `STATUSLINE_CONFIG` to its path. The README lists every key with its default value.
+
+A mistake in the file does not show on the bar: invalid JSON brings every setting back to its default, and a misspelt key or a wrong value is skipped. After an edit, `statusline --check` lists each mistake with its line and column.
 
 ## Updating
 
@@ -95,7 +97,7 @@ You can also run `git pull` in the cloned folder and run the install script agai
 
 ## Uninstalling
 
-`statusline --uninstall` removes the `statusLine` block of the current account, after a `settings.json.bak-<timestamp>` copy, and writes the file back the same way as `--install`. For another account, set `CLAUDE_CONFIG_DIR` to its folder before running the command. When the account has no `statusLine` block, the command says so and changes nothing.
+`statusline --uninstall` removes the `statusLine` block of the current account, after a `settings.json.bak-<timestamp>` copy, and writes the file back the same way as `--install`. For another account, set `CLAUDE_CONFIG_DIR` to its folder before running the command. When the account has no `settings.json`, or no `statusLine` block in it, the command says which and changes nothing. A `settings.json` that cannot be read or is not a JSON object is left alone, with exit code 1.
 
 Then delete the program, `~/.claude/bin/statusline` (`statusline.exe` on Windows, with any `statusline.exe.old-*`). If you no longer want them, also delete `~/.claude/statusline.json`, any `statusline.json` in the account folders, the `settings.json.bak-*` copies, and the state folder:
 
@@ -113,8 +115,10 @@ If Windows blocks the program, run `Unblock-File "$env:USERPROFILE\.claude\bin\s
 
 If the `5h` and `7d` segments do not appear, Claude Code has not sent the quotas for this session yet, and the bar has no value less than 10 minutes old for this account: they appear after the first response. With claude-account-menu, the `SessionStart` hook fills them in at startup. If the 5-hour quota shows `--%`, the account has no 5-hour window open, meaning no message since the last reset.
 
-Disk and CPU show `--%` on the first refresh, until there are two readings to compare. They stay at `--%` on systems other than Windows, Linux and macOS.
+Disk and CPU show `--%` on the first refresh, until there are two readings to compare, and after more than a minute without a refresh. They stay at `--%` on systems other than Windows, Linux and macOS. On Linux the disk also stays at `--%` when `disk_path` sits on a filesystem with no device behind it, such as ZFS, `/mnt/c` under WSL or the root of a container, on a machine with several disks: point `disk_path` to a folder on an ordinary disk partition, or remove `io` from `system.metrics`.
 
 If the colors are wrong or the squares turn into question marks, the terminal does not handle 24-bit colors or the font lacks the `■` and `▪` characters. These characters can be changed in `glyphs`.
+
+If the bar picks a dark palette on a light terminal under WSL, it most likely found no Windows profile, neither in `PATH` nor through the Windows Terminal package in `/mnt/c/Users`. Set `STATUSLINE_BG=light` in the shell profile, or `terminal_background` in `statusline.json`.
 
 A change of auto-compact threshold can take 30 seconds to show in the bar.

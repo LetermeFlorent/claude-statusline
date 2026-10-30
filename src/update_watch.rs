@@ -1,6 +1,6 @@
 use crate::os;
 use crate::portable;
-use crate::state::State;
+use crate::state::{recent, State};
 use alloc::format;
 use alloc::string::String;
 
@@ -50,7 +50,7 @@ pub fn marker() -> Option<String> {
 pub fn busy(now: f64) -> bool {
     marker()
         .and_then(|m| os::stamp(&m))
-        .is_some_and(|(_, at)| now - (at as f64) < STALE_AFTER)
+        .is_some_and(|(_, at)| recent(at as f64, now, STALE_AFTER))
 }
 
 fn installed(exe: &str) -> bool {
@@ -63,7 +63,7 @@ fn installed(exe: &str) -> bool {
 pub fn due(state: &mut State, now: f64) -> bool {
     if state
         .num(CHECKED_KEY)
-        .is_some_and(|at| now >= at && now - at < CHECK_EVERY)
+        .is_some_and(|at| recent(at, now, CHECK_EVERY))
     {
         return false;
     }

@@ -31,7 +31,7 @@ fn prune(path: &str) {
     }
 }
 
-pub fn save(path: &str, text: &[u8], now: f64) -> Option<String> {
+pub fn save(path: &str, text: &[u8], now: f64) -> Result<String, String> {
     let base = format!("{}.bak-{}", path, now as i64);
     let mut name = base.clone();
     let mut i = 1;
@@ -40,10 +40,10 @@ pub fn save(path: &str, text: &[u8], now: f64) -> Option<String> {
         i += 1;
     }
     if !os::create_private(&name, text) {
-        return None;
+        return Err(name);
     }
     prune(path);
-    Some(name)
+    Ok(name)
 }
 
 #[cfg(test)]
@@ -66,7 +66,7 @@ mod tests {
             std::fs::write(sandbox.path(name), b"{}").unwrap();
         }
         let saved = save(&sandbox.path("settings.json"), b"{}", 400.0);
-        assert_eq!(saved, Some(sandbox.path("settings.json.bak-400")));
+        assert_eq!(saved, Ok(sandbox.path("settings.json.bak-400")));
         assert_eq!(
             sandbox.files(),
             [
@@ -86,12 +86,19 @@ mod tests {
         let path = sandbox.path("settings.json");
         let first = save(&path, b"1", 7.0);
         let second = save(&path, b"2", 7.0);
-        assert_eq!(first, Some(sandbox.path("settings.json.bak-7")));
-        assert_eq!(second, Some(sandbox.path("settings.json.bak-7-1")));
+        assert_eq!(first, Ok(sandbox.path("settings.json.bak-7")));
+        assert_eq!(second, Ok(sandbox.path("settings.json.bak-7-1")));
         assert_eq!(
             std::fs::read(sandbox.path("settings.json.bak-7")).unwrap(),
             b"1"
         );
+    }
+
+    #[test]
+    fn a_failed_backup_names_the_file_it_tried() {
+        let sandbox = Sandbox::new("backup-failure");
+        let path = os::join(&sandbox.path("missing"), &["settings.json"]);
+        assert_eq!(save(&path, b"{}", 7.0), Err(format!("{}.bak-7", path)));
     }
 
     #[cfg(not(windows))]

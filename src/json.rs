@@ -92,23 +92,60 @@ pub enum Syntax {
     Strict,
 }
 
+pub struct Spans {
+    pub at: usize,
+    pub keys: Vec<usize>,
+    pub inner: Vec<Spans>,
+}
+
+pub struct Marked {
+    pub value: Value,
+    pub spans: Spans,
+    pub end: usize,
+}
+
+const BYTE_ORDER_MARK: &[u8] = &[0xEF, 0xBB, 0xBF];
+
 pub fn parse(text: &str, syntax: Syntax) -> Option<Value> {
-    let bytes = text.as_bytes();
-    let mut parser = Parser {
-        bytes,
-        pos: 0,
-        syntax,
-        depth: 0,
-        dropped_surrogate: false,
-    };
-    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        parser.pos = 3;
-    }
-    parser.ws();
-    let value = parser.value()?;
-    parser.ws();
-    let complete = parser.pos == bytes.len() && !parser.dropped_surrogate;
+    let mut parser = Parser::new(text, syntax, None);
+    let value = parser.root()?;
+    let complete = parser.pos == text.len() && !parser.dropped_surrogate;
     (syntax != Syntax::Strict || complete).then_some(value)
+}
+
+pub fn parse_marked(text: &str, syntax: Syntax) -> Result<Marked, usize> {
+    let mut parser = Parser::new(text, syntax, Some(Vec::new()));
+    let Some(value) = parser.root() else {
+        return Err(parser.pos);
+    };
+    let mut marks = parser.marks.unwrap_or_default().into_iter();
+    let spans = spans_of(&value, &mut marks);
+    Ok(Marked {
+        value,
+        spans,
+        end: parser.pos,
+    })
+}
+
+fn spans_of(value: &Value, marks: &mut impl Iterator<Item = usize>) -> Spans {
+    let mut spans = Spans {
+        at: marks.next().unwrap_or_default(),
+        keys: Vec::new(),
+        inner: Vec::new(),
+    };
+    match value {
+        Value::Obj(members) => {
+            for (_, member) in members {
+                spans.keys.push(marks.next().unwrap_or_default());
+                spans.inner.push(spans_of(member, marks));
+            }
+        }
+        Value::Arr(items) => {
+            spans.inner = items.iter().map(|item| spans_of(item, marks)).collect();
+        }
+        _ => {}
+    }
+    spans
 }
 
 struct Parser<'a> {
@@ -117,9 +154,37 @@ struct Parser<'a> {
     syntax: Syntax,
     depth: u32,
     dropped_surrogate: bool,
+    marks: Option<Vec<usize>>,
 }
 
-impl Parser<'_> {
+impl<'a> Parser<'a> {
+    fn new(text: &'a str, syntax: Syntax, marks: Option<Vec<usize>>) -> Parser<'a> {
+        Parser {
+            bytes: text.as_bytes(),
+            pos: 0,
+            syntax,
+            depth: 0,
+            dropped_surrogate: false,
+            marks,
+        }
+    }
+
+    fn root(&mut self) -> Option<Value> {
+        if self.bytes.starts_with(BYTE_ORDER_MARK) {
+            self.pos = BYTE_ORDER_MARK.len();
+        }
+        self.ws();
+        let value = self.value()?;
+        self.ws();
+        Some(value)
+    }
+
+    fn mark(&mut self) {
+        if let Some(marks) = &mut self.marks {
+            marks.push(self.pos);
+        }
+    }
+
     fn peek(&self) -> Option<u8> {
         self.bytes.get(self.pos).copied()
     }
@@ -156,6 +221,7 @@ impl Parser<'_> {
     }
 
     fn value(&mut self) -> Option<Value> {
+        self.mark();
         match self.peek()? {
             b'{' => self.object(),
             b'[' => self.array(),
@@ -226,6 +292,7 @@ impl Parser<'_> {
             if self.peek()? != b'"' {
                 return None;
             }
+            self.mark();
             let k = self.string()?;
             self.ws();
             if self.peek()? != b':' {
@@ -529,6 +596,33 @@ mod tests {
         let ok = parse(" {\"a\": [1, 2], \"b\": {}, \"c\": []} \n", Syntax::Strict).unwrap();
         assert_eq!(ok.get("a").and_then(Value::arr).map(|a| a.len()), Some(2));
         assert!(parse("\u{feff}[\"\\ud83d\\ude00\"]", Syntax::Strict).is_some());
+    }
+
+    #[test]
+    fn marked_parse_gives_the_offset_of_every_key_and_value() {
+        let text = "{\"a\": [1, {\"b\": true}], \"c\": null} // x";
+        let marked = parse_marked(text, Syntax::Commented).ok().unwrap();
+        let spans = &marked.spans;
+        let list = &spans.inner[0];
+        assert_eq!((spans.at, spans.keys.as_slice()), (0, [1, 24].as_slice()));
+        assert_eq!((list.at, list.inner[0].at, list.inner[1].at), (6, 7, 10));
+        assert_eq!(list.inner[1].keys, [11]);
+        assert_eq!(list.inner[1].inner[0].at, 16);
+        assert_eq!(spans.inner[1].at, 29);
+        assert_eq!(marked.end, text.len());
+        let after_mark = parse_marked("\u{feff} {}", Syntax::Commented).ok().unwrap();
+        assert_eq!(after_mark.spans.at, 4);
+    }
+
+    #[test]
+    fn marked_parse_stops_where_the_text_goes_wrong() {
+        let stop = |text: &str| parse_marked(text, Syntax::Commented).err();
+        assert_eq!(stop("{\"a\": tru}"), Some(6));
+        assert_eq!(stop("{\"a\" 1}"), Some(5));
+        assert_eq!(stop("{\"a\": 1"), Some(7));
+        assert_eq!(stop(""), Some(0));
+        let trailing = parse_marked("{} }", Syntax::Commented).ok().unwrap();
+        assert_eq!(trailing.end, 3);
     }
 
     #[test]
