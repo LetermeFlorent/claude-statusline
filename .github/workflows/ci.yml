@@ -116,6 +116,10 @@ jobs:
           export HOME="$RUNNER_TEMP/h" USERPROFILE="$RUNNER_TEMP/h" LOCALAPPDATA="$RUNNER_TEMP/h/local" XDG_STATE_HOME="$RUNNER_TEMP/h/state"
           mkdir -p "$HOME"
           "$b" --version
+          if grep -a -q -E 'STATUSLINE_(TEST_RELEASE_KEY|UPDATE_SERVER)' "$b"; then
+            echo "the release binary reads a test-only variable"
+            exit 1
+          fi
           "$b" --theme
           out=$("$b" --demo)
           echo "$out" | grep -q ctx
