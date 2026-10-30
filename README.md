@@ -83,7 +83,7 @@ The `SessionStart` hook of [claude-account-menu](https://github.com/LetermeFlore
 
 ## Auto-compact threshold
 
-When an auto-compact threshold smaller than the context window is set, the `ctx` bar is measured against that threshold, the text becomes `used/threshold`, and a `~` followed by a space appears before `ctx`, as in `~ ctx ■■■■■■■■ 340k/400k`. The threshold is looked up in this order:
+When an auto-compact threshold smaller than the context window is set, the `ctx` bar is measured against that threshold, the text becomes `used/threshold`, and a dimmed `ª` appears right before `ctx`, as in `ªctx ■■■■■■■■ 340k/400k`. The threshold is looked up in this order:
 
 1. nothing at all when the `DISABLE_AUTO_COMPACT` environment variable is set to something other than empty, `0` or `false`;
 2. the `CLAUDE_CODE_AUTO_COMPACT_WINDOW` environment variable of the process, if it is a positive integer;
@@ -131,7 +131,7 @@ It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, 
 | `bar_width` | `8` | squares per bar, from 1 to 40 |
 | `bold` | `true` | `false` drops the bold from labels and numbers |
 | `glyphs.filled`, `glyphs.empty`, `glyphs.half` | `■`, `■`, `▪` | full square, empty square, half-filled last square |
-| `auto_compact_marker` | `~` | auto-compact threshold marker, drawn before `ctx` and followed by a space; empty to hide it |
+| `auto_compact_marker` | `ª` | auto-compact threshold marker, drawn dimmed right before `ctx`; empty to hide it |
 | `cold_cache_marker` | `false` | `true` adds `cold` (`froid` in French) after the `ctx` text when Claude Code reports `prompt_cache.warm` as `false`, meaning the next request will not reuse the prompt cache |
 | `effort_style` | `gradient` | `flat`, in any case, draws the effort in a single hue |
 | `segments.ctx`, `segments.5h`, `segments.7d`, `segments.spend`, `segments.model` | `true` | `false` hides the segment |

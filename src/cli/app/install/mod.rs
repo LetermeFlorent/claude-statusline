@@ -14,7 +14,7 @@ pub(in crate::cli::app) const TEMPLATE: &str = "{
   \"bar_width\": 8,
   \"bold\": true,
   \"glyphs\": { \"filled\": \"\u{25A0}\", \"empty\": \"\u{25A0}\", \"half\": \"\u{25AA}\" },
-  \"auto_compact_marker\": \"~\",
+  \"auto_compact_marker\": \"\u{AA}\",
   \"effort_style\": \"gradient\",
   \"segments\": { \"ctx\": true, \"5h\": true, \"7d\": true, \"model\": true },
   \"gradient\": { \"5h\": 0.55, \"7d\": 0.3 },
