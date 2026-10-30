@@ -107,3 +107,15 @@ pub const WRONG_VERSION: Text = Text::new(
     "the downloaded program reports {} instead of {}, nothing was replaced\n",
     "le programme téléchargé annonce {} au lieu de {}, rien n'a été remplacé\n",
 );
+pub const NO_CHECK_FILES: Text = Text::new(
+    "could not download the check files of release {}, nothing was replaced\n",
+    "impossible de télécharger les fichiers de contrôle de la version {}, rien n'a été remplacé\n",
+);
+pub const UNSIGNED: Text = Text::new(
+    "the signature of release {} could not be verified, nothing was replaced\n",
+    "la signature de la version {} n'a pas pu être vérifiée, rien n'a été remplacé\n",
+);
+pub const SUM_MISMATCH: Text = Text::new(
+    "the download of {} does not match its signed checksum, nothing was replaced\n",
+    "le téléchargement de {} ne correspond pas à sa somme signée, rien n'a été remplacé\n",
+);

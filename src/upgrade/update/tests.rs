@@ -1,88 +1,10 @@
+use super::fake::{failed, release, update, Release, EXE_NAME, OLD_BINARY, WORKING_BINARY};
 use super::*;
-use crate::sandbox::Sandbox;
-use core::cell::RefCell;
-use origin::github;
 use verify::WRONG_VERSION_EXIT;
 
-const OLD_BINARY: &[u8] = b"old";
-const WORKING_BINARY: &[u8] = b"statusline 99.0.0\n|demo";
 const FAILING_BINARY: &[u8] = b"crash";
 const OTHER_VERSION_BINARY: &[u8] = b"statusline 98.0.0\n|demo";
 const NO_DEMO_BINARY: &[u8] = b"statusline 99.0.0\n|";
-const RATE_LIMITED_BODY: &[u8] = b"{\"message\": \"API rate limit exceeded\"}";
-#[cfg(windows)]
-const EXE_NAME: &str = "statusline.exe";
-#[cfg(not(windows))]
-const EXE_NAME: &str = "statusline";
-
-fn run_fake(exe: &str, flag: &str) -> Option<String> {
-    let body = std::fs::read_to_string(exe).ok()?;
-    let (version, demo) = body.split_once('|')?;
-    match flag {
-        "--version" => Some(String::from(version)),
-        "--demo" => (!demo.is_empty()).then(String::new),
-        _ => None,
-    }
-}
-
-struct Release<'a> {
-    tag: &'a str,
-    binary: &'a [u8],
-    api_status: u16,
-    asked: RefCell<Vec<String>>,
-}
-
-fn release<'a>(tag: &'a str, binary: &'a [u8]) -> Release<'a> {
-    Release {
-        tag,
-        binary,
-        api_status: HTTP_OK,
-        asked: RefCell::new(Vec::new()),
-    }
-}
-
-impl Release<'_> {
-    fn serve(&self, url: &str, to: &str, _: u32) -> Option<u16> {
-        self.asked.borrow_mut().push(String::from(url));
-        let release = format!("{{\"tag_name\": \"{}\"}}", self.tag).into_bytes();
-        let asset_url = format!("/download/{}/{}", self.tag, asset().unwrap());
-        let (status, body) = match (url.ends_with("/releases/latest"), self.api_status) {
-            (true, HTTP_OK) => (HTTP_OK, &release[..]),
-            (true, limited) => (limited, RATE_LIMITED_BODY),
-            _ if url.ends_with(&asset_url) => (HTTP_OK, self.binary),
-            _ => return None,
-        };
-        std::fs::write(to, body).ok().map(|_| status)
-    }
-}
-
-fn failed(message: &str) -> Result<Outcome, Failure> {
-    Err(Failure::from(String::from(message)))
-}
-
-struct Run {
-    result: Result<Outcome, Failure>,
-    installed: Vec<u8>,
-    files: Vec<String>,
-    asked: usize,
-}
-
-fn update(name: &str, release: Release) -> Run {
-    let sandbox = Sandbox::new(name);
-    let exe = sandbox.path(EXE_NAME);
-    std::fs::write(&exe, OLD_BINARY).unwrap();
-    let tools = Tools {
-        origin: github(),
-        fetch: &|u, t, s| release.serve(u, t, s),
-        probe: &run_fake,
-    };
-    Run {
-        result: attempt(&sandbox.dir(), &exe, &tools),
-        installed: std::fs::read(&exe).unwrap(),
-        files: sandbox.files(),
-        asked: release.asked.into_inner().len(),
-    }
-}
 
 #[test]
 fn newer_tag_is_installed() {

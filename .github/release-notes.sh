@@ -47,7 +47,7 @@ Status line binaries for Windows, Linux and macOS. Pick the file for your system
 
 ## Install
 
-You do not have to download a file by hand: the install script fetches the one for your system, checks its SHA-256 hash and sets up every Claude Code account. On Windows, in PowerShell:
+You do not have to download a file by hand: the install script fetches the one for your system, checks its SHA-256 hash and, when `ssh-keygen` is available, the signature of the release, and sets up every Claude Code account. On Windows, in PowerShell:
 
 ```powershell
 Invoke-WebRequest https://raw.githubusercontent.com/LetermeFlorent/claude-statusline/main/install.ps1 -OutFile install.ps1
@@ -70,7 +70,18 @@ fi
 sed "s/@TAG@/$tag/g" <<'EOF'
 ## Verify a download
 
-SHA256SUMS lists the SHA-256 hash of every file above. Put it in the folder of the files you downloaded and run `sha256sum -c SHA256SUMS --ignore-missing`. Each file also carries a build provenance attestation: `gh attestation verify <file> --repo LetermeFlorent/claude-statusline`.
+SHA256SUMS lists the SHA-256 hash of every file above. Put it in the folder of the files you downloaded and run `sha256sum -c SHA256SUMS --ignore-missing`.
+
+`release-manifest` holds the tag and the same hashes, and `release-manifest.sig` is its signature by the release key, which `statusline --update` always checks before it installs anything, and the install scripts check when they find a usable `ssh-keygen`:
+
+```
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAc/fOxJG/NBMFcBqV6k6pwGdOCfLsloZuAqCWBFmRtN claude-statusline release signing
+SHA256:eXVs/Iwpre7dVdF+oSohVqRkgj3kWU6SVRiMRgxhwCM
+```
+
+To check it by hand, write a file `allowed_signers` holding `statusline-release namespaces="statusline-release" ` followed by the key above on one line, then run `ssh-keygen -Y verify -f allowed_signers -I statusline-release -n statusline-release -s release-manifest.sig < release-manifest`.
+
+Each binary also carries a build provenance attestation: `gh attestation verify <file> --repo LetermeFlorent/claude-statusline`.
 
 The full history is in [CHANGELOG.md](https://github.com/LetermeFlorent/claude-statusline/blob/@TAG@/CHANGELOG.md).
 EOF

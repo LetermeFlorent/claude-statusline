@@ -116,6 +116,10 @@ jobs:
           export HOME="$RUNNER_TEMP/h" USERPROFILE="$RUNNER_TEMP/h" LOCALAPPDATA="$RUNNER_TEMP/h/local" XDG_STATE_HOME="$RUNNER_TEMP/h/state"
           mkdir -p "$HOME"
           "$b" --version
+          if grep -a -q -E 'STATUSLINE_(TEST_RELEASE_KEY|UPDATE_SERVER)' "$b"; then
+            echo "the release binary reads a test-only variable"
+            exit 1
+          fi
           "$b" --theme
           out=$("$b" --demo)
           echo "$out" | grep -q ctx
@@ -303,7 +307,7 @@ jobs:
               exit 1
             fi
             cat "$root/refusal.log"
-            grep -Eq 'download failed|released binary refused|SHA-256 hash' "$root/refusal.log"
+            grep -Eq 'download failed|released binary refused|SHA-256 hash|signature' "$root/refusal.log"
             cmp "$root/program.before" "$root/.claude/bin/statusline$ext"
             cmp "$root/settings.before" "$root/.claude/settings.json"
             test ! -e "$root/.claude-compte2/settings.json"
@@ -341,6 +345,20 @@ jobs:
             grep -q '"statusLine"' "$root/$accent/settings.json"
             test ! -e "$root/.claude-absent"
           }
+          sign="$RUNNER_TEMP/sign"
+          rm -rf "$sign"
+          mkdir -p "$sign"
+          ssh-keygen -q -t ed25519 -N "" -C throwaway -f "$sign/good"
+          ssh-keygen -q -t ed25519 -N "" -C throwaway -f "$sign/other"
+          pub=$(cat "$sign/good.pub")
+          sed "s|^release_key=.*|release_key='$pub'|" install.sh > install-signed.sh
+          sed "s|^.releaseKey = .*|\$releaseKey = '$pub'|" install.ps1 > install-signed.ps1
+          grep -qF "$pub" install-signed.sh
+          grep -qF "$pub" install-signed.ps1
+          if [ "$RUNNER_OS" = Windows ]; then
+            sed 's|OpenSSH|NoOpenSSH|' install-signed.ps1 > install-nokeygen.ps1
+            grep -q NoOpenSSH install-nokeygen.ps1
+          fi
           serve="$RUNNER_TEMP/serve"
           rm -rf "$serve"
           mkdir -p "$serve"
@@ -355,7 +373,7 @@ jobs:
           port=$("$python" -I -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])' | tr -d '\r')
           "$python" -I -m http.server "$port" --bind 127.0.0.1 --directory "$serve" > "$RUNNER_TEMP/serve.log" 2>&1 < /dev/null &
           server=$!
-          trap 'kill "$server" 2> /dev/null || true' EXIT
+          trap 'kill "$server" 2> /dev/null; rm -f install-signed.sh install-signed.ps1 install-nokeygen.ps1' EXIT
           url="http://127.0.0.1:$port/"
           printf ready > "$serve/ready"
           up=no
@@ -379,29 +397,70 @@ jobs:
             if command -v sha256sum > /dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d ' ' -f 1
           }
           publish() {
-            rm -f "$serve"/statusline-* "$serve/SHA256SUMS"
+            rm -f "$serve"/statusline-* "$serve"/release-manifest*
             hash=$(digest "dist/${{ matrix.asset }}")
-            if [ "$1" = wrong ]; then
+            signer="$sign/good"
+            if [ "$1" = wronghash ]; then
               hash=0000000000000000000000000000000000000000000000000000000000000000
             fi
+            if [ "$1" = otherkey ]; then
+              signer="$sign/other"
+            fi
+            printf 'tag v%s\n' "$version" > "$serve/release-manifest"
             for name in $names; do
               cp "dist/${{ matrix.asset }}" "$serve/$name"
-              if [ "$1" != missing ]; then
-                printf '%s  %s\n' "$hash" "$name" >> "$serve/SHA256SUMS"
-              fi
+              printf '%s  %s\n' "$hash" "$name" >> "$serve/release-manifest"
             done
+            ssh-keygen -q -Y sign -n statusline-release -f "$signer" "$serve/release-manifest"
+            if [ "$1" = nosig ]; then
+              rm -f "$serve/release-manifest.sig"
+            fi
+            if [ "$1" = nomanifest ]; then
+              rm -f "$serve"/release-manifest*
+            fi
           }
           if [ "$RUNNER_OS" = Windows ]; then
+            nossh=$(
+              hash -r
+              for _ in 1 2 3 4 5 6 7 8; do
+                command -v ssh-keygen > /dev/null || break
+                folder=$(dirname "$(command -v ssh-keygen)")
+                PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -vxF "$folder" | paste -sd: -)
+                hash -r
+              done
+              printf '%s' "$PATH"
+            )
+            PATH="$nossh" command -v ssh-keygen > /dev/null && exit 1
+            fake=$(cygpath -u "$RUNNER_TEMP/fakekeygen")
+            rm -rf "$fake"
+            mkdir -p "$fake"
+            stub=$(hash -r; type -P true)
+            cp "$stub" "$fake/ssh-keygen.exe"
+            cp "$(dirname "$stub")/msys-2.0.dll" "$fake/"
+            "$fake/ssh-keygen.exe" -Y verify -f missing -I x -n x -s missing
+            (PATH="$fake:$nossh"; hash -r; test "$(command -v ssh-keygen)" = "$fake/ssh-keygen")
             for shell in powershell pwsh; do
               case "$shell" in powershell) options="-NoProfile -ExecutionPolicy Bypass" ;; *) options=-NoProfile ;; esac
               publish good
               expect="$PWD/dist/${{ matrix.asset }}"
-              install_in "download-$shell" yes env STATUSLINE_RELEASE_URL="$url" "$shell" $options -File ./install.ps1
+              install_in "download-$shell" yes env STATUSLINE_RELEASE_URL="$url" "$shell" $options -File ./install-signed.ps1
+              install_in "nokeygen-$shell" yes env STATUSLINE_LANG=en STATUSLINE_RELEASE_URL="$url" PATH="$nossh" "$(command -v "$shell")" $options -File ./install-nokeygen.ps1 2>&1 | tee "$RUNNER_TEMP/warning.log"
+              grep -q 'cannot check signatures' "$RUNNER_TEMP/warning.log"
+              install_in "fakekeygen-$shell" yes env STATUSLINE_LANG=en STATUSLINE_RELEASE_URL="$url" PATH="$fake:$nossh" "$(command -v "$shell")" $options -File ./install-nokeygen.ps1 2>&1 | tee "$RUNNER_TEMP/warning.log"
+              grep -q 'cannot check signatures' "$RUNNER_TEMP/warning.log"
+              install_in "nextkeygen-$shell" yes env STATUSLINE_LANG=en STATUSLINE_RELEASE_URL="$url" PATH="$fake:$PATH" "$(command -v "$shell")" $options -File ./install-nokeygen.ps1 2>&1 | tee "$RUNNER_TEMP/warning.log"
+              if grep -q 'cannot check signatures' "$RUNNER_TEMP/warning.log"; then
+                echo "the ssh-keygen after the fake one on PATH was not used"
+                exit 1
+              fi
               expect=""
-              publish wrong
-              refuse_in "wrong-$shell" env STATUSLINE_RELEASE_URL="$url" "$shell" $options -File ./install.ps1
-              publish missing
-              refuse_in "missing-$shell" env STATUSLINE_RELEASE_URL="$url" "$shell" $options -File ./install.ps1
+              refuse_in "realkey-$shell" env STATUSLINE_RELEASE_URL="$url" "$shell" $options -File ./install.ps1
+              for mode in otherkey nosig nomanifest wronghash; do
+                publish "$mode"
+                refuse_in "$mode-$shell" env STATUSLINE_RELEASE_URL="$url" "$shell" $options -File ./install-signed.ps1
+              done
+              publish otherkey
+              refuse_in "nextkeygen-otherkey-$shell" env STATUSLINE_RELEASE_URL="$url" PATH="$fake:$PATH" "$(command -v "$shell")" $options -File ./install-nokeygen.ps1
             done
             install_in powershell yes powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -Build
             uninstall_in powershell powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -Uninstall
@@ -439,13 +498,38 @@ jobs:
               printf '%s' "$PATH"
             )
             PATH="$nocargo" command -v cargo > /dev/null && exit 1
+            nossh="$RUNNER_TEMP/nossh"
+            rm -rf "$nossh"
+            mkdir -p "$nossh"
+            oldifs=$IFS
+            IFS=:
+            for dir in $nocargo; do
+              for file in "$dir"/*; do
+                name=${file##*/}
+                if [ "$name" != ssh-keygen ] && [ -x "$file" ] && [ ! -e "$nossh/$name" ]; then
+                  ln -s "$file" "$nossh/$name" 2> /dev/null || true
+                fi
+              done
+            done
+            IFS=$oldifs
+            (PATH="$nossh"; hash -r; command -v ssh-keygen > /dev/null) && exit 1
             publish good
             expect="$PWD/dist/${{ matrix.asset }}"
-            install_in download-sh yes env STATUSLINE_RELEASE_URL="$url" PATH="$nocargo" sh install.sh
+            install_in download-sh yes env STATUSLINE_RELEASE_URL="$url" PATH="$nocargo" sh ./install-signed.sh
+            install_in nokeygen-sh yes env STATUSLINE_LANG=en STATUSLINE_RELEASE_URL="$url" PATH="$nossh" sh ./install-signed.sh 2>&1 | tee "$RUNNER_TEMP/warning.log"
+            grep -q 'cannot check signatures' "$RUNNER_TEMP/warning.log"
+            fake="$RUNNER_TEMP/fakekeygen"
+            rm -rf "$fake"
+            mkdir -p "$fake"
+            printf '#!/bin/sh\nexit 0\n' > "$fake/ssh-keygen"
+            chmod 755 "$fake/ssh-keygen"
+            (PATH="$fake:$nossh"; hash -r; test "$(command -v ssh-keygen)" = "$fake/ssh-keygen")
+            install_in fakekeygen-sh yes env STATUSLINE_LANG=en STATUSLINE_RELEASE_URL="$url" PATH="$fake:$nossh" sh ./install-signed.sh 2>&1 | tee "$RUNNER_TEMP/warning.log"
+            grep -q 'cannot check signatures' "$RUNNER_TEMP/warning.log"
             foreign="$RUNNER_TEMP/foreign"
             rm -rf "$foreign"
             mkdir -p "$foreign/src"
-            cp install.sh "$foreign/install.sh"
+            cp install-signed.sh "$foreign/install.sh"
             printf '[package]\nname = "other"\nversion = "0.0.0"\nedition = "2021"\nbuild = "build.rs"\n' > "$foreign/Cargo.toml"
             printf 'fn main() {}\n' > "$foreign/src/main.rs"
             printf 'fn main() { std::fs::write("built.marker", "x").unwrap(); }\n' > "$foreign/build.rs"
@@ -456,11 +540,12 @@ jobs:
             test ! -e "$foreign/built.marker"
             test ! -e "$foreign/target"
             expect=""
-            publish wrong
-            refuse_in wrong-sh env STATUSLINE_RELEASE_URL="$url" PATH="$nocargo" sh install.sh
-            publish missing
-            refuse_in missing-sh env STATUSLINE_RELEASE_URL="$url" PATH="$nocargo" sh install.sh
-            sums="https://github.com/LetermeFlorent/claude-statusline/releases/latest/download/SHA256SUMS"
+            refuse_in realkey-sh env STATUSLINE_RELEASE_URL="$url" PATH="$nocargo" sh install.sh
+            for mode in otherkey nosig nomanifest wronghash; do
+              publish "$mode"
+              refuse_in "$mode-sh" env STATUSLINE_RELEASE_URL="$url" PATH="$nocargo" sh ./install-signed.sh
+            done
+            sums="https://github.com/LetermeFlorent/claude-statusline/releases/latest/download/release-manifest"
             if curl -fsIL --proto =https -o /dev/null "$sums"; then
               release=no
             else
@@ -539,7 +624,10 @@ jobs:
           merge-multiple: true
       - name: checksums
         working-directory: dist
-        run: sha256sum statusline-* > SHA256SUMS
+        run: |
+          sha256sum statusline-* > SHA256SUMS
+          { printf 'tag %s\n' "$GITHUB_REF_NAME"; cat SHA256SUMS; } > release-manifest
+          cat release-manifest
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
         with:
           subject-checksums: dist/SHA256SUMS
@@ -548,4 +636,4 @@ jobs:
         run: |
           ls -l dist
           bash .github/release-notes.sh "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
-          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md" --draft
