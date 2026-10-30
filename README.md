@@ -3,8 +3,8 @@
 A status line for Claude Code on Windows, Linux and macOS. It takes two lines: the first follows the session (context, 5-hour and 7-day quotas, model and effort), the second follows the machine (RAM, disk activity, CPU).
 
 ```
-ctx ■■▪■■■■■ 340k/1M | 5h ■■▪■■■■■ 36% 3h29m | 7d ■■■■▪■■■ 61% 3d16h | Opus 5:max
-ram ■■■■■▪■■ 11.3/15.3G | C: ▪■■■■■■■ 2% | cpu ▪■■■■■■■ 8%
+ctx ■■▪■■■■■ 340k/1M | 5h ■■■■■■■■ 36% 3h29m | 7d ■■■■■■■■ 61% 3d16h | Opus 5:max
+ram ■■■■■■■■ 11.3/15.3G | C: ▪■■■■■■■ 2% | cpu ▪■■■■■■■ 8%
 ```
 
 It is a small Rust program with no dependencies. Claude Code runs it every 3 seconds through the `statusLine` setting: it reads the session JSON on standard input, writes the bar on standard output and exits after a little over a millisecond of work. On Windows the binary does without the C runtime and weighs about 220 KB. It can update itself from the GitHub releases, an option that is off by default.
@@ -33,7 +33,7 @@ Both scripts set up the bar in `.claude`, in every `.claude-compte*` folder and 
 
 The first line chains four segments separated by `|`, always in this order:
 
-- `ctx`: how full the context is. The text gives the tokens used over the window size (`340k/1M`), the percentage alone when Claude Code does not send both, or `--%` with no data at all. The bar runs from light blue to deep blue.
+- `ctx`: how full the context is. The text gives the tokens used over the window size (`340k/1M`), the percentage alone when Claude Code does not send both, or `--%` with no data at all. The bar runs from light blue to deep blue, then turns orange from 70% and red from 90%, the same two hues as the machine metrics.
 - `5h`: the 5-hour quota as a percentage, then the time left before it resets (`3h29m`, or `45m` under an hour). With no known reset time it shows `--` in that place.
 - `7d`: the weekly quota, with the time before the reset in days and hours past one day (`3d16h`).
 - the model, underlined, followed by `:` and the effort level. The effort letters are drawn in a gradient, with a hue of their own for `low`, `medium`, `high`, `xhigh` and `max`, and one shared hue for any other value. `auto` takes the hue of `low`, and `ultracode` shows as `ultracode(+workflows)`. The model name is cut before its first parenthesis: `Opus 4 (1M context)` becomes `Opus 4`.
@@ -46,17 +46,19 @@ The second line shows three machine metrics:
 
 Disk and CPU are differences between two readings, so they show `--%` on the very first run, after more than a minute without a refresh, after the watched disk changes (a new `disk_path`, or on macOS a disk plugged in or removed), and whenever their source does not answer. Two refreshes less than a second apart show the same percentage, and the second one keeps the earlier reading to compare with. They come from the system counters: `GetSystemTimes` and `IOCTL_DISK_PERFORMANCE` on Windows, `/proc/stat`, `/proc/diskstats` and `/proc/meminfo` on Linux, Mach and IOKit on macOS. The percentage is capped at 100.
 
-Token counts are written as they are below 1000, then in `k`, `M` and `B`, rounded to the unit.
+Token counts are written as they are below 1000, then in `k`, `M` and `B`, rounded to the unit; a count that rounds up to 1000 moves to the next unit (999,500 reads `1M`).
 
 ### Bar colors
 
 A quota bar takes its hue from its level: the normal hue under 30%, the warning hue from 30%, the critical hue from 70%. For the 5-hour quota that is violet, then mauve, then raspberry red; for the 7-day quota, green, then ochre, then red. The machine metrics keep their own hue (teal for RAM, khaki for the disk, blue for the CPU) up to 70%, turn orange above it, then red above 85%.
 
-Within a bar, the squares get slightly lighter from left to right on a dark background, and darker on a light one. The last filled square is smaller (`▪`) to mark the end. Filling is computed to the half square, and any value above zero fills at least one square. When the value reaches 100%, the number is drawn in the color of its bar. Labels and numbers are bold.
+Within a bar, the squares get slightly lighter from left to right on a dark background, and darker on a light one. Filling is computed to the half square: the last filled square takes the small glyph (`▪`) only when it is half full, and a bar at 100% is made of full squares. Any value above zero fills at least one square, half full when the value is under half a square. The full and the empty squares share the `■` glyph by default and differ by color alone; `glyphs.empty` gives the empty ones another glyph. When the value reaches 100%, the number is drawn in the color of its bar. Labels and numbers are bold and stay in the default color of the terminal, so they read on any background; only the bars follow the detected background. `colors.ink_light` and `colors.ink_dark` color them.
 
 ### When parts are hidden
 
 The `5h` and `7d` segments stay hidden as long as no quota is known for the account, neither in the session JSON nor in the state file from the last 10 minutes. The second line disappears when `system.enabled` is `false`, or when the `system.metrics` list holds no known name. Each segment can also be hidden through the `segments` setting; with all four hidden, the first line stays empty. During an update, `update` shows at the end of the second line, or on a line of its own when the second line is turned off.
+
+When `COLUMNS` is set, the bar keeps each line within that many characters. It first drops the reset times of the `5h` and `7d` quotas, then the effort next to the model name, then narrows the bars one square at a time down to a single square. With the default settings the sample line takes 85 columns; with `bar_width` at `4`, it fits in 80 columns with every detail. Without `COLUMNS`, nothing is dropped.
 
 ## 5-hour and 7-day quotas
 
@@ -70,7 +72,7 @@ The `SessionStart` hook of [claude-account-menu](https://github.com/LetermeFlore
 
 ## Auto-compact threshold
 
-When an auto-compact threshold smaller than the context window is set, the `ctx` bar is measured against that threshold, the text becomes `used/threshold`, and a faint `ª` appears before `ctx`. The threshold is looked up in this order:
+When an auto-compact threshold smaller than the context window is set, the `ctx` bar is measured against that threshold, the text becomes `used/threshold`, and a `~` followed by a space appears before `ctx`, as in `~ ctx ■■■■■■■■ 340k/400k`. The threshold is looked up in this order:
 
 1. the `CLAUDE_CODE_AUTO_COMPACT_WINDOW` environment variable of the process, if it is a positive integer;
 2. otherwise three files, read one after the other: the `settings.json` of the account's configuration folder, then the project's `.claude/settings.json` and `.claude/settings.local.json`. The last one that gives a threshold wins.
@@ -102,7 +104,7 @@ The terminal is recognized by its environment variables, then its settings are r
 
 Under WSL (`WSL_DISTRO_NAME`), VS Code and Windows Terminal keep their settings on the Windows side. The bar finds the Windows profile through the `/mnt/<drive>/Users/<name>` entry that Windows adds to `PATH`, or else through the folder of `/mnt/c/Users` that holds the Windows Terminal package, keeps that path in the state file and reads the files under it. When no profile turns up, the bar follows the system theme of the distribution, which is dark unless `GTK_THEME` or `gsettings` say otherwise: set `STATUSLINE_BG` to choose.
 
-Other terminals go straight to the system theme.
+Other terminals go straight to the system theme, except on Windows, where the system theme describes apps and not terminals: a terminal the bar does not recognize counts as dark there. `COLORFGBG`, `terminal_background` and `STATUSLINE_BG` still decide first.
 
 ### System theme
 
@@ -114,7 +116,7 @@ Each system has its own source:
 
 When the terminal follows the system (VS Code with `window.autoDetectColorScheme`, a two-variant Windows Terminal scheme, Zed set to `system`, a Ghostty `light:...,dark:...` theme), the system theme settles the question.
 
-The result of steps 4 and 5 is kept in the state file. It is worked out again as soon as one of the settings files listed above, the project's `.vscode/settings.json` included, appears, goes away, or changes size or date, when the bar runs under another Windows Terminal profile (`WT_PROFILE_ID`), or when the system theme changes, so a switch to light mode shows at the next refresh. A settings file kept as a symbolic link, in a dotfiles repository for instance, is followed to its target. Steps 1 to 3 are read on every run. `statusline --theme` prints the background in use.
+The result of steps 4 and 5 is kept in the state file. It is worked out again as soon as one of the settings files listed above, the project's `.vscode/settings.json` included, appears, goes away, or changes size or date, when the bar runs under another Windows Terminal profile (`WT_PROFILE_ID`), or when the system theme changes, so a switch to light mode shows at the next refresh. A settings file kept as a symbolic link, in a dotfiles repository for instance, is followed to its target. Steps 1 to 3 are read on every run. `statusline --theme` prints the background in use, then a second line naming where the choice came from: `STATUSLINE_BG`, `terminal_background`, `COLORFGBG`, the host terminal, the system theme, or the dark default for an unknown terminal on Windows.
 
 ## Settings
 
@@ -133,24 +135,25 @@ It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, 
 | `terminal_background` | not set | `light`, `clair`, `dark` or `sombre` forces the background |
 | `bar_width` | `8` | squares per bar, from 1 to 40 |
 | `bold` | `true` | `false` drops the bold from labels and numbers |
-| `glyphs.filled`, `glyphs.empty`, `glyphs.half` | `■`, `■`, `▪` | full square, empty square, last filled square |
-| `auto_compact_marker` | `ª` | auto-compact threshold marker |
+| `glyphs.filled`, `glyphs.empty`, `glyphs.half` | `■`, `■`, `▪` | full square, empty square, half-filled last square |
+| `auto_compact_marker` | `~` | auto-compact threshold marker, drawn before `ctx` and followed by a space; empty to hide it |
 | `effort_style` | `gradient` | `flat`, in any case, draws the effort in a single hue |
 | `segments.ctx`, `segments.5h`, `segments.7d`, `segments.model` | `true` | `false` hides the segment |
 | `gradient.5h`, `gradient.7d` | `0.55`, `0.3` | how strongly the bar lightens, from 0 to 1 |
+| `thresholds.ctx_warn`, `thresholds.ctx_hot` | `70`, `90` | percentages from which the context bar turns orange, then red (the blue gradient is kept below) |
 | `thresholds.quota_warn`, `thresholds.quota_hot` | `30`, `70` | percentages from which a quota turns to warning, then critical |
 | `thresholds.system_warn`, `thresholds.system_hot` | `70`, `85` | percentages above which a machine metric turns to warning, then critical |
 | `palettes.5h.ok`, `.warn`, `.hot` | `#786EC8`, `#AA5AAF`, `#C83C5F` | hues of the 5-hour quota |
 | `palettes.7d.ok`, `.warn`, `.hot` | `#538977`, `#B88143`, `#B95555` | hues of the 7-day quota |
-| `colors.ink_light`, `colors.ink_dark` | `#000000`, `#E8EAED` | text, on a light and on a dark background |
-| `colors.empty_light`, `colors.empty_dark` | `#BEB4A5`, `#E2E5EA` | empty squares |
-| `colors.ctx_from_light`, `colors.ctx_to_light` | `#7DB9FF`, `#285AB4` | context gradient on a light background |
+| `colors.ink_light`, `colors.ink_dark` | not set | color of labels and numbers, on a light and on a dark background; unset, they keep the terminal's default color |
+| `colors.empty_light`, `colors.empty_dark` | `#C4C8CE`, `#55595F` | empty squares |
+| `colors.ctx_from_light`, `colors.ctx_to_light` | `#3D8BEB`, `#285AB4` | context gradient on a light background |
 | `colors.ctx_from_dark`, `colors.ctx_to_dark` | `#96CDFF`, `#4682DC` | context gradient on a dark background |
 | `system.enabled` | `true` | `false` removes the second line |
 | `system.metrics` | `["ram", "io", "cpu"]` | metrics shown, in the order of the list: `ram`, `io` (or `dsk`) and `cpu`, in any case. A name listed twice counts once, and a list with no known name shows all three |
 | `system.gradient` | `0.45` | how strongly the bars of the second line lighten |
 | `system.disk_path` | `C:\` on Windows, `/` elsewhere | disk to watch |
-| `system.colors.ram.ok`, `.dsk.ok`, `.cpu.ok` | `#1E787D`, `#697855`, `#375A8C` | normal hue of each metric |
+| `system.colors.ram.ok`, `.dsk.ok`, `.cpu.ok` | `#1E787D`, `#697855`, `#4F7FC4` | normal hue of each metric |
 | `system.colors.<metric>.warn`, `.hot` | `#BE823C`, `#C83C3C` | warning and critical hues |
 | `auto_update` | `false` | `true` turns on the automatic update check |
 
@@ -165,9 +168,9 @@ The program is installed in `~/.claude/bin`, as `statusline.exe` on Windows and 
 | Command | Effect |
 |---|---|
 | no argument | reads the Claude Code JSON on standard input, writes the bar and updates the state file. Run by hand in a terminal, it does not wait for input and draws a bar with no data. |
-| `--demo` | sample rendering without Claude Code (Opus 5, effort `max`, context 340k of 1M, 5h at 36%, 7d at 61%), with the real settings, theme and machine metrics. The state file is left alone. |
+| `--demo [low\|warn\|hot]` | sample rendering without Claude Code (Opus 5, effort `max`, context 340k of 1M, 5h at 36%, 7d at 61%), with the real settings and theme. The disk and the cpu show sample values (12% and 18%) and the memory is the real one. `warn` and `hot` move the context, memory, disk and cpu bars across the warning and hot thresholds (disk 76% and 93%, cpu 78% and 96%, context 74% and 93%), to see their colors. The state file is left alone. |
 | `--bench [n]` | renders the sample `n` times (200 by default) and prints the average time per rendering, then its breakdown: state, config, session, theme, compact, system, render, write. The first rendering starts from an empty state; each one then reads the state the previous one wrote, and writes it back only when it changed. Process startup is not counted. |
-| `--theme` | prints the background in use, `light` or `dark` |
+| `--theme` | prints the background in use, `light` or `dark`, and on a second line where that choice came from |
 | `--check` | lists the mistakes in `statusline.json` with their line and column, and exits with code 1 when there is one (see [Settings](#settings)) |
 | `--install` | writes the `statusLine` block into the `settings.json` of the current account (see [INSTALL.md](INSTALL.md)) |
 | `--uninstall` | removes that block |
@@ -212,6 +215,8 @@ The program reads the following variables, all of them optional:
 | `CLAUDE_CONFIG_DIR` | account folder: settings, auto-compact threshold, quota keys, target of `--install` |
 | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | auto-compact threshold |
 | `COLORFGBG` | terminal colors, for the background |
+| `COLORTERM` | `truecolor` or `24bit` keeps 24-bit colors; anything else, or nothing, switches to 256 colors |
+| `COLUMNS` | width of the terminal: the line drops details to fit in it |
 | `NO_COLOR`, `TERM` | plain text, when `NO_COLOR` is set or `TERM` is `dumb` |
 | `TERM_PROGRAM`, `VSCODE_INJECTION`, `VSCODE_PID`, `WT_SESSION` | host terminal detection |
 | `VSCODE_GIT_ASKPASS_NODE`, `VSCODE_GIT_ASKPASS_MAIN`, `VSCODE_CWD` | which of VS Code and its forks started the terminal |
@@ -262,4 +267,4 @@ On Linux, `sha256sum -c SHA256SUMS --ignore-missing` also compares the binaries 
 
 The Linux arm64 binary always loads at the same address, because Rust cannot yet build a static position-independent executable for the `aarch64-unknown-linux-musl` target. On other Unix systems (BSD, for example) the bar works without machine metrics, system theme or automatic updates: `--%` everywhere on the second line, and a dark background unless one is set. Automatic updates need `curl`, which ships with macOS and with Windows 10 since version 1803, and has to be installed on some Linux systems.
 
-Colors are sent as 24-bit, with no fallback to 256 colors. When `NO_COLOR` is set or `TERM` is `dumb`, the bar comes out with no escape sequence at all, so without colors or text styles, and with the same glyphs and values. Background detection through the host terminal covers VS Code and its forks, Windows Terminal, Zed and Ghostty. Other terminals go through `COLORFGBG` or the system theme, and `STATUSLINE_BG` can force the choice.
+Colors are sent as 24-bit when `COLORTERM` is `truecolor` or `24bit`, and always on Windows consoles and Windows Terminal. Anywhere else the bar falls back to the 256-color palette, picking the nearest color of the 6x6x6 cube or of the gray ramp, so the hues stay close and no 24-bit sequence reaches a terminal that would misread it. When `NO_COLOR` is set or `TERM` is `dumb`, the bar comes out with no escape sequence at all, so without colors or text styles, and with the same glyphs and values. Background detection through the host terminal covers VS Code and its forks, Windows Terminal, Zed and Ghostty. Other terminals go through `COLORFGBG` or the system theme, and `STATUSLINE_BG` can force the choice.

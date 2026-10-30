@@ -131,6 +131,18 @@ fn windows_terminal_reads_the_file_of_the_profile_and_its_custom_theme() {
 }
 
 #[test]
+fn an_unknown_host_is_dark_on_windows_and_follows_the_system_elsewhere() {
+    let sandbox = Sandbox::new("other-host");
+    let found = places(None, unix_side(&sandbox));
+    let expected = if cfg!(windows) {
+        Mode::Dark
+    } else {
+        Mode::System
+    };
+    assert_eq!(mode(Host::Other, &found, None, None), expected);
+}
+
+#[test]
 fn zed_reads_the_appearance_of_a_custom_theme() {
     let sandbox = Sandbox::new("zed");
     let found = places(None, unix_side(&sandbox));

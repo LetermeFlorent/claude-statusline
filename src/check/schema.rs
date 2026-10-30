@@ -52,6 +52,8 @@ pub const SETTINGS: Keys = &[
     (
         "thresholds",
         Kind::Object(&[
+            ("ctx_warn", Kind::Number),
+            ("ctx_hot", Kind::Number),
             ("quota_warn", Kind::Number),
             ("quota_hot", Kind::Number),
             ("system_warn", Kind::Number),

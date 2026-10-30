@@ -37,6 +37,8 @@ pub struct Config {
     pub grad_5h: f64,
     pub grad_7d: f64,
     pub grad_sys: f64,
+    pub ctx_warn: f64,
+    pub ctx_hot: f64,
     pub quota_warn: f64,
     pub quota_hot: f64,
     pub sys_warn: f64,
@@ -54,14 +56,14 @@ pub struct Config {
 
 pub struct Colors {
     pub light: bool,
-    pub ink: Rgb,
+    pub ink: Option<Rgb>,
     pub empty: Rgb,
     pub ctx_from: Rgb,
     pub ctx_to: Rgb,
 }
 
-const WARN_SYS: Rgb = [190.0, 130.0, 60.0];
-const HOT_SYS: Rgb = [200.0, 60.0, 60.0];
+pub const WARN_SYS: Rgb = [190.0, 130.0, 60.0];
+pub const HOT_SYS: Rgb = [200.0, 60.0, 60.0];
 
 #[cfg(windows)]
 pub const DEFAULT_DISK: &str = "C:\\";
@@ -194,7 +196,7 @@ impl Config {
             marker: printable(
                 raw.get("auto_compact_marker")
                     .and_then(|v| v.str())
-                    .unwrap_or("\u{AA}"),
+                    .unwrap_or("~"),
             ),
             effort_flat: raw
                 .get("effort_style")
@@ -208,6 +210,8 @@ impl Config {
             grad_5h: num::clamp(number(raw.at(&["gradient", "5h"]), 0.55), 0.0, 1.0),
             grad_7d: num::clamp(number(raw.at(&["gradient", "7d"]), 0.3), 0.0, 1.0),
             grad_sys: num::clamp(number(sysget("gradient"), 0.45), 0.0, 1.0),
+            ctx_warn: number(raw.at(&["thresholds", "ctx_warn"]), 70.0),
+            ctx_hot: number(raw.at(&["thresholds", "ctx_hot"]), 90.0),
             quota_warn: number(raw.at(&["thresholds", "quota_warn"]), 30.0),
             quota_hot: number(raw.at(&["thresholds", "quota_hot"]), 70.0),
             sys_warn: number(raw.at(&["thresholds", "system_warn"]), 70.0),
@@ -243,7 +247,7 @@ impl Config {
             pal_cpu: palette(
                 &raw,
                 &["system", "colors", "cpu"],
-                [55.0, 90.0, 140.0],
+                [79.0, 127.0, 196.0],
                 WARN_SYS,
                 HOT_SYS,
             ),
@@ -257,23 +261,24 @@ impl Config {
 
     pub fn colors(&self, light: bool) -> Colors {
         let t = if light { "light" } else { "dark" };
-        let color = |k: &str, def: Rgb| {
+        let custom = |k: &str| {
             let key = alloc::format!("{}_{}", k, t);
-            hex(self.raw.at(&["colors", &key])).unwrap_or(def)
+            hex(self.raw.at(&["colors", &key]))
         };
+        let color = |k: &str, def: Rgb| custom(k).unwrap_or(def);
         if light {
             Colors {
                 light,
-                ink: color("ink", [0.0, 0.0, 0.0]),
-                empty: color("empty", [190.0, 180.0, 165.0]),
-                ctx_from: color("ctx_from", [125.0, 185.0, 255.0]),
+                ink: custom("ink"),
+                empty: color("empty", [196.0, 200.0, 206.0]),
+                ctx_from: color("ctx_from", [61.0, 139.0, 235.0]),
                 ctx_to: color("ctx_to", [40.0, 90.0, 180.0]),
             }
         } else {
             Colors {
                 light,
-                ink: color("ink", [232.0, 234.0, 237.0]),
-                empty: color("empty", [226.0, 229.0, 234.0]),
+                ink: custom("ink"),
+                empty: color("empty", [85.0, 89.0, 95.0]),
                 ctx_from: color("ctx_from", [150.0, 205.0, 255.0]),
                 ctx_to: color("ctx_to", [70.0, 130.0, 220.0]),
             }
