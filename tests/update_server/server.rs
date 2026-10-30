@@ -1,10 +1,17 @@
+use super::signer::Signed;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 pub const RELEASE_PATH: &str = "/repos/LetermeFlorent/claude-statusline/releases/latest";
 
-fn answer(mut stream: TcpStream, tag: &str, binary: &[u8], asked: &Sender<String>) {
+fn answer(
+    mut stream: TcpStream,
+    release: &Signed,
+    tag: &str,
+    binary: &[u8],
+    asked: &Sender<String>,
+) {
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut request = String::new();
     reader.read_line(&mut request).unwrap();
@@ -13,9 +20,13 @@ fn answer(mut stream: TcpStream, tag: &str, binary: &[u8], asked: &Sender<String
         header.clear();
     }
     let path = request.split_whitespace().nth(1).unwrap_or("").to_string();
-    let release = format!("{{\"tag_name\": \"{}\"}}", tag).into_bytes();
+    let latest = format!("{{\"tag_name\": \"{}\"}}", tag).into_bytes();
     let body = if path == RELEASE_PATH {
-        &release[..]
+        &latest[..]
+    } else if path.ends_with("/release-manifest") {
+        &release.manifest[..]
+    } else if path.ends_with("/release-manifest.sig") {
+        &release.signature[..]
     } else {
         binary
     };
@@ -25,13 +36,13 @@ fn answer(mut stream: TcpStream, tag: &str, binary: &[u8], asked: &Sender<String
     stream.write_all(body).unwrap();
 }
 
-pub fn serve(tag: String, binary: Vec<u8>) -> (String, Receiver<String>) {
+pub fn serve(tag: String, binary: Vec<u8>, release: Signed) -> (String, Receiver<String>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let (sender, asked) = channel();
     std::thread::spawn(move || {
         for stream in listener.incoming() {
-            answer(stream.unwrap(), &tag, &binary, &sender);
+            answer(stream.unwrap(), &release, &tag, &binary, &sender);
         }
     });
     (base, asked)

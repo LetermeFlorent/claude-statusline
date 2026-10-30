@@ -9,7 +9,7 @@ use alloc::string::String;
 pub const HTTP_OK: u16 = 200;
 const RATE_LIMIT_STATUSES: [u16; 2] = [403, 429];
 
-pub type Fetch<'a> = &'a dyn Fn(&str, &str, u32) -> Option<u16>;
+pub type Fetch<'a> = &'a dyn Fn(&str, &str, u32, usize) -> Option<u16>;
 
 #[cfg(windows)]
 fn curl_in(system: &str) -> Option<String> {
@@ -35,10 +35,11 @@ fn last_status(headers: &str) -> Option<u16> {
 fn curl_args<'a>(
     protocols: &'a str,
     limit: &'a str,
+    size: &'a str,
     headers: &'a str,
     to: &'a str,
     url: &'a str,
-) -> [&'a str; 13] {
+) -> [&'a str; 15] {
     [
         "-q",
         "-sSL",
@@ -48,6 +49,8 @@ fn curl_args<'a>(
         protocols,
         "--max-time",
         limit,
+        "--max-filesize",
+        size,
         "-D",
         headers,
         "-o",
@@ -63,10 +66,11 @@ pub struct Curl<'a> {
 }
 
 impl Curl<'_> {
-    pub fn fetch(&self, url: &str, to: &str, secs: u32) -> Option<u16> {
+    pub fn fetch(&self, url: &str, to: &str, secs: u32, max: usize) -> Option<u16> {
         let headers = format!("{}.headers", to);
         let limit = format!("{}", secs);
-        let args = curl_args(self.protocols, &limit, &headers, to, url);
+        let size = format!("{}", max);
+        let args = curl_args(self.protocols, &limit, &size, &headers, to, url);
         let finished = os::call(&self.program, &args, self.dir, secs + 15) == Some(0);
         let status = os::read_text(&headers).and_then(|h| last_status(&h));
         os::remove(&headers);
@@ -76,7 +80,7 @@ impl Curl<'_> {
 
 pub fn latest(dir: &str, origin: &Origin, fetch: Fetch) -> Result<String, String> {
     let file = os::join(dir, &["release.json"]);
-    let status = fetch(&origin.latest(), &file, 30);
+    let status = fetch(&origin.latest(), &file, 30, os::MAX_READ_BYTES);
     let text = os::read_text(&file);
     os::remove(&file);
     if status.is_some_and(|s| RATE_LIMIT_STATUSES.contains(&s)) {
@@ -122,7 +126,7 @@ mod tests {
             source.replace('\\', "/").trim_start_matches('/')
         );
         let output = std::process::Command::new(curl().unwrap())
-            .args(curl_args(HTTPS_ONLY, "5", &headers, &copy, &url))
+            .args(curl_args(HTTPS_ONLY, "5", "10", &headers, &copy, &url))
             .env("CURL_HOME", sandbox.dir())
             .output()
             .unwrap();

@@ -7,7 +7,7 @@ ctx ■■▪■■■■■ 340k/1M | 5h ■■■■■■■■ 36% 3h29m | 7
 ram ■■■■■■■■ 11.3/15.3G | C: ▪■■■■■■■ 2% | cpu ▪■■■■■■■ 8%
 ```
 
-It is a small Rust program with no dependencies. Claude Code runs it every 3 seconds through the `statusLine` setting: it reads the session JSON on standard input, writes the bar on standard output and exits. A refresh takes a few milliseconds, most of it process start-up, and the binary weighs from 200 to 700 KB depending on the system: [Size and speed](#size-and-speed) gives the figures and says what each one measures. The program can update itself from the GitHub releases, an option that is off by default. The technical details (terminal detection, state file format, environment variables, build and CI) are in the [technical reference](docs/reference.md). When the bar does not show or shows something odd, start with the [troubleshooting list](INSTALL.md#troubleshooting).
+It is a small Rust program with no runtime dependencies: its only library, used to check the signature of updates, is built into the binary. Claude Code runs it every 3 seconds through the `statusLine` setting: it reads the session JSON on standard input, writes the bar on standard output and exits. A refresh takes a few milliseconds, most of it process start-up, and the binary weighs from 200 to 700 KB depending on the system: [Size and speed](#size-and-speed) gives the figures and says what each one measures. The program can update itself from the GitHub releases, an option that is on by default and installs only releases whose signature checks out. The technical details (terminal detection, state file format, environment variables, build and CI) are in the [technical reference](docs/reference.md). When the bar does not show or shows something odd, start with the [troubleshooting list](INSTALL.md#troubleshooting).
 
 ## Platforms and requirements
 
@@ -31,7 +31,7 @@ cd claude-statusline
 sh install.sh
 ```
 
-Neither script needs the clone to install a released binary: download the script alone from the `main` branch and run it, as [INSTALL.md](INSTALL.md) shows for each system. The checksum check applies the same way, and a release without a `SHA256SUMS` is refused. Compiling, with `-Build` or through `cargo`, needs the sources. To upgrade, run the same script again: [INSTALL.md](INSTALL.md#upgrading-from-an-older-version) has the commands and the changes to expect from an older version. To remove the bar from every account, run `sh install.sh --uninstall` or `install.ps1 -Uninstall`.
+Neither script needs the clone to install a released binary: download the script alone from the `main` branch and run it, as [INSTALL.md](INSTALL.md) shows for each system. The signature and checksum checks apply the same way, and a release without a signed manifest is refused. Compiling, with `-Build` or through `cargo`, needs the sources. To upgrade, run the same script again: [INSTALL.md](INSTALL.md#upgrading-from-an-older-version) has the commands and the changes to expect from an older version. To remove the bar from every account, run `sh install.sh --uninstall` or `install.ps1 -Uninstall`.
 
 The program lands in `~/.claude/bin`, which is not on the `PATH`. Where this document writes `statusline --theme`, run `~/.claude/bin/statusline --theme` (`statusline.exe` on Windows).
 
@@ -151,7 +151,7 @@ It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, 
 | `system.disk_path` | `C:\` on Windows, `/` elsewhere | disk to watch |
 | `system.colors.ram.ok`, `.dsk.ok`, `.cpu.ok` | `#1E787D`, `#697855`, `#4F7FC4` | normal hue of each metric |
 | `system.colors.<metric>.warn`, `.hot` | `#BE823C`, `#C83C3C` | warning and critical hues |
-| `auto_update` | `false` | `true` turns on the automatic update check |
+| `auto_update` | `true` | `false` turns off the automatic update check |
 
 Names in `system.metrics` are written in lowercase, and unknown names are ignored. An empty or missing list falls back to the three metrics. The disk color is set under `dsk`, even though the metric is called `io`.
 
@@ -183,7 +183,7 @@ All text in and out is UTF-8: the session JSON is read as UTF-8, and anything th
 
 ## Automatic updates
 
-With `"auto_update": true` in `statusline.json`, rendering the bar starts `statusline --update` at most every 6 hours, in the background, with no window, and returns without waiting for it. On Windows the update runs at low priority; on Linux and macOS it runs at the normal priority, in a process group of its own, because the program does not lower it. This only happens when the program runs from `~/.claude/bin` and a binary is published for the system. The time of the last check is kept in the state file, under the `update_at` key.
+Unless `statusline.json` sets `"auto_update": false`, or exists but cannot be read or parsed as a JSON object, rendering the bar starts `statusline --update` at most every 6 hours, in the background, with no window, and returns without waiting for it. On Windows the update runs at low priority; on Linux and macOS it runs at the normal priority, in a process group of its own, because the program does not lower it. This only happens when the program runs from `~/.claude/bin` and a binary is published for the system. The time of the last check is kept in the state file, under the `update_at` key.
 
 `--update` asks the GitHub API for the latest release, through `curl` (on Windows, the `curl.exe` of the system folder). When that release is newer, it downloads the binary for the system next to the program, under a name that carries its process id (`statusline.new-<pid>.exe`, or `statusline.new-<pid>`). It runs that copy with `--version`, which must print the version of the release, then with `--demo`, and only then puts it in place of the old one. On Windows the running program cannot be overwritten, but it can lose one of its names: the update first gives it a second one, `statusline.exe.old-<pid>`, then renames the new file over `statusline.exe` in a single step, so `statusline.exe` exists at every moment. Where hard links are not available, the old program is renamed away first, and put back if the new one cannot take its place.
 
@@ -191,11 +191,11 @@ Each update removes what earlier ones left behind: the `statusline.new-<pid>` an
 
 During the download, then for 5 seconds after the swap, the bar shows `update`. The next refresh starts the new program, with no need to restart Claude Code. A failure (network down, missing binary, wrong version, swap refused) leaves the old program in place until the next check.
 
-The update holds a lock on `update.lock`, in the folder of the state file, for its whole run: an open handle on Windows, `flock` on Unix. The system releases it when the process ends, even when it is killed. A second update waits at most 2 seconds for it, then says that an update is already running and stops. The bar shows `update` only while the `updating` marker exists and the lock is held. It checks the lock without waiting, and removes a marker that a stopped update left behind. The automatic check is off by default because nothing signs the downloaded binary yet. `statusline --update` still works by hand.
+The update holds a lock on `update.lock`, in the folder of the state file, for its whole run: an open handle on Windows, `flock` on Unix. The system releases it when the process ends, even when it is killed. A second update waits at most 2 seconds for it, then says that an update is already running and stops. The bar shows `update` only while the `updating` marker exists and the lock is held. It checks the lock without waiting, and removes a marker that a stopped update left behind. Before it runs anything it downloads, the update checks the signature of the release manifest against the key built into the program, then the tag and the SHA-256 of the binary listed in it; any mismatch leaves the installed program as it is. `statusline --update` works by hand as well.
 
 The network must let through `api.github.com` (the lookup of the latest release), `github.com` (the download address) and `release-assets.githubusercontent.com`, where GitHub redirects the download of a release asset. The install scripts use `github.com` and that last host too, and `raw.githubusercontent.com` when the script itself is downloaded alone.
 
-Debug builds, and only those, read a loopback address from `STATUSLINE_UPDATE_SERVER` in place of GitHub. The tests use it to run `--update` against a local server.
+Debug builds, and only those, read a loopback address from `STATUSLINE_UPDATE_SERVER` in place of GitHub. They also take the trusted release key from `STATUSLINE_TEST_RELEASE_KEY`, a public key line, in place of the one built in. The tests use both to run `--update` against a local server that signs its own manifest.
 
 ## State file
 
@@ -242,7 +242,7 @@ gh attestation verify statusline-linux-x86_64 --repo LetermeFlorent/claude-statu
 
 On Linux, `sha256sum -c SHA256SUMS --ignore-missing` also compares the binaries in the folder with the list.
 
-`install.ps1` and `install.sh` download the file for their system from the latest release, along with `SHA256SUMS`, and refuse a binary whose hash is missing from the list or differs from it.
+`install.ps1` and `install.sh` download the file for their system from the latest release, along with its signed `release-manifest` and `release-manifest.sig`. They check the signature with `ssh-keygen` against the release key embedded in the script, take the expected SHA-256 hash from the manifest, and refuse a binary whose hash is missing from it or differs from it. A missing or invalid signature is refused too. When `ssh-keygen` is missing or too old to verify signatures (the script tests it on an embedded sample signature first), the script prints a warning and checks the SHA-256 hash only.
 
 ## Size and speed
 

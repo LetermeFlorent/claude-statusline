@@ -4,6 +4,14 @@ here=$(cd "$(dirname "$0")" && pwd)
 main="$HOME/.claude"
 bin_dir="$main/bin"
 repo="https://github.com/LetermeFlorent/claude-statusline"
+release_key='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAc/fOxJG/NBMFcBqV6k6pwGdOCfLsloZuAqCWBFmRtN claude-statusline release signing'
+probe_key='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINJQEyz/KfjCqflYdMBC6QbZNIGXSyiyKwMALFSLBlOj probe'
+probe_signature='-----BEGIN SSH SIGNATURE-----
+U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg0lATLP8p+MKp+Vh0wELpBtk0gZ
+dLKLIrAwAsVIsGU6MAAAASc3RhdHVzbGluZS1yZWxlYXNlAAAAAAAAAAZzaGE1MTIAAABT
+AAAAC3NzaC1lZDI1NTE5AAAAQGDQeot4d5Dx1rwD4PvikPlszzHbLJLi9U02s28ojvl2eB
+6p1Dgr8oaqROcYx988k/36SNWHGORE1c/f7c980ws=
+-----END SSH SIGNATURE-----'
 
 tag_language() {
   case "${1%%[_.@-]*}" in
@@ -52,8 +60,12 @@ show() {
     fr.downloading) text="téléchargement de $2" ;;
     en.download_failed) text="download failed: check the network, or install Rust (https://rustup.rs) and run this script again from a clone of the repository" ;;
     fr.download_failed) text="téléchargement impossible : vérifiez le réseau, ou installez Rust (https://rustup.rs) puis relancez depuis un clone du dépôt" ;;
-    en.checksum) text="SHA-256 hash missing from SHA256SUMS or different: binary refused" ;;
-    fr.checksum) text="empreinte SHA-256 absente de SHA256SUMS ou différente : binaire refusé" ;;
+    en.checksum) text="SHA-256 hash missing from the release manifest or different: binary refused" ;;
+    fr.checksum) text="empreinte SHA-256 absente du manifeste de publication ou différente : binaire refusé" ;;
+    en.signature) text="signature of the release manifest missing or invalid: binary refused" ;;
+    fr.signature) text="signature du manifeste de publication absente ou invalide : binaire refusé" ;;
+    en.no_signature_check) text="warning: ssh-keygen cannot check signatures here, so the signature of the release was not verified, only its SHA-256 hash" ;;
+    fr.no_signature_check) text="attention : ssh-keygen ne peut pas vérifier de signature ici, la signature de la publication n'a pas été vérifiée, seulement son empreinte SHA-256" ;;
     en.copied) text="program copied to $2" ;;
     fr.copied) text="programme copié dans $2" ;;
     en.config_kept) text="statusline.json already exists, kept" ;;
@@ -145,6 +157,24 @@ is_loopback_release() {
   [ "${#port}" -le 5 ]
 }
 
+check_signature() {
+  printf 'statusline-release namespaces="statusline-release" %s\n' "$1" > "$staged.allowed"
+  "$keygen" -Y verify -f "$staged.allowed" -I statusline-release -n statusline-release -s "$3" < "$2" > /dev/null 2>&1
+}
+
+verify_manifest() {
+  keygen=$(command -v ssh-keygen 2>/dev/null) || keygen=""
+  printf 'statusline probe\n' > "$staged.probe"
+  printf 'statusline probe!\n' > "$staged.tampered"
+  printf '%s\n' "$probe_signature" > "$staged.probe.sig"
+  if [ -n "$keygen" ] && check_signature "$probe_key" "$staged.probe" "$staged.probe.sig" &&
+    ! check_signature "$probe_key" "$staged.tampered" "$staged.probe.sig"; then
+    check_signature "$release_key" "$1" "$2"
+  else
+    show no_signature_check >&2
+  fi
+}
+
 can_build() { is_repo && command -v cargo >/dev/null 2>&1; }
 
 mkdir -p "$bin_dir"
@@ -173,18 +203,27 @@ else
   fi
   fetch() { curl -q -fsSL --proto "=$release_protocol" --proto-redir "=$release_protocol" "$release_base/$1" -o "$2"; }
   sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi < "$1" | cut -d ' ' -f 1; }
-  fetch SHA256SUMS "$staged.sums" && fetch "$asset" "$staged" || {
-    rm -f "$staged.sums" "$staged"
+  clean_download() { rm -f "$staged" "$staged.manifest" "$staged.manifest.sig" "$staged.allowed" "$staged.probe" "$staged.tampered" "$staged.probe.sig"; }
+  fetch release-manifest "$staged.manifest" && fetch release-manifest.sig "$staged.manifest.sig" && fetch "$asset" "$staged" || {
+    clean_download
     show download_failed >&2
     exit 1
   }
-  expected=$(awk -v name="$asset" '$2 == name || $2 == "*" name { print $1 }' "$staged.sums")
-  rm -f "$staged.sums"
+  verify_manifest "$staged.manifest" "$staged.manifest.sig" || {
+    clean_download
+    show signature >&2
+    exit 1
+  }
+  expected=$(awk -v name="$asset" '
+    NR == 1 { ok = ($0 ~ /^tag v[0-9]+\.[0-9]+\.[0-9]+$/); next }
+    NF == 2 && ($2 == name || $2 == "*" name) { count++; hash = $1 }
+    END { if (ok && count == 1 && length(hash) == 64 && hash !~ /[^0-9a-f]/) print hash }' "$staged.manifest")
   if [ -z "$expected" ] || [ "$(sha256 "$staged")" != "$expected" ]; then
-    rm -f "$staged"
+    clean_download
     show checksum >&2
     exit 1
   fi
+  rm -f "$staged.manifest" "$staged.manifest.sig" "$staged.allowed" "$staged.probe" "$staged.tampered" "$staged.probe.sig"
 fi
 
 chmod 755 "$staged"

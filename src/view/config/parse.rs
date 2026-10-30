@@ -41,18 +41,18 @@ impl Config {
             sys_enabled: true,
             metrics: listed_metrics(raw.at(&["system", "metrics"])),
             disk_path: String::from(DEFAULT_DISK),
-            auto_update: raw.get("auto_update").and_then(|v| v.bool()) == Some(true),
+            auto_update: raw.get("auto_update").and_then(|v| v.bool()) != Some(false),
         }
     }
 
     pub fn parse(text: Option<&str>) -> Config {
-        let raw = text
-            .and_then(|t| json::parse(t, Syntax::Commented))
-            .filter(|v| v.is_obj())
-            .unwrap_or(Value::Obj(Vec::new()));
+        let parsed = text.map(|t| json::parse(t, Syntax::Commented).filter(|v| v.is_obj()));
+        let broken = matches!(parsed, Some(None));
+        let raw = parsed.flatten().unwrap_or(Value::Obj(Vec::new()));
         let mut config = Config::defaults(&raw);
         apply(&mut config, &raw);
         config.raw = raw;
+        config.auto_update &= !broken;
         config
     }
 }

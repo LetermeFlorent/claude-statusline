@@ -11,7 +11,9 @@ if (-not $language) { $language = Get-LanguageCode (Get-UICulture).TwoLetterISOL
 $french = $language -eq "fr"
 $texts = @{
   downloading = "downloading {0}", "téléchargement de {0}"
-  checksum = "SHA-256 hash missing from SHA256SUMS or different.", "empreinte SHA-256 absente de SHA256SUMS ou différente."
+  checksum = "SHA-256 hash missing from the release manifest or different.", "empreinte SHA-256 absente du manifeste de publication ou différente."
+  signature = "signature of the release manifest missing or invalid.", "signature du manifeste de publication absente ou invalide."
+  no_signature_check = "ssh-keygen cannot check signatures here, so the signature of the release was not verified, only its SHA-256 hash.", "ssh-keygen ne peut pas vérifier de signature ici, la signature de la publication n'a pas été vérifiée, seulement son empreinte SHA-256."
   release_refused = "released binary refused: {0} Run the script again with -Build, from a clone of the repository, to compile the sources (Rust required).", "binaire publié refusé : {0} Relancez avec -Build, depuis un clone du dépôt, pour compiler les sources (Rust requis)."
   build_failed = "build failed", "échec de la compilation"
   no_sources = "-Build needs the sources: run the script from a clone of the repository", "-Build demande les sources : lancez le script depuis un clone du dépôt"
@@ -38,6 +40,16 @@ $exe = Join-Path $binDir "statusline.exe"
 $staged = Join-Path $binDir ("statusline.install-" + $PID + ".exe")
 $releaseUrl = "https://github.com/LetermeFlorent/claude-statusline/releases/latest/download/"
 if ("$env:STATUSLINE_RELEASE_URL" -cmatch '\Ahttp://127\.0\.0\.1:[0-9]{1,5}/\z') { $releaseUrl = $env:STATUSLINE_RELEASE_URL }
+$releaseKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAc/fOxJG/NBMFcBqV6k6pwGdOCfLsloZuAqCWBFmRtN claude-statusline release signing'
+$probeKey = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINJQEyz/KfjCqflYdMBC6QbZNIGXSyiyKwMALFSLBlOj probe'
+$probeSignature = @'
+-----BEGIN SSH SIGNATURE-----
+U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg0lATLP8p+MKp+Vh0wELpBtk0gZ
+dLKLIrAwAsVIsGU6MAAAASc3RhdHVzbGluZS1yZWxlYXNlAAAAAAAAAAZzaGE1MTIAAABT
+AAAAC3NzaC1lZDI1NTE5AAAAQGDQeot4d5Dx1rwD4PvikPlszzHbLJLi9U02s28ojvl2eB
+6p1Dgr8oaqROcYx988k/36SNWHGORE1c/f7c980ws=
+-----END SSH SIGNATURE-----
+'@
 $asset = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "statusline-windows-arm64.exe" } else { "statusline-windows-x86_64.exe" }
 function Get-BinaryLanguage([string]$file) {
   $saved = $ErrorActionPreference
@@ -51,25 +63,91 @@ function Get-StatusCommand([string]$file) {
   if (-not (Test-Path -LiteralPath $file)) { return $null }
   try { return (Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).statusLine.command } catch { return $null }
 }
+function Write-LfFile([string]$path, [string]$text) {
+  [IO.File]::WriteAllText($path, ($text -replace "`r`n", "`n"), (New-Object Text.UTF8Encoding $false))
+}
+function Start-KeyGen([Diagnostics.ProcessStartInfo]$info) {
+  $console = [Console]::InputEncoding
+  $swap = $console.GetPreamble().Length -gt 0
+  try {
+    if ($swap) { [Console]::InputEncoding = New-Object Text.UTF8Encoding $false }
+    return [Diagnostics.Process]::Start($info)
+  } finally { if ($swap) { [Console]::InputEncoding = $console } }
+}
+function Test-Signature([string]$keygen, [string]$key, [string]$message, [string]$signature, [string]$work) {
+  Write-LfFile "$work.allowed" "statusline-release namespaces=`"statusline-release`" $key`n"
+  $info = New-Object Diagnostics.ProcessStartInfo $keygen, ('-Y verify -f "{0}" -I statusline-release -n statusline-release -s "{1}"' -f "$work.allowed", $signature)
+  $info.UseShellExecute = $false
+  $info.CreateNoWindow = $true
+  $info.RedirectStandardInput = $true
+  $info.RedirectStandardOutput = $true
+  $info.RedirectStandardError = $true
+  try {
+    $bytes = [IO.File]::ReadAllBytes($message)
+    $run = Start-KeyGen $info
+    try {
+      $drained = $run.StandardOutput.ReadToEndAsync(), $run.StandardError.ReadToEndAsync()
+      try { $run.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length) } catch { }
+      try { $run.StandardInput.Close() } catch { }
+      $run.WaitForExit()
+      [void]$drained[0].Result
+      [void]$drained[1].Result
+      return ($run.ExitCode -eq 0)
+    } finally { $run.Dispose() }
+  } catch { return $false }
+}
+function Find-KeyGen([string]$work) {
+  $candidates = @(Join-Path $env:SystemRoot "System32\OpenSSH\ssh-keygen.exe") + @(Get-Command ssh-keygen -CommandType Application -ErrorAction SilentlyContinue | ForEach-Object { $_.Source })
+  Write-LfFile "$work.probe" "statusline probe`n"
+  Write-LfFile "$work.tampered" "statusline probe!`n"
+  Write-LfFile "$work.probe.sig" ($probeSignature + "`n")
+  foreach ($keygen in $candidates) {
+    if (-not (Test-Path -LiteralPath $keygen -PathType Leaf)) { continue }
+    if (-not (Test-Signature $keygen $probeKey "$work.probe" "$work.probe.sig" $work)) { continue }
+    if (Test-Signature $keygen $probeKey "$work.tampered" "$work.probe.sig" $work) { continue }
+    return $keygen
+  }
+  return $null
+}
+function Confirm-Manifest([string]$manifest, [string]$signature, [string]$work) {
+  $keygen = Find-KeyGen $work
+  if ($keygen) {
+    if (-not (Test-Signature $keygen $releaseKey $manifest $signature $work)) { throw (Get-Text signature) }
+  } else {
+    Write-Warning (Get-Text no_signature_check)
+  }
+}
+function Get-ManifestHash([string]$manifest) {
+  $lines = @(Get-Content -LiteralPath $manifest)
+  if ($lines.Count -lt 1 -or $lines[0] -cnotmatch '\Atag v[0-9]+\.[0-9]+\.[0-9]+\z') { throw (Get-Text checksum) }
+  $found = @(foreach ($line in ($lines | Select-Object -Skip 1)) {
+    $fields = -split $line
+    if ($fields.Count -eq 2 -and $fields[1].TrimStart("*") -eq $asset) { $fields[0] }
+  })
+  if ($found.Count -ne 1 -or $found[0] -cnotmatch '\A[0-9a-f]{64}\z') { throw (Get-Text checksum) }
+  return $found[0]
+}
 function Save-ReleaseBinary([string]$destination) {
-  $sums = $destination + ".sums"
+  $manifest = $destination + ".manifest"
+  $signature = $manifest + ".sig"
   [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
   $ProgressPreference = "SilentlyContinue"
   Write-Host (Get-Text downloading $asset)
   try {
-    Invoke-WebRequest -UseBasicParsing -Uri ($releaseUrl + "SHA256SUMS") -OutFile $sums
+    Invoke-WebRequest -UseBasicParsing -Uri ($releaseUrl + "release-manifest") -OutFile $manifest
+    Invoke-WebRequest -UseBasicParsing -Uri ($releaseUrl + "release-manifest.sig") -OutFile $signature
     Invoke-WebRequest -UseBasicParsing -Uri ($releaseUrl + $asset) -OutFile $destination
-    $expected = @(foreach ($line in Get-Content -LiteralPath $sums) {
-      $fields = -split $line
-      if ($fields.Count -eq 2 -and $fields[1].TrimStart("*") -eq $asset) { $fields[0] }
-    })
-    $actual = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
-    if ($expected.Count -ne 1 -or $actual -ne $expected[0]) { throw (Get-Text checksum) }
+    Confirm-Manifest $manifest $signature $destination
+    $expected = Get-ManifestHash $manifest
+    $actual = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actual -ne $expected) { throw (Get-Text checksum) }
   } catch {
     Remove-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue
     throw (Get-Text release_refused $_.Exception.Message)
   } finally {
-    Remove-Item -LiteralPath $sums -Force -ErrorAction SilentlyContinue
+    foreach ($suffix in ".manifest", ".manifest.sig", ".allowed", ".probe", ".tampered", ".probe.sig") {
+      Remove-Item -LiteralPath ($destination + $suffix) -Force -ErrorAction SilentlyContinue
+    }
   }
 }
 

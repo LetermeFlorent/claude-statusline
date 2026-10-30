@@ -66,6 +66,8 @@ mod tests {
         let removed = [
             "statusline.new.exe",
             "statusline.new-4242.exe",
+            "statusline.new-4242.release-manifest",
+            "statusline.new-4242.release-manifest.sig",
             "statusline.exe.old-1700000000",
             "statusline.exe.old-4242",
         ];
