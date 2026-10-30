@@ -53,7 +53,7 @@ pub fn release<'a>(tag: &'a str, binary: &'a [u8]) -> Release<'a> {
 }
 
 impl Release<'_> {
-    fn serve(&self, url: &str, to: &str, _: u32) -> Option<u16> {
+    fn serve(&self, url: &str, to: &str, _: u32, max: usize) -> Option<u16> {
         self.asked.borrow_mut().push(String::from(url));
         let release = format!("{{\"tag_name\": \"{}\"}}", self.tag).into_bytes();
         let base = format!("/download/{}/", self.tag);
@@ -68,7 +68,7 @@ impl Release<'_> {
             }
             _ => return None,
         };
-        if body.is_empty() {
+        if body.is_empty() || body.len() > max {
             return None;
         }
         std::fs::write(to, body).ok().map(|_| status)
@@ -98,7 +98,7 @@ pub fn update(name: &str, release: Release) -> Run {
     };
     let tools = Tools {
         origin: github(),
-        fetch: &|u, t, s| release.serve(u, t, s),
+        fetch: &|u, t, s, m| release.serve(u, t, s, m),
         probe: &probe,
         key: release.key,
     };

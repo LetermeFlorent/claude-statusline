@@ -15,7 +15,7 @@ use alloc::vec::Vec;
 const MANIFEST: &str = "release-manifest";
 const SIGNATURE: &str = "release-manifest.sig";
 const SMALL_SECS: u32 = 60;
-const MAX_BINARY: usize = 64 << 20;
+pub const MAX_BINARY: usize = 64 << 20;
 #[cfg(debug_assertions)]
 const KEY_VARIABLE: &str = "STATUSLINE_TEST_RELEASE_KEY";
 
@@ -41,7 +41,7 @@ fn staged(fresh: &str, name: &str) -> String {
 fn small(tools: &Tools, tag: &str, name: &str, fresh: &str, limit: usize) -> Option<Vec<u8>> {
     let url = tools.origin.download(tag, name);
     let to = staged(fresh, name);
-    let fetched = (tools.fetch)(&url, &to, SMALL_SECS) == Some(HTTP_OK);
+    let fetched = (tools.fetch)(&url, &to, SMALL_SECS, limit) == Some(HTTP_OK);
     let data = if fetched { os::read(&to) } else { None };
     os::remove(&to);
     data.filter(|data| data.len() <= limit)
