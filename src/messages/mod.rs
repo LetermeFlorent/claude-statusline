@@ -1,11 +1,15 @@
+mod check;
 mod help;
 mod language;
 mod table;
 
+pub use check::*;
 pub use help::HELP;
 pub use table::*;
 
 use alloc::string::String;
+#[cfg(any(windows, test))]
+use core::fmt;
 use language::Language;
 
 const PLACEHOLDER: &str = "{}";
@@ -26,6 +30,14 @@ impl Text {
 
     pub fn with(&self, values: &[&str]) -> String {
         fill(self.text(), values)
+    }
+
+    #[cfg(any(windows, test))]
+    pub fn write_to(&self, out: &mut dyn fmt::Write, value: &dyn fmt::Display) -> fmt::Result {
+        match self.text().split_once(PLACEHOLDER) {
+            Some((before, after)) => write!(out, "{}{}{}", before, value, after),
+            None => out.write_str(self.text()),
+        }
     }
 
     fn in_language(&self, language: Language) -> &'static str {
@@ -79,9 +91,32 @@ mod tests {
     }
 
     #[test]
+    fn the_panic_line_names_the_file_line_and_column() {
+        let location = core::panic::Location::caller();
+        let mut line = String::new();
+        PANICKED.write_to(&mut line, location).unwrap();
+        let place = format!(
+            "{}:{}:{}",
+            location.file(),
+            location.line(),
+            location.column()
+        );
+        assert_eq!(line, PANICKED.with(&[&place]));
+        assert!(line.contains(&place), "{}", line);
+        assert_eq!(line.lines().count(), 1, "{}", line);
+    }
+
+    #[test]
+    fn the_help_names_the_account_folder() {
+        for help in [HELP.english, HELP.french] {
+            assert_eq!(help.matches("$CLAUDE_CONFIG_DIR").count(), 2, "{}", help);
+        }
+    }
+
+    #[test]
     fn both_languages_take_the_same_values_and_line_ending() {
         let placeholders = |s: &str| s.matches(PLACEHOLDER).count();
-        for text in ALL.into_iter().chain([&HELP]) {
+        for text in ALL.into_iter().chain(CHECK_TEXTS).chain([&HELP]) {
             assert!(!text.english.is_empty(), "{}", text.french);
             assert!(!text.french.is_empty(), "{}", text.english);
             assert_eq!(

@@ -1,5 +1,5 @@
 #[cfg(any(target_os = "linux", test))]
-mod cgroup;
+mod linux;
 #[cfg(not(windows))]
 mod spawn_unix;
 #[cfg(not(windows))]
@@ -21,6 +21,14 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 pub const MAX_READ_BYTES: usize = 1 << 20;
+pub const CPU_SOURCE: u64 = 0;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Activity {
+    pub source: u64,
+    pub clock: i64,
+    pub busy: i64,
+}
 
 #[derive(Debug, PartialEq)]
 pub enum Contents {
@@ -112,6 +120,34 @@ mod tests {
     }
 
     #[test]
+    fn a_project_nested_past_the_old_path_limit_still_has_its_settings() {
+        const OLD_PATH_LIMIT: usize = 260;
+        const FOLDER: &str = "a-folder-name-forty-characters-in-length";
+        const SETTINGS: &[u8] = b"{\"autoCompactWindow\": 150000}";
+        let sandbox = Sandbox::new("long-path");
+        let mut project = sandbox.0.clone();
+        while project.as_os_str().len() <= OLD_PATH_LIMIT {
+            project.push(FOLDER);
+        }
+        let claude = project.join(".claude");
+        std::fs::create_dir_all(&claude).unwrap();
+        let folder = claude.to_string_lossy().into_owned();
+        let settings = join(&folder, &["settings.json"]);
+        std::fs::write(&settings, SETTINGS).unwrap();
+        assert!(exists(&settings));
+        assert!(stamp(&settings).is_some());
+        assert_eq!(read(&settings).as_deref(), Some(SETTINGS));
+        assert!(write_atomic(&settings, b"{}"));
+        assert_eq!(std::fs::read(&settings).unwrap(), b"{}");
+        assert_eq!(list(&folder, "settings"), ["settings.json"]);
+        let deeper = join(&folder, &["one", "two"]);
+        assert!(mkdirs(&deeper));
+        assert!(std::path::Path::new(&deeper).is_dir());
+        assert!(remove(&settings));
+        assert!(!exists(&settings));
+    }
+
+    #[test]
     fn children_start_in_the_given_folder() {
         let sandbox = Sandbox::new("cwd");
         #[cfg(windows)]
@@ -181,6 +217,66 @@ mod tests {
     }
 
     #[test]
+    fn an_open_reader_keeps_its_copy_while_the_file_is_replaced() {
+        use std::io::Read;
+        let sandbox = Sandbox::new("open-reader");
+        let path = sandbox.path("state");
+        std::fs::write(&path, b"old").unwrap();
+        let mut reader = std::fs::File::open(&path).unwrap();
+        assert!(write_atomic(&path, b"new"));
+        let mut seen = Vec::new();
+        reader.read_to_end(&mut seen).unwrap();
+        assert_eq!(seen, b"old");
+        assert_eq!(std::fs::read(&path).unwrap(), b"new");
+        assert_eq!(sandbox.files(), ["state"]);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_file_held_without_delete_sharing_is_left_whole() {
+        use std::os::windows::fs::OpenOptionsExt;
+        const SHARE_READ_AND_WRITE: u32 = 3;
+        let sandbox = Sandbox::new("held");
+        let path = sandbox.path("state");
+        std::fs::write(&path, b"old").unwrap();
+        let _holder = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(SHARE_READ_AND_WRITE)
+            .open(&path)
+            .unwrap();
+        assert!(!write_atomic(&path, b"new"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"old");
+        assert_eq!(sandbox.files(), ["state"]);
+    }
+
+    #[test]
+    fn a_temp_file_that_cannot_be_made_leaves_the_file_whole() {
+        let sandbox = Sandbox::new("blocked-temp");
+        let path = sandbox.path("state");
+        std::fs::write(&path, b"old").unwrap();
+        std::fs::create_dir(format!("{}.{}.tmp", path, std::process::id())).unwrap();
+        assert!(!write_atomic(&path, b"new"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"old");
+    }
+
+    #[test]
+    fn a_held_lock_turns_others_away_within_the_wait() {
+        const WAIT_MS: u32 = 50;
+        const SURELY_WAITED_MS: u64 = 25;
+        const BOUND_MS: u64 = 1000;
+        const RELEASE_WAIT_MS: u32 = 1000;
+        let sandbox = Sandbox::new("lock");
+        let path = sandbox.path("state.lock");
+        let held = lock(&path, 0).unwrap();
+        let start = std::time::Instant::now();
+        assert!(lock(&path, WAIT_MS).is_none());
+        let waited = start.elapsed().as_millis() as u64;
+        assert!((SURELY_WAITED_MS..BOUND_MS).contains(&waited), "{}", waited);
+        drop(held);
+        assert!(lock(&path, RELEASE_WAIT_MS).is_some());
+    }
+
+    #[test]
     #[cfg_attr(windows, ignore = "creating a symbolic link needs an elevated token")]
     fn atomic_write_keeps_a_symbolic_link() {
         let sandbox = Sandbox::new("link");
@@ -194,5 +290,18 @@ mod tests {
             .is_symlink());
         assert_eq!(std::fs::read(&real).unwrap(), b"[]");
         assert_eq!(sandbox.files(), ["real.json", "settings.json"]);
+    }
+
+    #[test]
+    #[cfg_attr(windows, ignore = "creating a symbolic link needs an elevated token")]
+    fn the_stamp_of_a_link_follows_its_target() {
+        let sandbox = Sandbox::new("stamp-link");
+        let (real, link) = (sandbox.path("real.json"), sandbox.path("settings.json"));
+        std::fs::write(&real, b"{}").unwrap();
+        symlink(&real, &link).unwrap();
+        let before = stamp(&link);
+        std::fs::write(&real, b"{\"theme\": 1}").unwrap();
+        assert_ne!(stamp(&link), before);
+        assert_eq!(stamp(&link), stamp(&real));
     }
 }

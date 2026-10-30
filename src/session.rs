@@ -9,6 +9,7 @@ pub struct Session {
     pub ctx: Ctx,
     pub live: Option<(Option<Live>, Option<Live>)>,
     pub cwd: Option<String>,
+    pub project: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -104,6 +105,10 @@ impl Session {
                 None
             },
             cwd: payload.get("cwd").and_then(|x| x.str()).map(String::from),
+            project: payload
+                .at(&["workspace", "project_dir"])
+                .and_then(|x| x.str())
+                .map(String::from),
         }
     }
 }

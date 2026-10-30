@@ -1,4 +1,5 @@
 use crate::backup;
+use crate::check;
 use crate::compact;
 use crate::config::{Config, Metric};
 use crate::global_config::{self, Repair};
@@ -8,7 +9,7 @@ use crate::plain;
 use crate::portable;
 use crate::render::{self, Data, SysValue};
 use crate::session::Session;
-use crate::settings;
+use crate::settings::{self, Removal};
 use crate::state::{self, State};
 use crate::theme;
 use crate::update;
@@ -34,6 +35,7 @@ const TEMPLATE: &str = "{
 ";
 
 const MS_PER_SECOND: f64 = 1000.0;
+const STATE_LOCK_WAIT_MS: u32 = 500;
 const DEFAULT_BENCH_RUNS: usize = 200;
 
 fn config_path() -> Option<String> {
@@ -53,12 +55,18 @@ fn state_path() -> Option<String> {
     os::state_dir().map(|d| os::join(&d, &["state"]))
 }
 
+fn read_state(path: &str) -> Option<State> {
+    match os::read_checked(path, os::MAX_READ_BYTES) {
+        Contents::Bytes(data) => Some(State::parse(&String::from_utf8_lossy(&data))),
+        Contents::Missing => Some(State::parse("")),
+        Contents::Unreadable => None,
+    }
+}
+
 fn load_state() -> State {
-    State::parse(
-        &state_path()
-            .and_then(|p| os::read_text(&p))
-            .unwrap_or_default(),
-    )
+    state_path()
+        .and_then(|p| read_state(&p))
+        .unwrap_or_else(|| State::parse(""))
 }
 
 fn save_state(state: &State) -> bool {
@@ -73,7 +81,12 @@ fn save_state(state: &State) -> bool {
             os::mkdirs(d);
         }
     }
-    os::write_atomic(&path, state.text().as_bytes())
+    let _lock = os::lock(&format!("{}.lock", path), STATE_LOCK_WAIT_MS);
+    let Some(latest) = read_state(&path) else {
+        return os::write_atomic(&path, state.text().as_bytes());
+    };
+    let saved = state.rebased_on(latest);
+    saved.changed() && os::write_atomic(&path, saved.text().as_bytes())
 }
 
 fn load_config() -> Config {
@@ -111,7 +124,7 @@ impl Laps {
     }
 }
 
-fn sample(cfg: &Config, state: &mut State) -> Vec<SysValue> {
+fn sample(cfg: &Config, state: &mut State, now: f64) -> Vec<SysValue> {
     let mut out = Vec::new();
     if !cfg.sys_enabled {
         return out;
@@ -125,12 +138,12 @@ fn sample(cfg: &Config, state: &mut State) -> Vec<SysValue> {
             },
             Metric::Io => SysValue {
                 metric: *metric,
-                pct: state.counter("io", os::disk(&cfg.disk_path)),
+                pct: state.counter("io", os::disk(&cfg.disk_path), now),
                 ram: None,
             },
             Metric::Cpu => SysValue {
                 metric: *metric,
-                pct: state.counter("cpu", os::cpu()),
+                pct: state.counter("cpu", os::cpu(), now),
                 ram: None,
             },
         };
@@ -178,7 +191,8 @@ fn run(input: &str, now: f64, laps: &mut Laps) -> (String, State, bool) {
     let session = Session::parse(input);
     laps.lap(Stage::Session);
     let mut state = load_state();
-    let light = theme::detect_light(cfg.light_override, &mut state);
+    let project = session.project.as_deref().or(session.cwd.as_deref());
+    let light = theme::detect_light(cfg.light_override, project, &mut state);
     let quotas = state.quotas(
         session.live,
         now,
@@ -198,7 +212,7 @@ fn run(input: &str, now: f64, laps: &mut Laps) -> (String, State, bool) {
     } else {
         None
     };
-    let sys = sample(&cfg, &mut state);
+    let sys = sample(&cfg, &mut state, now);
     laps.lap(Stage::State);
     let updating = update_watch::busy(now);
     let data = Data {
@@ -296,11 +310,14 @@ fn store(path: &str, text: &str) -> Result<(), String> {
     }
 }
 
-fn replace(path: &str, raw: &[u8], text: &str) -> Result<(), String> {
-    let saved = backup::save(path, raw, os::now())
-        .ok_or_else(|| messages::CANNOT_WRITE.with(&[&format!("{}.bak", path)]))?;
-    os::out(&messages::BACKUP.with(&[&saved]));
-    store(path, text)
+fn replace(path: &str, raw: &[u8], text: &str) -> Result<String, String> {
+    let saved =
+        backup::save(path, raw, os::now()).map_err(|name| messages::CANNOT_WRITE.with(&[&name]))?;
+    let told = messages::BACKUP.with(&[&saved]);
+    match store(path, text) {
+        Ok(()) => Ok(told),
+        Err(message) => Err(told + &message),
+    }
 }
 
 fn repair_global(path: &str, command: &str) -> Result<Option<String>, ()> {
@@ -313,9 +330,16 @@ fn repair_global(path: &str, command: &str) -> Result<Option<String>, ()> {
     match global_config::repair(text, command, global_config::present) {
         Repair::Kept => Ok(None),
         Repair::Unreadable => Err(()),
-        Repair::Repaired { text: next, was } => replace(path, &raw, &next)
-            .map(|()| Some(was))
-            .map_err(|message| os::err(&message)),
+        Repair::Repaired { text: next, was } => match replace(path, &raw, &next) {
+            Ok(told) => {
+                os::out(&told);
+                Ok(Some(was))
+            }
+            Err(message) => {
+                os::err(&message);
+                Err(())
+            }
+        },
     }
 }
 
@@ -330,6 +354,44 @@ fn repair_globals(command: &str) {
     }
 }
 
+fn settings_bytes(path: &str) -> Result<Option<Vec<u8>>, String> {
+    match os::read_checked(path, os::MAX_READ_BYTES) {
+        Contents::Missing => Ok(None),
+        Contents::Bytes(raw) => Ok(Some(raw)),
+        Contents::Unreadable => Err(messages::SETTINGS_UNREADABLE.with(&[path])),
+    }
+}
+
+fn add_line(path: &str, command: &str) -> Result<String, String> {
+    let raw = settings_bytes(path)?;
+    let next = settings::with_status_line(raw.as_deref(), command)
+        .ok_or_else(|| messages::SETTINGS_INVALID.with(&[path]))?;
+    let told = match raw {
+        Some(raw) => replace(path, &raw, &next)?,
+        None => {
+            if let Some(d) = os::parent(path) {
+                os::mkdirs(d);
+            }
+            store(path, &next)?;
+            String::new()
+        }
+    };
+    Ok(told + &messages::INSTALLED.with(&[path]))
+}
+
+fn remove_line(path: &str) -> Result<String, String> {
+    let Some(raw) = settings_bytes(path)? else {
+        return Ok(messages::NO_SETTINGS.with(&[path]));
+    };
+    let next = match settings::without_status_line(&raw) {
+        Removal::Invalid => return Err(messages::SETTINGS_INVALID.with(&[path])),
+        Removal::NoLine => return Ok(messages::NOTHING_TO_REMOVE.with(&[path])),
+        Removal::Rewrite(next) => next,
+    };
+    let told = replace(path, &raw, &next)?;
+    Ok(told + &messages::REMOVED.with(&[path]))
+}
+
 fn install() -> i32 {
     let Some(path) = settings_path() else {
         return fail(messages::NO_HOME.text());
@@ -338,37 +400,17 @@ fn install() -> i32 {
         return fail(messages::NO_EXE.text());
     };
     let command = portable::command(&exe);
-    let raw = match os::read_checked(&path, os::MAX_READ_BYTES) {
-        Contents::Missing => None,
-        Contents::Bytes(raw) => Some(raw),
-        Contents::Unreadable => return fail(&messages::SETTINGS_UNREADABLE.with(&[&path])),
-    };
-    let current = raw
-        .as_ref()
-        .map(|r| String::from_utf8_lossy(r).into_owned());
-    let Some(next) = settings::with_status_line(current.as_deref(), &command) else {
-        return fail(&messages::SETTINGS_UNREADABLE.with(&[&path]));
-    };
-    let written = match raw {
-        Some(raw) => replace(&path, &raw, &next),
-        None => {
-            if let Some(d) = os::parent(&path) {
-                os::mkdirs(d);
-            }
-            store(&path, &next)
-        }
-    };
-    if let Err(message) = written {
-        return fail(&message);
+    match add_line(&path, &command) {
+        Ok(told) => os::out(&told),
+        Err(message) => return fail(&message),
     }
-    os::out(&messages::INSTALLED.with(&[&path]));
     repair_globals(&command);
     let conf = config_path();
     if let Some(c) = conf.filter(|c| !os::exists(c)) {
         let target = os::claude_dir()
             .map(|d| os::join(&d, &["statusline.json"]))
             .unwrap_or(c);
-        if os::write(&target, TEMPLATE.as_bytes()) {
+        if os::write_atomic(&target, TEMPLATE.as_bytes()) {
             os::out(&messages::CONFIG_WRITTEN.with(&[&target]));
         }
     }
@@ -380,19 +422,13 @@ fn uninstall() -> i32 {
     let Some(path) = settings_path() else {
         return fail(messages::NO_HOME.text());
     };
-    let raw = os::read(&path);
-    let next = raw
-        .as_ref()
-        .and_then(|r| settings::without_status_line(&String::from_utf8_lossy(r)));
-    let (Some(raw), Some(next)) = (raw, next) else {
-        os::out(messages::NOTHING_TO_REMOVE.text());
-        return 0;
-    };
-    if let Err(message) = replace(&path, &raw, &next) {
-        return fail(&message);
+    match remove_line(&path) {
+        Ok(told) => {
+            os::out(&told);
+            0
+        }
+        Err(message) => fail(&message),
     }
-    os::out(&messages::REMOVED.with(&[&path]));
-    0
 }
 
 pub fn main(args: Vec<String>) -> i32 {
@@ -426,11 +462,12 @@ pub fn main(args: Vec<String>) -> i32 {
         Some("--theme") => {
             let cfg = load_config();
             let mut state = load_state();
-            let light = theme::detect_light(cfg.light_override, &mut state);
+            let light = theme::detect_light(cfg.light_override, os::cwd().as_deref(), &mut state);
             save_state(&state);
             os::out(if light { "light\n" } else { "dark\n" });
             0
         }
+        Some("--check") => check::run(config_path()),
         Some("--install") => install(),
         Some("--uninstall") => uninstall(),
         Some("--update") => update::run(),
@@ -452,6 +489,65 @@ pub fn main(args: Vec<String>) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sandbox::Sandbox;
+
+    #[test]
+    fn uninstall_names_each_case() {
+        let sandbox = Sandbox::new("uninstall-cases");
+        let path = sandbox.path("settings.json");
+        assert_eq!(remove_line(&path), Ok(messages::NO_SETTINGS.with(&[&path])));
+        for text in ["", "{\"model\": \"opus\"}"] {
+            std::fs::write(&path, text).unwrap();
+            let no_line = Ok(messages::NOTHING_TO_REMOVE.with(&[&path]));
+            assert_eq!(remove_line(&path), no_line, "{}", text);
+        }
+        for raw in [&b"[1]"[..], b"{\"a\": \"\xff\"}"] {
+            std::fs::write(&path, raw).unwrap();
+            let invalid = Err(messages::SETTINGS_INVALID.with(&[&path]));
+            assert_eq!(remove_line(&path), invalid);
+            assert_eq!(add_line(&path, "x"), invalid);
+            assert_eq!(std::fs::read(&path).unwrap(), raw);
+        }
+        assert_eq!(sandbox.files(), ["settings.json"]);
+    }
+
+    #[test]
+    fn unreadable_settings_are_an_error() {
+        let sandbox = Sandbox::new("unreadable-settings");
+        let path = sandbox.path("settings.json");
+        std::fs::create_dir(&path).unwrap();
+        let unreadable = Err(messages::SETTINGS_UNREADABLE.with(&[&path]));
+        assert_eq!(remove_line(&path), unreadable);
+        assert_eq!(add_line(&path, "x"), unreadable);
+    }
+
+    #[test]
+    fn an_empty_file_counts_as_an_empty_object() {
+        let sandbox = Sandbox::new("empty-settings");
+        let path = sandbox.path("settings.json");
+        std::fs::write(&path, " \n").unwrap();
+        assert!(add_line(&path, "x").is_ok());
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(written.contains("\"statusLine\""), "{}", written);
+    }
+
+    #[test]
+    fn the_printed_backup_is_on_disk() {
+        let sandbox = Sandbox::new("printed-backup");
+        let path = sandbox.path("settings.json");
+        std::fs::write(&path, "{\"statusLine\": {}}").unwrap();
+        let told = remove_line(&path).unwrap();
+        let files = sandbox.files();
+        let backup = files.iter().find(|name| *name != "settings.json").unwrap();
+        assert!(backup.starts_with("settings.json.bak-"), "{}", backup);
+        let backup_told = messages::BACKUP.with(&[&sandbox.path(backup)]);
+        assert_eq!(told, backup_told + &messages::REMOVED.with(&[&path]));
+    }
+
+    #[test]
+    fn the_written_template_passes_the_check() {
+        assert!(check::problems(TEMPLATE).is_empty());
+    }
 
     #[test]
     fn bench_without_a_count_uses_the_default() {

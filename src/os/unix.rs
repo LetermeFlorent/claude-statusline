@@ -4,6 +4,8 @@ use std::vec::Vec;
 
 pub const SEP: char = '/';
 pub const PRIVATE_MODE: u32 = 0o600;
+const MS_PER_SECOND: f64 = 1000.0;
+const LOCK_POLL_MS: u32 = 1;
 
 pub fn args() -> Vec<String> {
     std::env::args_os()
@@ -53,13 +55,14 @@ pub fn write_atomic(path: &str, data: &[u8]) -> bool {
     let target = resolved(path);
     let tmp = format!("{}.{}.tmp", target, std::process::id());
     let permissions = std::fs::metadata(&target).ok().map(|m| m.permissions());
+    let _ = std::fs::remove_file(&tmp);
     let swapped = create_private(&tmp, data)
         && permissions.is_none_or(|p| std::fs::set_permissions(&tmp, p).is_ok())
         && std::fs::rename(&tmp, &target).is_ok();
     if !swapped {
         let _ = std::fs::remove_file(&tmp);
     }
-    swapped || write(&target, data)
+    swapped
 }
 
 pub fn remove(path: &str) -> bool {
@@ -79,6 +82,31 @@ pub fn create_private(path: &str, data: &[u8]) -> bool {
         .open(path)
         .and_then(|mut file| file.write_all(data))
         .is_ok()
+}
+
+pub struct Lock {
+    _file: std::fs::File,
+}
+
+pub fn lock(path: &str, wait_ms: u32) -> Option<Lock> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .mode(PRIVATE_MODE)
+        .open(path)
+        .ok()?;
+    let deadline = ticks() + f64::from(wait_ms) / MS_PER_SECOND;
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Some(Lock { _file: file }),
+            Err(std::fs::TryLockError::WouldBlock) if ticks() < deadline => {
+                super::sleep(LOCK_POLL_MS)
+            }
+            Err(_) => return None,
+        }
+    }
 }
 
 pub fn make_executable(path: &str) -> bool {
@@ -158,7 +186,11 @@ pub fn ticks() -> f64 {
 }
 
 pub fn home() -> Option<String> {
-    env("HOME")
+    env("HOME").or_else(|| {
+        std::env::home_dir()
+            .map(|p| p.to_string_lossy().into_owned())
+            .filter(|h| !h.is_empty())
+    })
 }
 
 pub fn state_dir() -> Option<String> {
@@ -186,6 +218,8 @@ fn stamp_text(path: Option<String>) -> String {
 #[cfg(target_os = "linux")]
 mod sys {
     use super::*;
+    use crate::os::linux::disks::{self, Device};
+    use crate::os::{Activity, CPU_SOURCE};
 
     fn read_str(p: &str) -> Option<String> {
         std::fs::read_to_string(p).ok()
@@ -195,7 +229,7 @@ mod sys {
     const IDLE: usize = 3;
     const IOWAIT: usize = 4;
 
-    pub fn cpu() -> Option<(i64, i64)> {
+    pub fn cpu() -> Option<Activity> {
         let s = read_str("/proc/stat")?;
         let line = s.lines().next()?;
         let mut it = line.split_whitespace();
@@ -210,72 +244,56 @@ mod sys {
             return None;
         }
         let clock: i64 = jiffies.iter().sum();
-        Some((clock, clock - jiffies[IDLE] - jiffies[IOWAIT]))
+        Some(Activity {
+            source: CPU_SOURCE,
+            clock,
+            busy: clock - jiffies[IDLE] - jiffies[IOWAIT],
+        })
     }
 
-    fn dev_numbers(path: &str) -> Option<(u64, u64)> {
-        use std::os::unix::fs::MetadataExt;
-        let d = std::fs::metadata(path).ok()?.dev();
-        let major = ((d >> 8) & 0xfff) | ((d >> 32) & 0xffff_f000);
-        let minor = (d & 0xff) | ((d >> 12) & 0xffff_ff00);
-        Some((major, minor))
+    const ANONYMOUS_MAJOR: u64 = 0;
+
+    fn split_device(number: u64) -> Device {
+        let major = ((number >> 8) & 0xfff) | ((number >> 32) & 0xffff_f000);
+        let minor = (number & 0xff) | ((number >> 12) & 0xffff_ff00);
+        (major, minor)
     }
 
-    const IO_MS_COLUMN: usize = 12;
+    fn mounted_device(path: &str) -> Option<Device> {
+        use std::os::unix::fs::{FileTypeExt, MetadataExt};
+        let device = split_device(std::fs::metadata(path).ok()?.dev());
+        if device.0 != ANONYMOUS_MAJOR {
+            return Some(device);
+        }
+        let folder = std::fs::canonicalize(path).ok()?;
+        let mounts = read_str("/proc/self/mountinfo")?;
+        let source = disks::mount_source(&mounts, folder.to_str()?)?;
+        let node = std::fs::metadata(source).ok()?;
+        node.file_type()
+            .is_block_device()
+            .then(|| split_device(node.rdev()))
+    }
 
-    pub fn disk(path: &str) -> Option<(i64, i64)> {
+    fn physical(name: &str) -> bool {
+        std::path::Path::new(&format!("/sys/block/{}/device", name)).exists()
+    }
+
+    pub fn disk(path: &str) -> Option<Activity> {
         let up = read_str("/proc/uptime")?;
         let uptime_secs: f64 = up.split_whitespace().next()?.parse().ok()?;
-        let uptime_ms = (uptime_secs * 1000.0) as i64;
         let stats = read_str("/proc/diskstats")?;
-        let want = dev_numbers(path);
-        let mut fallback: Option<i64> = None;
-        for line in stats.lines() {
-            let columns: Vec<&str> = line.split_whitespace().collect();
-            if columns.len() <= IO_MS_COLUMN {
-                continue;
-            }
-            let io_ms: i64 = match columns[IO_MS_COLUMN].parse() {
-                Ok(t) => t,
-                Err(_) => continue,
-            };
-            let num = (
-                columns[0].parse::<u64>().ok(),
-                columns[1].parse::<u64>().ok(),
-            );
-            if let (Some((a, b)), (Some(x), Some(y))) = (want, num) {
-                if a == x && b == y {
-                    return Some((uptime_ms, io_ms));
-                }
-            }
-            let name = columns[2];
-            let virt = ["loop", "ram", "zram", "sr", "fd", "nbd"]
-                .iter()
-                .any(|p| name.starts_with(p));
-            if fallback.is_none()
-                && !virt
-                && std::path::Path::new(&format!("/sys/block/{}", name)).exists()
-            {
-                fallback = Some(io_ms);
-            }
-        }
-        fallback.map(|io_ms| (uptime_ms, io_ms))
+        let device = mounted_device(path).or_else(|| disks::sole_disk(&stats, &physical))?;
+        let io_ms = disks::io_ms(&stats, device)?;
+        Some(Activity {
+            source: (device.0 << 32) | device.1,
+            clock: (uptime_secs * 1000.0) as i64,
+            busy: io_ms,
+        })
     }
 
     pub fn memory() -> Option<(f64, f64)> {
-        let meminfo = read_str("/proc/meminfo")?;
-        let get = |k: &str| -> Option<f64> {
-            let line = meminfo.lines().find(|l| l.starts_with(k))?;
-            let kb: f64 = line[k.len()..]
-                .trim()
-                .trim_end_matches("kB")
-                .trim()
-                .parse()
-                .ok()?;
-            Some(kb * 1024.0)
-        };
-        let host = (get("MemTotal:")?, get("MemAvailable:")?);
-        Some(crate::os::cgroup::narrow(host, &read_str))
+        let host = crate::os::linux::meminfo::parse(&read_str("/proc/meminfo")?)?;
+        Some(crate::os::linux::cgroup::narrow(host, &read_str))
     }
 
     fn gsettings(key: &str) -> Option<String> {
@@ -365,6 +383,7 @@ mod sys {
 #[cfg(target_os = "macos")]
 mod sys {
     use super::*;
+    use crate::os::{Activity, CPU_SOURCE};
     use std::ffi::c_void;
 
     type Port = u32;
@@ -412,15 +431,24 @@ mod sys {
 
     const CPU_STATE_IDLE: usize = 2;
 
-    pub fn cpu() -> Option<(i64, i64)> {
+    fn host() -> Port {
+        static HOST: std::sync::OnceLock<Port> = std::sync::OnceLock::new();
+        *HOST.get_or_init(|| unsafe { mach_host_self() })
+    }
+
+    pub fn cpu() -> Option<Activity> {
         let mut ticks = [0i32; 4];
         let mut n = 4u32;
-        if unsafe { host_statistics(mach_host_self(), 3, ticks.as_mut_ptr(), &mut n) } != 0 {
+        if unsafe { host_statistics(host(), 3, ticks.as_mut_ptr(), &mut n) } != 0 {
             return None;
         }
         let ticks: Vec<i64> = ticks.iter().map(|x| *x as u32 as i64).collect();
         let clock: i64 = ticks.iter().sum();
-        Some((clock, clock - ticks[CPU_STATE_IDLE]))
+        Some(Activity {
+            source: CPU_SOURCE,
+            clock,
+            busy: clock - ticks[CPU_STATE_IDLE],
+        })
     }
 
     fn cfstr(s: &[u8]) -> *const c_void {
@@ -438,7 +466,7 @@ mod sys {
 
     const CLOCK_UPTIME_RAW: u32 = 8;
 
-    pub fn disk(_path: &str) -> Option<(i64, i64)> {
+    pub fn disk(_path: &str) -> Option<Activity> {
         let mut iter = 0u32;
         let matching = unsafe { IOServiceMatching(c"IOBlockStorageDriver".as_ptr().cast()) };
         if matching.is_null()
@@ -450,7 +478,7 @@ mod sys {
         let k_read = cfstr(b"Total Time (Read)\0");
         let k_write = cfstr(b"Total Time (Write)\0");
         let mut busy_ns = 0i64;
-        let mut seen = false;
+        let mut drivers = 0u64;
         loop {
             let entry = unsafe { IOIteratorNext(iter) };
             if entry == 0 {
@@ -463,7 +491,7 @@ mod sys {
                     busy_ns = busy_ns
                         .wrapping_add(number(stats, k_read))
                         .wrapping_add(number(stats, k_write));
-                    seen = true;
+                    drivers += 1;
                 }
                 unsafe { CFRelease(stats) };
             }
@@ -475,11 +503,15 @@ mod sys {
             CFRelease(k_read);
             CFRelease(k_write);
         }
-        if !seen {
+        if drivers == 0 {
             return None;
         }
         let uptime_ns = unsafe { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) } as i64;
-        Some((uptime_ns, busy_ns))
+        Some(Activity {
+            source: drivers,
+            clock: uptime_ns,
+            busy: busy_ns,
+        })
     }
 
     const WIRE_COUNT_OFFSET: usize = 12;
@@ -502,7 +534,7 @@ mod sys {
         if r != 0 || total == 0 {
             return None;
         }
-        let host = unsafe { mach_host_self() };
+        let host = host();
         let mut page = 0usize;
         if unsafe { host_page_size(host, &mut page) } != 0 {
             return None;
@@ -558,14 +590,50 @@ mod sys {
     pub fn os_stamp() -> String {
         stamp_text(prefs())
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        const MACH_PORT_RIGHT_SEND: u32 = 0;
+        const KERN_SUCCESS: i32 = 0;
+        const READINGS: usize = 100;
+
+        extern "C" {
+            static mach_task_self_: Port;
+            fn mach_port_get_refs(task: Port, name: Port, right: u32, refs: *mut u32) -> i32;
+        }
+
+        fn send_references(port: Port) -> u32 {
+            let mut refs = 0u32;
+            let task = unsafe { mach_task_self_ };
+            let got = unsafe { mach_port_get_refs(task, port, MACH_PORT_RIGHT_SEND, &mut refs) };
+            assert_eq!(got, KERN_SUCCESS);
+            refs
+        }
+
+        #[test]
+        fn readings_do_not_pile_up_host_port_references() {
+            let port = unsafe { mach_host_self() };
+            assert!(cpu().is_some() && memory().is_some());
+            let before = send_references(port);
+            for _ in 0..READINGS {
+                assert!(cpu().is_some());
+                assert!(memory().is_some());
+            }
+            assert_eq!(send_references(port), before);
+        }
+    }
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 mod sys {
-    pub fn cpu() -> Option<(i64, i64)> {
+    use crate::os::Activity;
+
+    pub fn cpu() -> Option<Activity> {
         None
     }
-    pub fn disk(_path: &str) -> Option<(i64, i64)> {
+    pub fn disk(_path: &str) -> Option<Activity> {
         None
     }
     pub fn memory() -> Option<(f64, f64)> {

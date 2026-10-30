@@ -71,3 +71,13 @@ chkstk_loop:
     ldr xzr, [x17]
     b.gt chkstk_loop
     ret
+.section .text,"xr",discard,strlen
+.globl strlen
+strlen:
+    mov x1, x0
+strlen_loop:
+    ldrb w2, [x1], #1
+    cbnz w2, strlen_loop
+    sub x0, x1, x0
+    sub x0, x0, #1
+    ret

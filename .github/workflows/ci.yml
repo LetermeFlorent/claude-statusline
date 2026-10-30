@@ -127,6 +127,9 @@ jobs:
           grep -q '"statusLine"' "$HOME/.claude/settings.json"
           "$b" --uninstall
           if grep -q '"statusLine"' "$HOME/.claude/settings.json"; then exit 1; fi
+          : > "$HOME/.claude/settings.json"
+          "$b" --install
+          grep -q '"statusLine"' "$HOME/.claude/settings.json"
           ext=""
           [ "$RUNNER_OS" = Windows ] && ext=.exe
           mkdir -p "$HOME/.claude/bin"
@@ -142,11 +145,19 @@ jobs:
           out=$(printf '{"model":{"display_name":"Op\377us"},"context_window":{"context_window_size":200000,"used_percentage":30}}' | "$b")
           echo "$out" | grep -q 60k/200k
           echo "$out" | grep -q 'Op.*us'
+          if [ "$RUNNER_OS" != Windows ]; then
+            account_home=$(eval echo "~$(id -un)")
+            out=$(env -u HOME "$b" --check)
+            case "$out" in "$account_home/.claude/statusline.json"*) ;; *) echo "$out"; exit 1 ;; esac
+          fi
           set +e
           "$b" --no-such-flag 2>/dev/null
           [ $? -eq 2 ] || exit 1
           "$b" --bench abc 2>/dev/null
-          [ $? -eq 2 ]
+          [ $? -eq 2 ] || exit 1
+          mkdir -p "$RUNNER_TEMP/u/.claude/settings.json"
+          HOME="$RUNNER_TEMP/u" USERPROFILE="$RUNNER_TEMP/u" "$b" --uninstall 2>/dev/null
+          [ $? -eq 1 ]
 
       - name: memory limit
         if: runner.os == 'Linux'

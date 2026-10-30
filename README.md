@@ -41,10 +41,10 @@ The first line chains four segments separated by `|`, always in this order:
 The second line shows three machine metrics:
 
 - `ram`: memory used over total memory, in GiB with one decimal. Used memory is the total minus the available memory. On Linux, a cgroup v2 memory limit below the memory of the machine, as in a container, becomes the total, and the used memory is then what the group uses minus its inactive file cache.
-- the disk, labelled with its drive letter on Windows (`C:`) and `dsk` elsewhere: the share of time spent reading and writing since the previous refresh.
+- the disk, labelled with its drive letter on Windows (`C:`) and `dsk` elsewhere: the share of time since the previous refresh during which the disk had at least one read or write in progress. macOS has no such counter, so there the bar adds up the time each request spent in progress, over every disk: requests served at the same time add up, and the bar can reach 100% on a disk that is not saturated.
 - `cpu`: processor load since the previous refresh. On Linux, time spent waiting on I/O does not count as load.
 
-Disk and CPU are differences between two readings, so they show `--%` on the very first run, and again whenever their source does not answer. They come from the system counters: `GetSystemTimes` and `IOCTL_DISK_PERFORMANCE` on Windows, `/proc/stat`, `/proc/diskstats` and `/proc/meminfo` on Linux, Mach and IOKit on macOS. The percentage is capped at 100.
+Disk and CPU are differences between two readings, so they show `--%` on the very first run, after more than a minute without a refresh, after the watched disk changes (a new `disk_path`, or on macOS a disk plugged in or removed), and whenever their source does not answer. Two refreshes less than a second apart show the same percentage, and the second one keeps the earlier reading to compare with. They come from the system counters: `GetSystemTimes` and `IOCTL_DISK_PERFORMANCE` on Windows, `/proc/stat`, `/proc/diskstats` and `/proc/meminfo` on Linux, Mach and IOKit on macOS. The percentage is capped at 100.
 
 Token counts are written as they are below 1000, then in `k`, `M` and `B`, rounded to the unit.
 
@@ -62,7 +62,7 @@ The `5h` and `7d` segments stay hidden as long as no quota is known for the acco
 
 Claude Code sends the quotas in the session JSON (`rate_limits.five_hour` and `rate_limits.seven_day`, with `used_percentage` and `resets_at`), starting with the first API response. The bar shows them and stores them in the state file under the account's keys.
 
-Before that first response, it reuses the values stored for the same account when they are less than 10 minutes old. A window whose reset time has passed keeps a time, moved on to the next reset, but loses its percentage, which shows as `--%`. The 5-hour quota stays at `--%` while the account has no 5-hour window open, that is before its first message.
+Before that first response, it reuses the values stored for the same account when they are less than 10 minutes old. A window whose reset time has passed, whether it comes from the session JSON or from the stored values, loses its percentage, which shows as `--%`, and keeps a reset time moved on by whole windows. That time is an estimate: a new 5-hour window only opens with the next message. The 5-hour quota stays at `--%` while the account has no 5-hour window open, that is before its first message.
 
 The account is recognized by the name of its configuration folder: `CLAUDE_CONFIG_DIR` when it is set and not empty, `~/.claude` otherwise. The name loses its leading dot and goes to lowercase, and any character outside `a-z`, `0-9`, `.`, `_` and `-` becomes `_`. `.claude-compte2` gives `claude-compte2`, and an empty name gives `claude`. Several accounts open at the same time share the state file without mixing their values.
 
@@ -93,12 +93,14 @@ The bar picks its colors from the terminal background. It takes the first answer
 
 ### Recognized host terminals
 
-The terminal is recognized by its environment variables, then its settings are read:
+The terminal is recognized by its environment variables, then its settings are read. A theme known by its name alone is light when the name holds `light`, `latte`, `dawn` or `day`, unless the word is part of `moonlight` or `twilight`, and dark when it holds `dark`, `night`, `black`, `moon`, `mocha` or `macchiato`. Any other name is looked up in the theme files of the terminal, as listed below, and counts as dark when none of them has it.
 
-- VS Code and its forks (`TERM_PROGRAM=vscode`, `VSCODE_INJECTION` or `VSCODE_PID`). The file is `User/settings.json` of Code, Code - Insiders, VSCodium, Cursor or Windsurf, in `%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` or `~/.config` on Linux. The product that started the terminal, found through `VSCODE_GIT_ASKPASS_NODE`, `VSCODE_GIT_ASKPASS_MAIN` or `VSCODE_CWD`, is read first. `"window.autoDetectColorScheme": true` defers to the system theme. Otherwise a `workbench.colorTheme` whose name contains `light` gives a light background, and any other name, or none, a dark one.
-- Windows Terminal (`WT_SESSION`). The file is the `settings.json` of the Microsoft Store package (stable first, then Preview and Canary), or the one of the unpackaged install. The profile used is the one named by `WT_PROFILE_ID`, or else the default profile. Its `background` color, or the one in `profiles.defaults`, decides through its luminance. Failing that, its color scheme decides: a scheme with two variants `{ "light", "dark" }` follows the `theme` key of the file, then the system; a custom scheme from `schemes` decides through the luminance of its background; among the built-in schemes, `One Half Light`, `Solarized Light` and `Tango Light` are light and the others dark. With no scheme set, it is `Campbell`, which is dark.
-- Zed (`TERM_PROGRAM=zed`), in `%APPDATA%\Zed\settings.json` on Windows and `~/.config/zed/settings.json` elsewhere. A string `theme` whose name contains `light` gives a light background. An object `theme` follows its `mode` (`light`, `dark`), and `system`, or no setting, defers to the system.
-- Ghostty (`TERM_PROGRAM=ghostty`), in `~/.config/ghostty/config` and, on macOS, `~/Library/Application Support/com.mitchellh.ghostty/config`, read last. A `background` color decides through its luminance. Otherwise `theme` decides: a `light:...,dark:...` value follows the system, a name containing `light` is light, and anything else is dark.
+- VS Code and its forks (`TERM_PROGRAM=vscode`, `VSCODE_INJECTION` or `VSCODE_PID`). The user file is `User/settings.json` of Code, Code - Insiders, VSCodium, Cursor or Windsurf, in `%APPDATA%` on Windows, `~/Library/Application Support` on macOS, `$XDG_CONFIG_HOME` or `~/.config` on Linux. The product that started the terminal, found through `VSCODE_GIT_ASKPASS_NODE`, `VSCODE_GIT_ASKPASS_MAIN` or `VSCODE_CWD`, is read first. The `.vscode/settings.json` file of the project open in Claude Code wins over the user file, key by key. A `terminal.background` color in `workbench.colorCustomizations`, set for the current theme (`"[Theme name]"`) or for all of them, decides through its luminance. Then `"window.autoDetectColorScheme": true` defers to the system theme. Otherwise `workbench.colorTheme` decides by its name, then through the `uiTheme` of the extension that brings it, in `~/.vscode/extensions` or the matching folder of a fork. With no theme set, the background is dark. Settings profiles are not read: only the default profile counts.
+- Windows Terminal (`WT_SESSION`). Its files are the `settings.json` of each Microsoft Store package (stable, Preview, Canary) and the one of the unpackaged install. The bar reads the file that holds the profile named by `WT_PROFILE_ID`, and failing that the one saved last. The profile used is the one named by `WT_PROFILE_ID`, or else the default profile of that file. Its `background` color, or the one in `profiles.defaults`, decides through its luminance. Failing that, its color scheme decides: a scheme with two variants `{ "light", "dark" }` follows the application theme, given by the `theme` key of the file (`light`, `dark`, their `legacy` versions, or a custom theme from `themes` through its `window.applicationTheme`), and else the system; a custom scheme from `schemes` decides through the luminance of its background; among the built-in schemes, `One Half Light`, `Solarized Light` and `Tango Light` are light and the others dark. With no scheme set, it is `Campbell`, which is dark. Fragments, the profiles and schemes that other applications add, are not read.
+- Zed (`TERM_PROGRAM=zed`), in `%APPDATA%\Zed\settings.json` on Windows and `~/.config/zed/settings.json` elsewhere. A string `theme` decides by its name, then through the `appearance` of the theme of that name, in the `themes` folder next to the settings or in an installed extension. An object `theme` follows its `mode` (`light`, `dark`), and `system`, or no setting, defers to the system.
+- Ghostty (`TERM_PROGRAM=ghostty`). Its files are read in Ghostty's own order: `config.ghostty` then `config` in `~/.config/ghostty` (`$XDG_CONFIG_HOME/ghostty` when set), then on macOS the same two names in `~/Library/Application Support/com.mitchellh.ghostty`. A later value replaces an earlier one, an empty value clears it, and a file that sets neither key changes nothing. A `background` color decides through its luminance. Otherwise `theme` decides: a `light:...,dark:...` value follows the system, and a name decides by itself, then through the `background` of the theme file of that name, in `~/.config/ghostty/themes` or among the themes shipped with Ghostty (`GHOSTTY_RESOURCES_DIR`). With neither key, the background is dark.
+
+Under WSL (`WSL_DISTRO_NAME`), VS Code and Windows Terminal keep their settings on the Windows side. The bar finds the Windows profile through the `/mnt/<drive>/Users/<name>` entry that Windows adds to `PATH`, or else through the folder of `/mnt/c/Users` that holds the Windows Terminal package, keeps that path in the state file and reads the files under it. When no profile turns up, the bar follows the system theme of the distribution, which is dark unless `GTK_THEME` or `gsettings` say otherwise: set `STATUSLINE_BG` to choose.
 
 Other terminals go straight to the system theme.
 
@@ -110,9 +112,9 @@ Each system has its own source:
 - macOS: the `AppleInterfaceStyle` key of `~/Library/Preferences/.GlobalPreferences.plist`. `Dark` gives a dark background, and a missing key a light one.
 - Linux: `GTK_THEME` (dark if it contains `dark`), then on KDE the `BackgroundNormal` color in the `[Colors:Window]` section of `kdeglobals`, then `gsettings`: `color-scheme` (`prefer-dark` or `prefer-light`), and failing that the name in `gtk-theme`.
 
-When the terminal follows the system (VS Code with `window.autoDetectColorScheme`, a two-variant Windows Terminal scheme, Zed set to `system`), the system theme settles the question.
+When the terminal follows the system (VS Code with `window.autoDetectColorScheme`, a two-variant Windows Terminal scheme, Zed set to `system`, a Ghostty `light:...,dark:...` theme), the system theme settles the question.
 
-The result of steps 4 and 5 is kept in the state file. It is worked out again as soon as a terminal settings file changes size or date, or the system theme changes, so a switch to light mode shows at the next refresh. Steps 1 to 3 are read on every run. `statusline --theme` prints the background in use.
+The result of steps 4 and 5 is kept in the state file. It is worked out again as soon as one of the settings files listed above, the project's `.vscode/settings.json` included, appears, goes away, or changes size or date, when the bar runs under another Windows Terminal profile (`WT_PROFILE_ID`), or when the system theme changes, so a switch to light mode shows at the next refresh. A settings file kept as a symbolic link, in a dotfiles repository for instance, is followed to its target. Steps 1 to 3 are read on every run. `statusline --theme` prints the background in use.
 
 ## Settings
 
@@ -122,7 +124,9 @@ The program looks for its settings file in this order:
 2. `statusline.json` in the `CLAUDE_CONFIG_DIR` folder, if it exists;
 3. `~/.claude/statusline.json`.
 
-It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, trailing commas and a BOM. A missing or unreadable file leaves every value at its default, with no message. Colors are written `#RRGGBB` or `#RGB`, the `#` is optional, and an invalid color falls back to its default. The `statusline.json` in the repository repeats part of the defaults, and any key of the table can be added to it.
+It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, trailing commas and a BOM. A missing or unreadable file leaves every value at its default, and so does invalid JSON, with no message on the bar. Colors are written `#RRGGBB` or `#RGB`, the `#` is optional, and an invalid color falls back to its default. The `statusline.json` in the repository repeats part of the defaults, and any key of the table can be added to it.
+
+`statusline --check` reads the same file and lists its mistakes, each with its line and column: invalid JSON, text after the closing brace, unknown key, value of the wrong type, invalid color or unknown name. It exits with code 1 when it finds one.
 
 | Key | Default | Effect |
 |---|---|---|
@@ -131,7 +135,7 @@ It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, 
 | `bold` | `true` | `false` drops the bold from labels and numbers |
 | `glyphs.filled`, `glyphs.empty`, `glyphs.half` | `■`, `■`, `▪` | full square, empty square, last filled square |
 | `auto_compact_marker` | `ª` | auto-compact threshold marker |
-| `effort_style` | `gradient` | `flat` draws the effort in a single hue |
+| `effort_style` | `gradient` | `flat`, in any case, draws the effort in a single hue |
 | `segments.ctx`, `segments.5h`, `segments.7d`, `segments.model` | `true` | `false` hides the segment |
 | `gradient.5h`, `gradient.7d` | `0.55`, `0.3` | how strongly the bar lightens, from 0 to 1 |
 | `thresholds.quota_warn`, `thresholds.quota_hot` | `30`, `70` | percentages from which a quota turns to warning, then critical |
@@ -143,7 +147,7 @@ It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, 
 | `colors.ctx_from_light`, `colors.ctx_to_light` | `#7DB9FF`, `#285AB4` | context gradient on a light background |
 | `colors.ctx_from_dark`, `colors.ctx_to_dark` | `#96CDFF`, `#4682DC` | context gradient on a dark background |
 | `system.enabled` | `true` | `false` removes the second line |
-| `system.metrics` | `["ram", "io", "cpu"]` | metrics shown, in the order of the list |
+| `system.metrics` | `["ram", "io", "cpu"]` | metrics shown, in the order of the list: `ram`, `io` (or `dsk`) and `cpu`, in any case. A name listed twice counts once, and a list with no known name shows all three |
 | `system.gradient` | `0.45` | how strongly the bars of the second line lighten |
 | `system.disk_path` | `C:\` on Windows, `/` elsewhere | disk to watch |
 | `system.colors.ram.ok`, `.dsk.ok`, `.cpu.ok` | `#1E787D`, `#697855`, `#375A8C` | normal hue of each metric |
@@ -152,7 +156,7 @@ It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, 
 
 Names in `system.metrics` are written in lowercase, and unknown names are ignored. An empty or missing list falls back to the three metrics. The disk color is set under `dsk`, even though the metric is called `io`.
 
-`system.disk_path` is read differently on each system. On Windows only the first letter counts: `D:\Games` follows drive `D:`. On Linux it is the disk that holds that path, or else the first physical disk in `/proc/diskstats`. On macOS the setting is ignored and the bar adds up the activity of every disk.
+`system.disk_path` is read differently on each system. On Windows only the first letter counts: `D:\Games` follows drive `D:`. On Linux it is the device that holds that path. Some filesystems, btrfs for one, give no device number of their own: the bar then finds the mount point of the path in `/proc/self/mountinfo` and follows the device mounted there. When that leads to no device, as on ZFS, on `/mnt/c` under WSL or at the root of a container, the bar falls back to the only physical disk of the machine, and shows `--%` when there are several. Under WSL, `/` is the virtual disk of the distribution, not a Windows drive. On macOS the setting is ignored and the bar adds up the activity of every disk.
 
 ## Command line
 
@@ -164,6 +168,7 @@ The program is installed in `~/.claude/bin`, as `statusline.exe` on Windows and 
 | `--demo` | sample rendering without Claude Code (Opus 5, effort `max`, context 340k of 1M, 5h at 36%, 7d at 61%), with the real settings, theme and machine metrics. The state file is left alone. |
 | `--bench [n]` | renders the sample `n` times (200 by default) and prints the average time per rendering, then its breakdown: state, config, session, render, write. Process startup is not counted. |
 | `--theme` | prints the background in use, `light` or `dark` |
+| `--check` | lists the mistakes in `statusline.json` with their line and column, and exits with code 1 when there is one (see [Settings](#settings)) |
 | `--install` | writes the `statusLine` block into the `settings.json` of the current account (see [INSTALL.md](INSTALL.md)) |
 | `--uninstall` | removes that block |
 | `--update` | installs the latest release when it is newer (see below) |
@@ -192,9 +197,9 @@ The counters, the quotas and the detected theme live in a single file, shared by
 - macOS: `~/Library/Application Support/claude-statusline/state`;
 - Linux: `$XDG_STATE_HOME/claude-statusline/state`, or else `~/.local/state/claude-statusline/state`.
 
-It is a text file with one `key value` line per entry. It holds the quotas of each account (`q_at@<account>`, `q5_at@<account>`, `q5_pct@<account>`, `q7_at@<account>`, `q7_pct@<account>`), the theme (`bg_host`, `bg_stamp`), the auto-compact threshold (`compact_window`, `compact_key`, `compact_stamp`, `compact_at`), the last disk and CPU readings (`io_clock`, `io_value`, `cpu_clock`, `cpu_value`) and the time of the last update check (`update_at`). Unknown keys are kept. The version 1 keys (`bg_at`, and the quotas without an account suffix) are removed on the first run.
+It is a text file with one `key value` line per entry. It holds the quotas of each account (`q_at@<account>`, `q5_at@<account>`, `q5_pct@<account>`, `q7_at@<account>`, `q7_pct@<account>`), the theme (`bg_host`, `bg_stamp`), the auto-compact threshold (`compact_window`, `compact_key`, `compact_stamp`, `compact_at`), the last disk and CPU readings (`io_source`, `io_clock`, `io_value`, `cpu_source`, `cpu_clock`, `cpu_value`) and the time of the last update check (`update_at`). Unknown keys are kept. The version 1 keys (`bg_at`, and the quotas without an account suffix) are removed on the first run.
 
-The file is written again only when its content changes, through a temporary file that is then renamed, so a reader never finds it half written. With no known home folder (`HOME`, or `USERPROFILE` on Windows), nothing is written. `--bench` writes a `state.bench` file next to it and deletes it at the end.
+The file is written again only when its content changes, through a temporary file that is then renamed, so a reader never finds it half written. Bars often refresh at the same moment, one per open session. Before writing, each one takes the `state.lock` file next to the state, waiting half a second at most, then reads the file again and applies only the keys it changed itself, so the quotas another session wrote in between are kept. On Windows the rename goes through even while another bar is reading the file. When it still fails, because another program holds the file open without sharing it, that refresh writes nothing and the previous file stays whole. A tool that edits the file should follow the same steps: lock `state.lock` (`LockFileEx` on Windows, `flock` on Linux and macOS), read the file, change its own keys, then write a temporary file in the same folder and rename it over `state`. With no known home folder, nothing is written: the home folder is `USERPROFILE`, then `HOME`, on Windows, and `HOME`, then the user's entry in the password database, on Linux and macOS. `--bench` writes a `state.bench` file next to it and deletes it at the end.
 
 ## Environment variables
 
@@ -211,8 +216,10 @@ The program reads the following variables, all of them optional:
 | `TERM_PROGRAM`, `VSCODE_INJECTION`, `VSCODE_PID`, `WT_SESSION` | host terminal detection |
 | `VSCODE_GIT_ASKPASS_NODE`, `VSCODE_GIT_ASKPASS_MAIN`, `VSCODE_CWD` | which of VS Code and its forks started the terminal |
 | `WT_PROFILE_ID` | current Windows Terminal profile |
+| `WSL_DISTRO_NAME`, `PATH` | under WSL, where the Windows profile is |
+| `GHOSTTY_RESOURCES_DIR` | themes shipped with Ghostty |
 | `GTK_THEME`, `XDG_CURRENT_DESKTOP` | system theme on Linux |
-| `HOME`, `USERPROFILE`, `LOCALAPPDATA`, `APPDATA`, `XDG_STATE_HOME`, `XDG_CONFIG_HOME` | where files are |
+| `HOME`, `USERPROFILE`, `LOCALAPPDATA`, `APPDATA`, `XDG_STATE_HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME` | where files are |
 
 An empty variable counts as unset.
 
