@@ -2,7 +2,7 @@ use super::fake::{
     failed, manifest, release, update, Release, EXE_NAME, OLD_BINARY, WORKING_BINARY,
 };
 use super::*;
-use crate::upgrade::sign::sshsig::NAMESPACE;
+use crate::upgrade::sign::sshsig::{MAX_MESSAGE, MAX_SIGNATURE, NAMESPACE};
 use crate::upgrade::sign::testkit::{sign, test_key, MANIFEST, OTHER_NAMESPACE, SIGNATURE};
 
 const TAG: &str = "v99.0.0";
@@ -70,6 +70,20 @@ fn a_missing_signature_or_manifest_is_refused() {
         ..release(TAG, WORKING_BINARY)
     };
     refused("no-manifest", no_manifest, &not_downloaded());
+}
+
+#[test]
+fn check_files_over_their_size_limit_are_refused_as_not_downloaded() {
+    let mut manifest = release(TAG, WORKING_BINARY).manifest;
+    manifest.resize(MAX_MESSAGE + 1, b'\n');
+    refused("big-manifest", signed(manifest), &not_downloaded());
+    let mut signature = release(TAG, WORKING_BINARY).signature;
+    signature.resize(MAX_SIGNATURE + 1, b'\n');
+    let release = Release {
+        signature,
+        ..release(TAG, WORKING_BINARY)
+    };
+    refused("big-signature", release, &not_downloaded());
 }
 
 #[test]

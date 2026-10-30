@@ -2,6 +2,8 @@
 mod fake;
 mod fetch;
 mod leftovers;
+#[cfg(test)]
+mod limit_tests;
 mod lock;
 mod origin;
 mod release;
@@ -19,7 +21,7 @@ use alloc::string::String;
 use fetch::{curl, latest, Curl, Fetch, HTTP_OK};
 use leftovers::{clean_binaries, clean_temp};
 use origin::{origin, Origin};
-use release::{matches, signed_sum, trusted_key};
+use release::{matches, signed_sum, trusted_key, MAX_BINARY};
 use swap::{staging, swap, Swap};
 use verify::{check, printed, Failure, Probe, FAILED_EXIT};
 
@@ -51,7 +53,7 @@ fn install(exe: &str, tag: &str, tools: &Tools) -> Result<(), Failure> {
     let fresh = staging(exe, id);
     let sum = signed_sum(&fresh, tag, name, tools)?;
     let url = tools.origin.download(tag, name);
-    let checked = if (tools.fetch)(&url, &fresh, 300) != Some(HTTP_OK) {
+    let checked = if (tools.fetch)(&url, &fresh, 300, MAX_BINARY) != Some(HTTP_OK) {
         Err(messages::UPDATE_FAILED.with(&[tag]).into())
     } else if !matches(&fresh, &sum) {
         Err(messages::SUM_MISMATCH.with(&[tag]).into())
@@ -128,7 +130,7 @@ pub fn run() -> i32 {
         dir: &dir,
         protocols: origin.protocols,
     };
-    let fetch = |url: &str, to: &str, secs: u32| curl.fetch(url, to, secs);
+    let fetch = |url: &str, to: &str, secs: u32, max: usize| curl.fetch(url, to, secs, max);
     let probe = |fresh: &str, flag: &str| printed(fresh, flag, &dir);
     let tools = Tools {
         origin,
