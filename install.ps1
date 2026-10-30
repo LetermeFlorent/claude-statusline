@@ -73,12 +73,34 @@ function Find-KeyGen {
   if ($found) { return $found.Source }
   return $null
 }
+function Start-KeyGen([Diagnostics.ProcessStartInfo]$info) {
+  $console = [Console]::InputEncoding
+  $swap = $console.GetPreamble().Length -gt 0
+  try {
+    if ($swap) { [Console]::InputEncoding = New-Object Text.UTF8Encoding $false }
+    return [Diagnostics.Process]::Start($info)
+  } finally { if ($swap) { [Console]::InputEncoding = $console } }
+}
 function Test-Signature([string]$keygen, [string]$key, [string]$message, [string]$signature, [string]$work) {
   Write-LfFile "$work.allowed" "statusline-release namespaces=`"statusline-release`" $key`n"
-  $arguments = '-Y verify -f "{0}" -I statusline-release -n statusline-release -s "{1}"' -f "$work.allowed", $signature
+  $info = New-Object Diagnostics.ProcessStartInfo $keygen, ('-Y verify -f "{0}" -I statusline-release -n statusline-release -s "{1}"' -f "$work.allowed", $signature)
+  $info.UseShellExecute = $false
+  $info.CreateNoWindow = $true
+  $info.RedirectStandardInput = $true
+  $info.RedirectStandardOutput = $true
+  $info.RedirectStandardError = $true
   try {
-    $run = Start-Process -FilePath $keygen -ArgumentList $arguments -RedirectStandardInput $message -RedirectStandardOutput "$work.out" -RedirectStandardError "$work.err" -Wait -PassThru -NoNewWindow
-    return ($run.ExitCode -eq 0)
+    $bytes = [IO.File]::ReadAllBytes($message)
+    $run = Start-KeyGen $info
+    try {
+      $drained = $run.StandardOutput.ReadToEndAsync(), $run.StandardError.ReadToEndAsync()
+      try { $run.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length) } catch { }
+      try { $run.StandardInput.Close() } catch { }
+      $run.WaitForExit()
+      [void]$drained[0].Result
+      [void]$drained[1].Result
+      return ($run.ExitCode -eq 0)
+    } finally { $run.Dispose() }
   } catch { return $false }
 }
 function Confirm-Manifest([string]$manifest, [string]$signature, [string]$work) {
@@ -119,7 +141,7 @@ function Save-ReleaseBinary([string]$destination) {
     Remove-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue
     throw (Get-Text release_refused $_.Exception.Message)
   } finally {
-    foreach ($suffix in ".manifest", ".manifest.sig", ".allowed", ".out", ".err", ".probe", ".probe.sig") {
+    foreach ($suffix in ".manifest", ".manifest.sig", ".allowed", ".probe", ".probe.sig") {
       Remove-Item -LiteralPath ($destination + $suffix) -Force -ErrorAction SilentlyContinue
     }
   }
