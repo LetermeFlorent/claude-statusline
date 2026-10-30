@@ -128,11 +128,30 @@ if [ "$flag" = --uninstall ]; then
   exit 0
 fi
 
-can_build() { [ -f "$here/Cargo.toml" ] && command -v cargo >/dev/null 2>&1; }
+is_repo() {
+  [ -f "$here/src/main.rs" ] && [ -f "$here/Cargo.toml" ] || return 1
+  tr -d '\r' < "$here/Cargo.toml" | awk '
+    substr($0, 1, 1) == "[" { in_package = ($0 == "[package]") }
+    in_package && /^name[[:space:]]*=[[:space:]]*"statusline"[[:space:]]*$/ { found = 1 }
+    END { exit !found }'
+}
+
+is_loopback_release() {
+  case "$1" in
+    http://127.0.0.1:*/) port=${1#http://127.0.0.1:}; port=${port%/} ;;
+    *) return 1 ;;
+  esac
+  case "$port" in '' | *[!0-9]*) return 1 ;; esac
+  [ "${#port}" -le 5 ]
+}
+
+can_build() { is_repo && command -v cargo >/dev/null 2>&1; }
 
 mkdir -p "$bin_dir"
+staged="$bin_dir/statusline.install-$$"
+find "$bin_dir" -name 'statusline.install-*' -mmin +10 -exec rm -f {} + 2>/dev/null || true
 if can_build && (cd "$here" && cargo build --release --quiet --target-dir "$here/target"); then
-  cp "$here/target/release/statusline" "$bin_dir/statusline.new"
+  cp "$here/target/release/statusline" "$staged"
 else
   can_build && show build_failed >&2
   case "$(uname -s)-$(uname -m)" in
@@ -146,30 +165,36 @@ else
       ;;
   esac
   show downloading "$asset"
-  fetch() { curl -q -fsSL --proto =https --proto-redir =https "$repo/releases/latest/download/$1" -o "$2"; }
+  release_base="$repo/releases/latest/download"
+  release_protocol=https
+  if is_loopback_release "${STATUSLINE_RELEASE_URL:-}"; then
+    release_base="${STATUSLINE_RELEASE_URL%/}"
+    release_protocol=http
+  fi
+  fetch() { curl -q -fsSL --proto "=$release_protocol" --proto-redir "=$release_protocol" "$release_base/$1" -o "$2"; }
   sha256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi < "$1" | cut -d ' ' -f 1; }
-  fetch SHA256SUMS "$bin_dir/statusline.sums" && fetch "$asset" "$bin_dir/statusline.new" || {
-    rm -f "$bin_dir/statusline.sums" "$bin_dir/statusline.new"
+  fetch SHA256SUMS "$staged.sums" && fetch "$asset" "$staged" || {
+    rm -f "$staged.sums" "$staged"
     show download_failed >&2
     exit 1
   }
-  expected=$(awk -v name="$asset" '$2 == name || $2 == "*" name { print $1 }' "$bin_dir/statusline.sums")
-  rm -f "$bin_dir/statusline.sums"
-  if [ -z "$expected" ] || [ "$(sha256 "$bin_dir/statusline.new")" != "$expected" ]; then
-    rm -f "$bin_dir/statusline.new"
+  expected=$(awk -v name="$asset" '$2 == name || $2 == "*" name { print $1 }' "$staged.sums")
+  rm -f "$staged.sums"
+  if [ -z "$expected" ] || [ "$(sha256 "$staged")" != "$expected" ]; then
+    rm -f "$staged"
     show checksum >&2
     exit 1
   fi
 fi
 
-chmod 755 "$bin_dir/statusline.new"
-mv -f "$bin_dir/statusline.new" "$bin_dir/statusline"
+chmod 755 "$staged"
+mv -f "$staged" "$bin_dir/statusline"
 ask_language
 show copied "$bin_dir/statusline"
 
 if [ -f "$main/statusline.json" ]; then
   show config_kept
-elif [ -f "$here/statusline.json" ]; then
+elif is_repo && [ -f "$here/statusline.json" ]; then
   cp "$here/statusline.json" "$main/statusline.json"
   show config_installed
 fi

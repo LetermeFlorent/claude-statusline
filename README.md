@@ -187,7 +187,7 @@ With `"auto_update": true` in `statusline.json`, rendering the bar starts `statu
 
 `--update` asks the GitHub API for the latest release, through `curl` (on Windows, the `curl.exe` of the system folder). When that release is newer, it downloads the binary for the system next to the program, under a name that carries its process id (`statusline.new-<pid>.exe`, or `statusline.new-<pid>`). It runs that copy with `--version`, which must print the version of the release, then with `--demo`, and only then puts it in place of the old one. On Windows the running program cannot be overwritten, but it can lose one of its names: the update first gives it a second one, `statusline.exe.old-<pid>`, then renames the new file over `statusline.exe` in a single step, so `statusline.exe` exists at every moment. Where hard links are not available, the old program is renamed away first, and put back if the new one cannot take its place.
 
-Each update removes what earlier ones left behind: the `statusline.new*` and `statusline.exe.old-*` files next to the program, and the `.tmp` files older than a minute in the state folder.
+Each update removes what earlier ones left behind: the `statusline.new-<pid>` and `statusline.exe.old-*` files next to the program, and the `statusline.new` file that version 2.1.1 left, once it is older than five minutes, and the `.tmp` files older than a minute in the state folder.
 
 During the download, then for 5 seconds after the swap, the bar shows `update`. The next refresh starts the new program, with no need to restart Claude Code. A failure (network down, missing binary, wrong version, swap refused) leaves the old program in place until the next check.
 

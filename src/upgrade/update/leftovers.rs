@@ -4,6 +4,7 @@ use alloc::format;
 
 const TEMP_SUFFIX: &str = ".tmp";
 const TEMP_KEPT_SECS: i64 = 60;
+const LEGACY_KEPT_SECS: i64 = 300;
 
 fn remove_named(dir: &str, prefix: &str) {
     for name in os::list(dir, prefix) {
@@ -13,13 +14,22 @@ fn remove_named(dir: &str, prefix: &str) {
     }
 }
 
-pub fn clean_binaries(exe: &str) {
+fn remove_legacy(path: &str, now: f64) {
+    if os::stamp(path).is_some_and(|(_, at)| now as i64 - at > LEGACY_KEPT_SECS) {
+        os::remove(path);
+    }
+}
+
+pub fn clean_binaries(exe: &str, now: f64) {
     let Some(dir) = os::parent(exe) else {
         return;
     };
     let name = os::file_name(exe);
     let (stem, extension) = split_extension(name);
-    os::remove(&os::join(dir, &[&format!("{}.new{}", stem, extension)]));
+    remove_legacy(
+        &os::join(dir, &[&format!("{}.new{}", stem, extension)]),
+        now,
+    );
     remove_named(dir, &format!("{}.new-", stem));
     remove_named(dir, &format!("{}.old-", name));
 }
@@ -47,7 +57,12 @@ mod tests {
     #[test]
     fn staging_and_old_binaries_are_removed_and_nothing_else() {
         let sandbox = Sandbox::new("leftover-binaries");
-        let kept = [EXE_NAME, "statusline.json", "statusline.newer.txt.bak"];
+        let kept = [
+            EXE_NAME,
+            "statusline.install-4242.exe",
+            "statusline.json",
+            "statusline.newer.txt.bak",
+        ];
         let removed = [
             "statusline.new.exe",
             "statusline.new-4242.exe",
@@ -57,8 +72,18 @@ mod tests {
         for name in kept.iter().chain(&removed) {
             std::fs::write(sandbox.path(name), b"x").unwrap();
         }
-        clean_binaries(&sandbox.path(EXE_NAME));
+        clean_binaries(&sandbox.path(EXE_NAME), os::now() + HOUR);
         assert_eq!(sandbox.files(), kept);
+    }
+
+    #[test]
+    fn the_legacy_staging_file_is_kept_while_it_is_fresh() {
+        let sandbox = Sandbox::new("leftover-legacy");
+        std::fs::write(sandbox.path("statusline.new.exe"), b"x").unwrap();
+        clean_binaries(&sandbox.path(EXE_NAME), os::now());
+        assert_eq!(sandbox.files(), ["statusline.new.exe"]);
+        clean_binaries(&sandbox.path(EXE_NAME), os::now() + HOUR);
+        assert!(sandbox.files().is_empty());
     }
 
     #[test]
@@ -66,7 +91,7 @@ mod tests {
         let sandbox = Sandbox::new("leftover-self");
         let exe = sandbox.path("statusline.new.exe");
         std::fs::write(&exe, b"x").unwrap();
-        clean_binaries(&exe);
+        clean_binaries(&exe, os::now() + HOUR);
         assert_eq!(sandbox.files(), ["statusline.new.exe"]);
     }
 

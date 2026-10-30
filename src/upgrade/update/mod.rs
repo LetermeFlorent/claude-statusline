@@ -70,7 +70,7 @@ fn install(exe: &str, tag: &str, tools: &Tools) -> Result<(), Failure> {
 }
 
 fn attempt(dir: &str, exe: &str, tools: &Tools) -> Result<Outcome, Failure> {
-    clean_binaries(exe);
+    clean_binaries(exe, os::now());
     clean_temp(dir, os::now());
     let tag = latest(dir, &tools.origin, tools.fetch)?;
     if !newer(&tag, VERSION) {
