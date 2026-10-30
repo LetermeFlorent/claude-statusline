@@ -66,13 +66,6 @@ function Get-StatusCommand([string]$file) {
 function Write-LfFile([string]$path, [string]$text) {
   [IO.File]::WriteAllText($path, ($text -replace "`r`n", "`n"), (New-Object Text.UTF8Encoding $false))
 }
-function Find-KeyGen {
-  $system = Join-Path $env:SystemRoot "System32\OpenSSH\ssh-keygen.exe"
-  if (Test-Path -LiteralPath $system) { return $system }
-  $found = Get-Command ssh-keygen -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-  if ($found) { return $found.Source }
-  return $null
-}
 function Start-KeyGen([Diagnostics.ProcessStartInfo]$info) {
   $console = [Console]::InputEncoding
   $swap = $console.GetPreamble().Length -gt 0
@@ -103,13 +96,22 @@ function Test-Signature([string]$keygen, [string]$key, [string]$message, [string
     } finally { $run.Dispose() }
   } catch { return $false }
 }
-function Confirm-Manifest([string]$manifest, [string]$signature, [string]$work) {
-  $keygen = Find-KeyGen
+function Find-KeyGen([string]$work) {
+  $candidates = @(Join-Path $env:SystemRoot "System32\OpenSSH\ssh-keygen.exe") + @(Get-Command ssh-keygen -CommandType Application -ErrorAction SilentlyContinue | ForEach-Object { $_.Source })
   Write-LfFile "$work.probe" "statusline probe`n"
   Write-LfFile "$work.tampered" "statusline probe!`n"
   Write-LfFile "$work.probe.sig" ($probeSignature + "`n")
-  $usable = $keygen -and (Test-Signature $keygen $probeKey "$work.probe" "$work.probe.sig" $work) -and -not (Test-Signature $keygen $probeKey "$work.tampered" "$work.probe.sig" $work)
-  if ($usable) {
+  foreach ($keygen in $candidates) {
+    if (-not (Test-Path -LiteralPath $keygen -PathType Leaf)) { continue }
+    if (-not (Test-Signature $keygen $probeKey "$work.probe" "$work.probe.sig" $work)) { continue }
+    if (Test-Signature $keygen $probeKey "$work.tampered" "$work.probe.sig" $work) { continue }
+    return $keygen
+  }
+  return $null
+}
+function Confirm-Manifest([string]$manifest, [string]$signature, [string]$work) {
+  $keygen = Find-KeyGen $work
+  if ($keygen) {
     if (-not (Test-Signature $keygen $releaseKey $manifest $signature $work)) { throw (Get-Text signature) }
   } else {
     Write-Warning (Get-Text no_signature_check)
