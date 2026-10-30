@@ -30,6 +30,17 @@ fn the_sample_settings_have_no_problem() {
 }
 
 #[test]
+fn the_context_thresholds_are_known_keys() {
+    let text = "{\"thresholds\": {\"ctx_warn\": 60, \"ctx_hot\": 80}}";
+    assert_eq!(faults(text), []);
+    let wrong = "{\"thresholds\": {\"ctx_warn\": \"high\"}}";
+    assert_eq!(
+        expected_paths(wrong),
+        [(29, String::from("thresholds.ctx_warn"))]
+    );
+}
+
+#[test]
 fn each_mistake_points_to_its_line_and_column() {
     let text = "{\n  \"bar_widht\": 8,\n  \"bold\": \"no\",\n  \"system\": {\"metrics\": [\"ram\", \"gpu\"],\n    \"colors\": {\"cpu\": {\"ok\": \"#GG0000\"}}}\n}\n";
     assert_eq!(
