@@ -254,12 +254,22 @@ fn local_only(dir: Option<&str>) -> Option<&str> {
     dir.filter(|dir| !os::on_network(dir))
 }
 
-fn compact_files(cwd: Option<&str>) -> [String; 3] {
+fn has_project_settings(folder: &str) -> bool {
+    ["settings.json", "settings.local.json"]
+        .iter()
+        .any(|f| os::stamp(&os::join(folder, &[".claude", f])).is_some())
+}
+
+fn compact_files(cwd: Option<&str>, project_dir: Option<&str>) -> [String; 3] {
     let main = os::claude_dir()
         .map(|d| os::join(&d, &["settings.json"]))
         .unwrap_or_default();
     let cwd = cwd.map(String::from).or_else(os::cwd);
-    let folder = local_only(cwd.as_deref());
+    let folder = compact::files::project_folder(
+        [cwd.as_deref(), project_dir],
+        &|dir| local_only(Some(dir)).is_some(),
+        &has_project_settings,
+    );
     let project = |f: &str| {
         folder
             .map(|c| os::join(c, &[".claude", f]))
@@ -313,19 +323,19 @@ fn run_on(
     );
     laps.lap(Stage::Session);
     let project = local_only(session.project.as_deref().or(session.cwd.as_deref()));
-    let light = theme::detect_light(cfg.light_override, project, &mut state);
+    let light = theme::detect_light(cfg.light_override, project, &mut state, now);
     laps.lap(Stage::Theme);
     let window = if cfg.seg_ctx {
         let env = os::env("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
-        let files = compact_files(session.cwd.as_deref());
-        compact::window(
-            env.as_deref(),
-            &files,
-            &mut state,
-            now,
-            &stat_file,
-            &read_file,
-        )
+        let files = compact_files(session.cwd.as_deref(), session.project.as_deref());
+        let disable = os::env("DISABLE_AUTO_COMPACT");
+        let inputs = compact::Inputs {
+            env: env.as_deref(),
+            disable: disable.as_deref(),
+            model: session.model_id.as_deref(),
+            size: session.ctx.size,
+        };
+        compact::window(&inputs, &files, &mut state, now, &stat_file, &read_file)
     } else {
         None
     };
@@ -337,6 +347,8 @@ fn run_on(
         ctx: session.ctx,
         window,
         quotas,
+        spend: session.spend.map(|spend| spend.quota()),
+        cache_warm: session.cache_warm,
         model: session.model,
         effort: session.effort,
         sys,
@@ -649,8 +661,8 @@ pub fn main(args: Vec<String>) -> i32 {
             let cfg = load_config();
             let mut state = load_state();
             let cwd = os::cwd();
-            let decision =
-                theme::detect(cfg.light_override, local_only(cwd.as_deref()), &mut state);
+            let project = local_only(cwd.as_deref());
+            let decision = theme::detect(cfg.light_override, project, &mut state, os::now());
             save_state(&state);
             os::out(&decision.report());
             0

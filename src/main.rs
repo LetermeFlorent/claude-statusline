@@ -22,6 +22,7 @@ mod render;
 mod sandbox;
 mod session;
 mod settings;
+mod slots;
 mod state;
 mod theme;
 mod update;

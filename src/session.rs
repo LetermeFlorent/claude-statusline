@@ -5,9 +5,12 @@ use alloc::string::String;
 
 pub struct Session {
     pub model: String,
+    pub model_id: Option<String>,
     pub effort: Option<String>,
     pub ctx: Ctx,
     pub live: Option<(Option<Live>, Option<Live>)>,
+    pub spend: Option<Live>,
+    pub cache_warm: Option<bool>,
     pub cwd: Option<String>,
     pub project: Option<String>,
 }
@@ -68,6 +71,18 @@ fn usage_tokens(current_usage: Option<&Value>) -> Option<u64> {
     Some(sum)
 }
 
+fn context_tokens(context_window: Option<&Value>) -> Option<u64> {
+    let context_window = context_window?;
+    match context_window.get("current_usage") {
+        None | Some(Value::Null) => context_window
+            .get("total_input_tokens")
+            .and_then(|v| v.num())
+            .filter(|n| *n >= 0.0 && num::is_integral(*n))
+            .map(|n| n as u64),
+        usage => usage_tokens(usage),
+    }
+}
+
 fn live(v: Option<&Value>) -> Option<Live> {
     let v = v.filter(|v| v.is_obj())?;
     Some(Live {
@@ -85,6 +100,10 @@ impl Session {
         let seven = limits.and_then(|r| r.get("seven_day"));
         Session {
             model: model_name(payload.get("model")),
+            model_id: payload
+                .at(&["model", "id"])
+                .and_then(|x| x.str())
+                .map(String::from),
             effort: payload
                 .at(&["effort", "level"])
                 .and_then(|x| x.str())
@@ -97,13 +116,15 @@ impl Session {
                 pct: context_window
                     .and_then(|c| c.get("used_percentage"))
                     .and_then(|x| x.num()),
-                tokens: usage_tokens(context_window.and_then(|c| c.get("current_usage"))),
+                tokens: context_tokens(context_window),
             },
             live: if five.is_some() || seven.is_some() {
                 Some((live(five), live(seven)))
             } else {
                 None
             },
+            cache_warm: payload.at(&["prompt_cache", "warm"]).and_then(|x| x.bool()),
+            spend: live(limits.and_then(|r| r.get("spend_limit"))),
             cwd: payload.get("cwd").and_then(|x| x.str()).map(String::from),
             project: payload
                 .at(&["workspace", "project_dir"])
@@ -116,6 +137,28 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_spend_limit_is_read_next_to_the_windows() {
+        let text = "{\"rate_limits\":{\"spend_limit\":{\"used_percentage\":63.5,\"resets_at\":1800000000,\"used_usd\":3.1}}}";
+        let session = Session::parse(text);
+        assert!(session.live.is_none());
+        let spend = session.spend.unwrap();
+        assert_eq!((spend.pct, spend.at), (Some(63.5), Some(1.8e9)));
+        assert!(Session::parse("{\"rate_limits\":{\"spend_limit\":null}}")
+            .spend
+            .is_none());
+    }
+
+    #[test]
+    fn the_prompt_cache_warmth_is_read_when_it_is_a_boolean() {
+        let warm = |text: &str| Session::parse(text).cache_warm;
+        assert_eq!(warm("{\"prompt_cache\":{\"warm\":true}}"), Some(true));
+        assert_eq!(warm("{\"prompt_cache\":{\"warm\":false}}"), Some(false));
+        assert_eq!(warm("{\"prompt_cache\":{\"warm\":1}}"), None);
+        assert_eq!(warm("{\"prompt_cache\":{}}"), None);
+        assert_eq!(warm("{}"), None);
+    }
 
     #[test]
     fn reads_model_effort_tokens_and_rate_limits() {
@@ -148,9 +191,45 @@ mod tests {
         assert_eq!(tokens_for("[1]"), Some(0));
         assert_eq!(tokens_for("null"), None);
         assert!(Session::parse("{\"rate_limits\":{}}").live.is_none());
+        assert!(Session::parse("{\"rate_limits\":{}}").spend.is_none());
         assert!(Session::parse("{\"rate_limits\":{\"five_hour\":null}}")
             .live
             .is_some());
+    }
+
+    fn tokens_of(context_window: &str) -> Option<u64> {
+        let text = alloc::format!("{{\"context_window\":{}}}", context_window);
+        Session::parse(&text).ctx.tokens
+    }
+
+    #[test]
+    fn total_input_tokens_fills_in_when_current_usage_is_null() {
+        let got = tokens_of("{\"current_usage\":null,\"total_input_tokens\":42000}");
+        assert_eq!(got, Some(42_000));
+    }
+
+    #[test]
+    fn total_input_tokens_fills_in_when_current_usage_is_missing() {
+        assert_eq!(tokens_of("{\"total_input_tokens\":7}"), Some(7));
+    }
+
+    #[test]
+    fn current_usage_wins_over_total_input_tokens() {
+        let got = tokens_of("{\"current_usage\":{\"input_tokens\":5},\"total_input_tokens\":9}");
+        assert_eq!(got, Some(5));
+    }
+
+    #[test]
+    fn unusable_current_usage_does_not_fall_back_to_the_total() {
+        let got = tokens_of("{\"current_usage\":{\"input_tokens\":1.5},\"total_input_tokens\":9}");
+        assert_eq!(got, None);
+    }
+
+    #[test]
+    fn invalid_total_input_tokens_is_ignored() {
+        assert_eq!(tokens_of("{\"total_input_tokens\":-3}"), None);
+        assert_eq!(tokens_of("{\"total_input_tokens\":2.5}"), None);
+        assert_eq!(tokens_of("{\"total_input_tokens\":\"9\"}"), None);
     }
 
     #[test]

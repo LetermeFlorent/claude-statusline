@@ -11,7 +11,7 @@ const ROUNDS: usize = 3;
 const RESET_IN_SECONDS: u64 = 3600;
 const TURNED_AWAY_WITHIN: Duration = Duration::from_secs(10);
 const AUTO_UPDATE: &str = "{\"auto_update\": true}";
-const SHARED_KEYS: [&str; 5] = ["bg_host", "bg_stamp", "compact_at", "cpu_at", "update_at"];
+const SHARED_KEYS: [&str; 4] = ["bg@", "compact@", "cpu_at ", "update_at "];
 
 impl Home {
     fn check_updates_in_every_account(&self) {
@@ -137,9 +137,7 @@ fn sessions_refreshing_at_once_keep_every_account_quota() {
     assert_shows(&home.refresh_all_at_once(&|_| input(None)), last);
     let state = assert_stored(&home, last);
     for key in SHARED_KEYS {
-        let kept = state
-            .lines()
-            .any(|line| line.starts_with(&format!("{} ", key)));
+        let kept = state.lines().any(|line| line.starts_with(key));
         assert!(kept, "{} lost:\n{}", key, state);
     }
 }
