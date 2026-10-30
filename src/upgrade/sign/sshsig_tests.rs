@@ -75,7 +75,11 @@ fn a_truncated_or_damaged_signature_is_refused() {
         let short = format!("{}{}", &text[..end - cut], &text[end..]);
         assert!(!verify(&test_key(), MANIFEST, short.as_bytes()));
     }
-    assert!(!verify(&test_key(), MANIFEST, &SIGNATURE[..SIGNATURE.len() / 2]));
+    assert!(!verify(
+        &test_key(),
+        MANIFEST,
+        &SIGNATURE[..SIGNATURE.len() / 2]
+    ));
     let damaged = text.replacen("U1NI", "U1N*", 1);
     assert!(!verify(&test_key(), MANIFEST, damaged.as_bytes()));
 }

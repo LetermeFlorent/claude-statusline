@@ -18,7 +18,10 @@ fn sum(manifest: &str) -> Option<[u8; 32]> {
 fn the_signed_manifest_gives_the_sum_of_the_asset() {
     let expected = sha256(b"statusline 99.0.0\n|demo");
     assert_eq!(asset_sum(MANIFEST, TAG, ASSET), Some(expected));
-    assert_eq!(asset_sum(MANIFEST, TAG, "statusline-windows-arm64.exe"), Some(expected));
+    assert_eq!(
+        asset_sum(MANIFEST, TAG, "statusline-windows-arm64.exe"),
+        Some(expected)
+    );
 }
 
 #[test]
