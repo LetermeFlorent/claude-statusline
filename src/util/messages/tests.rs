@@ -1,6 +1,6 @@
 use super::*;
 
-const ALL: [&Text; 50] = [
+const ALL: [&Text; 51] = [
     &BENCH_SUMMARY,
     &BENCH_STATE,
     &BENCH_CONFIG,
@@ -49,6 +49,7 @@ const ALL: [&Text; 50] = [
     &PANICKED,
     &NOT_RESTORED,
     &WRONG_VERSION,
+    &NO_CHECK_FILES,
     &UNSIGNED,
     &SUM_MISMATCH,
 ];

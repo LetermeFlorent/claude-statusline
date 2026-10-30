@@ -19,6 +19,10 @@ fn unsigned() -> String {
     messages::UNSIGNED.with(&[TAG])
 }
 
+fn not_downloaded() -> String {
+    messages::NO_CHECK_FILES.with(&[TAG])
+}
+
 fn fixture(signature: &[u8]) -> Release<'static> {
     Release {
         manifest: MANIFEST.to_vec(),
@@ -60,12 +64,12 @@ fn a_missing_signature_or_manifest_is_refused() {
         signature: Vec::new(),
         ..release(TAG, WORKING_BINARY)
     };
-    refused("no-signature", no_signature, &unsigned());
+    refused("no-signature", no_signature, &not_downloaded());
     let no_manifest = Release {
         manifest: Vec::new(),
         ..release(TAG, WORKING_BINARY)
     };
-    refused("no-manifest", no_manifest, &unsigned());
+    refused("no-manifest", no_manifest, &not_downloaded());
 }
 
 #[test]

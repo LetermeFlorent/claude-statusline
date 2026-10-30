@@ -48,12 +48,12 @@ fn small(tools: &Tools, tag: &str, name: &str, fresh: &str, limit: usize) -> Opt
 }
 
 pub fn signed_sum(fresh: &str, tag: &str, name: &str, tools: &Tools) -> Result<[u8; 32], Failure> {
-    let unsigned = || Failure::from(messages::UNSIGNED.with(&[tag]));
     let manifest = small(tools, tag, MANIFEST, fresh, MAX_MESSAGE);
     let signature = small(tools, tag, SIGNATURE, fresh, MAX_SIGNATURE);
     let (Some(manifest), Some(signature)) = (manifest, signature) else {
-        return Err(unsigned());
+        return Err(messages::NO_CHECK_FILES.with(&[tag]).into());
     };
+    let unsigned = || Failure::from(messages::UNSIGNED.with(&[tag]));
     if !verify(&tools.key, &manifest, &signature) {
         return Err(unsigned());
     }
