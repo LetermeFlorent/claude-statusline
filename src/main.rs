@@ -5,28 +5,20 @@
 
 extern crate alloc;
 
-mod app;
-mod backup;
-mod check;
-mod compact;
-mod config;
-mod global_config;
-mod json;
-mod messages;
-mod num;
+mod cli;
 mod os;
-mod plain;
-mod portable;
-mod render;
+mod store;
+mod upgrade;
+mod util;
+mod view;
+
+use cli::{app, backup, check, global_config, portable, settings};
+use store::{compact, session, slots, state};
+use upgrade::{update, update_watch};
 #[cfg(test)]
-mod sandbox;
-mod session;
-mod settings;
-mod slots;
-mod state;
-mod theme;
-mod update;
-mod update_watch;
+use util::sandbox;
+use util::{json, messages, num};
+use view::{config, plain, render, theme};
 
 #[cfg(any(not(windows), test))]
 fn main() {
