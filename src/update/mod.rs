@@ -36,11 +36,6 @@ struct Tools<'a> {
     probe: Probe<'a>,
 }
 
-fn fail(msg: &str) -> i32 {
-    os::err(msg);
-    FAILED_EXIT
-}
-
 fn install(exe: &str, tag: &str, tools: &Tools) -> Result<(), Failure> {
     let Some(name) = asset() else {
         return Err(String::from(messages::NO_ASSET.text()).into());
@@ -97,19 +92,16 @@ fn report(result: Result<Outcome, Failure>) -> i32 {
             os::sleep(SHOWN_AFTER_SWAP_MS);
             0
         }
-        Err(failure) => {
-            os::err(&failure.message);
-            failure.code
-        }
+        Err(failure) => os::fail(&failure.message, failure.code),
     }
 }
 
 pub fn run() -> i32 {
     let Some(dir) = os::state_dir() else {
-        return fail(messages::NO_STATE_DIR.text());
+        return os::fail(messages::NO_STATE_DIR.text(), FAILED_EXIT);
     };
     let Some(program) = curl() else {
-        return fail(messages::CURL_MISSING.text());
+        return os::fail(messages::CURL_MISSING.text(), FAILED_EXIT);
     };
     let _lock = match lock::take(&dir) {
         Ok(Some(lock)) => lock,
@@ -117,7 +109,7 @@ pub fn run() -> i32 {
             os::out(messages::UPDATE_RUNNING.text());
             return 0;
         }
-        Err(msg) => return fail(&msg),
+        Err(msg) => return os::fail(&msg, FAILED_EXIT),
     };
     let origin = origin();
     let curl = Curl {

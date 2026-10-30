@@ -1,15 +1,3 @@
-.globl memcpy
-memcpy:
-    mov rax, rcx
-    push rdi
-    push rsi
-    mov rdi, rcx
-    mov rsi, rdx
-    mov rcx, r8
-    rep movsb
-    pop rsi
-    pop rdi
-    ret
 .globl memmove
 memmove:
     mov rax, rcx
@@ -29,6 +17,9 @@ memmove:
     pop rsi
     pop rdi
     ret
+.globl memcpy
+memcpy:
+    mov rax, rcx
 memmove_up:
     push rdi
     push rsi

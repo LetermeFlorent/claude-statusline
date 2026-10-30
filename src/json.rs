@@ -333,6 +333,58 @@ impl<'a> Parser<'a> {
         Some(n)
     }
 
+    fn low_surrogate(&mut self, high: u32) -> Option<Option<u32>> {
+        if !self.bytes[self.pos..].starts_with(b"\\u") {
+            return Some(None);
+        }
+        let save = self.pos;
+        self.pos += 2;
+        let low = self.hex4()?;
+        if !(0xDC00..0xE000).contains(&low) {
+            self.pos = save;
+            return Some(None);
+        }
+        Some(Some(0x10000 + ((high - 0xD800) << 10) + (low - 0xDC00)))
+    }
+
+    fn unicode(&mut self, out: &mut Vec<u8>) -> Option<()> {
+        let mut cp = self.hex4()?;
+        if (0xD800..0xDC00).contains(&cp) {
+            match self.low_surrogate(cp)? {
+                Some(pair) => cp = pair,
+                None => {
+                    self.dropped_surrogate = true;
+                    return Some(());
+                }
+            }
+        }
+        match char::from_u32(cp) {
+            Some(ch) => {
+                let mut buf = [0u8; 4];
+                out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+            }
+            None => self.dropped_surrogate = true,
+        }
+        Some(())
+    }
+
+    fn escape(&mut self, out: &mut Vec<u8>) -> Option<()> {
+        let e = self.peek()?;
+        self.pos += 1;
+        let byte = match e {
+            b'"' | b'\\' | b'/' => e,
+            b'b' => 8,
+            b'f' => 12,
+            b'n' => b'\n',
+            b'r' => b'\r',
+            b't' => b'\t',
+            b'u' => return self.unicode(out),
+            _ => return None,
+        };
+        out.push(byte);
+        Some(())
+    }
+
     fn string(&mut self) -> Option<String> {
         self.pos += 1;
         let mut out: Vec<u8> = Vec::new();
@@ -341,47 +393,7 @@ impl<'a> Parser<'a> {
             self.pos += 1;
             match c {
                 b'"' => break,
-                b'\\' => {
-                    let e = self.peek()?;
-                    self.pos += 1;
-                    match e {
-                        b'"' => out.push(b'"'),
-                        b'\\' => out.push(b'\\'),
-                        b'/' => out.push(b'/'),
-                        b'b' => out.push(8),
-                        b'f' => out.push(12),
-                        b'n' => out.push(b'\n'),
-                        b'r' => out.push(b'\r'),
-                        b't' => out.push(b'\t'),
-                        b'u' => {
-                            let mut cp = self.hex4()?;
-                            if (0xD800..0xDC00).contains(&cp) {
-                                if self.bytes[self.pos..].starts_with(b"\\u") {
-                                    let save = self.pos;
-                                    self.pos += 2;
-                                    let lo = self.hex4()?;
-                                    if (0xDC00..0xE000).contains(&lo) {
-                                        cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
-                                    } else {
-                                        self.pos = save;
-                                        self.dropped_surrogate = true;
-                                        continue;
-                                    }
-                                } else {
-                                    self.dropped_surrogate = true;
-                                    continue;
-                                }
-                            }
-                            if let Some(ch) = char::from_u32(cp) {
-                                let mut buf = [0u8; 4];
-                                out.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
-                            } else {
-                                self.dropped_surrogate = true;
-                            }
-                        }
-                        _ => return None,
-                    }
-                }
+                b'\\' => self.escape(&mut out)?,
                 _ => out.push(c),
             }
         }
@@ -631,5 +643,62 @@ mod tests {
         assert!(parse("[-1e999]", Syntax::Tolerant).is_none());
         let tiny = parse("[1e-999]", Syntax::Tolerant).unwrap();
         assert_eq!(tiny.arr().unwrap()[0].num(), Some(0.0));
+    }
+
+    fn text_of(json: &str, syntax: Syntax) -> Option<String> {
+        let value = parse(json, syntax)?;
+        value.at(&["s"])?.str().map(str::to_string)
+    }
+
+    fn strict_read(escapes: &str) -> Option<String> {
+        text_of(&format!("{{\"s\":\"{escapes}\"}}"), Syntax::Strict)
+    }
+
+    #[test]
+    fn simple_escapes_decode_to_their_characters() {
+        assert_eq!(strict_read("\\\""), Some("\"".to_string()));
+        assert_eq!(strict_read("\\\\"), Some("\\".to_string()));
+        assert_eq!(strict_read("\\/"), Some("/".to_string()));
+        assert_eq!(strict_read("\\b"), Some("\u{8}".to_string()));
+        assert_eq!(strict_read("\\f"), Some("\u{c}".to_string()));
+        assert_eq!(strict_read("\\n"), Some("\n".to_string()));
+        assert_eq!(strict_read("\\r"), Some("\r".to_string()));
+        assert_eq!(strict_read("\\t"), Some("\t".to_string()));
+    }
+
+    #[test]
+    fn unicode_escapes_and_surrogate_pairs_decode() {
+        assert_eq!(strict_read("\\u0041\\u00E9"), Some("A\u{e9}".to_string()));
+        assert_eq!(strict_read("\\uD83D\\uDE00"), Some("\u{1f600}".to_string()));
+        assert_eq!(
+            strict_read("a\\ud800\\udc00b"),
+            Some("a\u{10000}b".to_string())
+        );
+    }
+
+    #[test]
+    fn broken_surrogates_are_dropped_and_refused_by_strict_syntax() {
+        let json = |e: &str| format!("{{\"s\":\"x{e}y\"}}");
+        for e in ["\\ud83d", "\\ud83dz", "\\ud83d\\u0041", "\\ude00"] {
+            assert!(parse(&json(e), Syntax::Strict).is_none());
+        }
+        let lone = text_of(&json("\\ud83dz"), Syntax::Tolerant);
+        assert_eq!(lone, Some("xzy".to_string()));
+        let rewound = text_of(&json("\\ud83d\\u0041"), Syntax::Tolerant);
+        assert_eq!(rewound, Some("xAy".to_string()));
+        let low = text_of(&json("\\ude00"), Syntax::Tolerant);
+        assert_eq!(low, Some("xy".to_string()));
+        assert!(parse(&json("\\ud83d\\u00"), Syntax::Tolerant).is_none());
+    }
+
+    #[test]
+    fn invalid_escapes_and_unterminated_strings_fail() {
+        for bad in ["\\x", "\\u12", "\\u12g4", "\\"] {
+            let json = format!("{{\"s\":\"{bad}\"}}");
+            assert!(parse(&json, Syntax::Tolerant).is_none());
+        }
+        for open in ["{\"s\":\"abc", "{\"s\":\"abc\\", "{\"s\":\"\\u00e9"] {
+            assert!(parse(open, Syntax::Tolerant).is_none());
+        }
     }
 }
