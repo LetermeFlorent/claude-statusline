@@ -65,6 +65,15 @@ fn automatic_updates_stay_on_unless_turned_off() {
     assert!(auto_update("{\"auto_update\": true}"));
 }
 
+#[test]
+fn automatic_updates_stop_when_the_config_cannot_be_parsed() {
+    let auto_update = |text: &str| Config::parse(Some(text)).auto_update;
+    assert!(!auto_update("{\"auto_update\": false,"));
+    assert!(!auto_update("{\"auto_update\": true,"));
+    assert!(!auto_update("[]"));
+    assert!(!auto_update(""));
+}
+
 const EVERY_KEY: &str = r##"{
     "gradient": {"5h": 0.1, "7d": 2, "x": 1},
     "thresholds": {"ctx_warn": 1, "ctx_hot": 2, "quota_warn": 3,
