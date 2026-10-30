@@ -1,4 +1,5 @@
 use super::fetch::HTTP_OK;
+use super::swap::split_extension;
 use super::verify::Failure;
 use super::Tools;
 use crate::messages;
@@ -8,6 +9,7 @@ use crate::upgrade::sign::manifest::asset_sum;
 use crate::upgrade::sign::sha256::sha256;
 use crate::upgrade::sign::sshsig::{verify, MAX_MESSAGE, MAX_SIGNATURE};
 use alloc::format;
+use alloc::string::String;
 use alloc::vec::Vec;
 
 const MANIFEST: &str = "release-manifest";
@@ -31,30 +33,24 @@ pub fn trusted_key() -> [u8; 32] {
     test_key().or_else(release_key).unwrap_or_default()
 }
 
-fn small(tools: &Tools, tag: &str, name: &str, to: &str, limit: usize) -> Option<Vec<u8>> {
+fn staged(fresh: &str, name: &str) -> String {
+    let (stem, _) = split_extension(fresh);
+    format!("{stem}.{name}")
+}
+
+fn small(tools: &Tools, tag: &str, name: &str, fresh: &str, limit: usize) -> Option<Vec<u8>> {
     let url = tools.origin.download(tag, name);
-    let fetched = (tools.fetch)(&url, to, SMALL_SECS) == Some(HTTP_OK);
-    let data = if fetched { os::read(to) } else { None };
-    os::remove(to);
+    let to = staged(fresh, name);
+    let fetched = (tools.fetch)(&url, &to, SMALL_SECS) == Some(HTTP_OK);
+    let data = if fetched { os::read(&to) } else { None };
+    os::remove(&to);
     data.filter(|data| data.len() <= limit)
 }
 
 pub fn signed_sum(fresh: &str, tag: &str, name: &str, tools: &Tools) -> Result<[u8; 32], Failure> {
     let unsigned = || Failure::from(messages::UNSIGNED.with(&[tag]));
-    let manifest = small(
-        tools,
-        tag,
-        MANIFEST,
-        &format!("{fresh}.manifest"),
-        MAX_MESSAGE,
-    );
-    let signature = small(
-        tools,
-        tag,
-        SIGNATURE,
-        &format!("{fresh}.sig"),
-        MAX_SIGNATURE,
-    );
+    let manifest = small(tools, tag, MANIFEST, fresh, MAX_MESSAGE);
+    let signature = small(tools, tag, SIGNATURE, fresh, MAX_SIGNATURE);
     let (Some(manifest), Some(signature)) = (manifest, signature) else {
         return Err(unsigned());
     };
@@ -68,5 +64,24 @@ pub fn matches(fresh: &str, sum: &[u8; 32]) -> bool {
     match os::read_checked(fresh, MAX_BINARY) {
         Contents::Bytes(data) => sha256(&data) == *sum,
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::update::swap::staging;
+
+    #[test]
+    fn check_files_are_never_staged_under_a_loader_manifest_name() {
+        for exe in ["/x/statusline.exe", "/x/statusline"] {
+            let fresh = staging(exe, 4242);
+            for name in [MANIFEST, SIGNATURE] {
+                assert_eq!(
+                    staged(&fresh, name),
+                    format!("/x/statusline.new-4242.{name}")
+                );
+            }
+        }
     }
 }
