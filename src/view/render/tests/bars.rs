@@ -74,16 +74,11 @@ fn the_cpu_bar_is_light_enough_to_see_on_dark() {
 }
 
 #[test]
-fn the_auto_compact_marker_is_a_visible_tilde_and_a_space() {
+fn the_auto_compact_marker_is_dimmed_against_ctx() {
     let text = line(false, None, &sample());
-    assert!(text.starts_with("[b]~[/] [b]ctx[/]"), "{}", text);
-    let old = line(
-        false,
-        Some("{\"auto_compact_marker\": \"\u{AA}\"}"),
-        &sample(),
-    );
-    assert!(old.starts_with("[b]\u{AA}[/] [b]ctx[/]"), "{}", old);
+    assert!(text.starts_with("[dim]\u{AA}[/][b]ctx[/]"), "{}", text);
+    let custom = line(false, Some("{\"auto_compact_marker\": \"~\"}"), &sample());
+    assert!(custom.starts_with("[dim]~[/][b]ctx[/]"), "{}", custom);
     let none = line(false, Some("{\"auto_compact_marker\": \"\"}"), &sample());
     assert!(none.starts_with("[b]ctx[/]"), "{}", none);
-    assert!(!text.contains("[dim]"), "{}", text);
 }
