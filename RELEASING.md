@@ -6,6 +6,11 @@ Every release is signed with an Ed25519 key, and the program's own updater refus
 
 The private key is the environment secret `RELEASE_SIGNING_KEY` of the `release` environment on GitHub. A deployment policy limits that environment to tags matching `v*`, so a branch or a pull request cannot reach the secret. The secret holds the whole OpenSSH private key file, without a passphrase. The owner keeps a backup of the same key at `%USERPROFILE%\.ssh\statusline-release`.
 
+That policy filters on the tag name only. It does not check who pushed the tag or which commit it points to, so anyone who can push a `v*` tag can now publish a signed release that every install updates to. A token with only Contents: write is enough for that. Two barriers close it:
+
+- A repository ruleset on `refs/tags/v*` with Restrict creations, Restrict updates, Restrict deletions and Block force pushes, with only the repository admin role in the bypass list. It is the one barrier that also holds when the workflow file at the tag has been changed, because a changed `ci.yml` can read the secret itself.
+- The release job stops before signing when the tagged commit is not on `main`. That blocks a tag pushed on a side branch, as long as `main` is protected against direct pushes too.
+
 The public key is embedded in the program, in both installers and in the release notes, with the fingerprint `SHA256:eXVs/Iwpre7dVdF+oSohVqRkgj3kWU6SVRiMRgxhwCM`. Check the backup with `ssh-keygen -lf %USERPROFILE%\.ssh\statusline-release.pub`. Before it signs, the release job reads the key from `src/upgrade/sign/key.rs` and stops when `install.sh`, `install.ps1` or `.github/release-notes.sh` holds another one.
 
 The key was made once, on Windows 11 with the OpenSSH client that ships with the system:
