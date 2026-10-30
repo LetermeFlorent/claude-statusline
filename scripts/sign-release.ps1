@@ -22,6 +22,7 @@ $Binaries = @(
     'statusline-macos-x86_64'
 )
 $ManifestName = 'release-manifest'
+$SumsName = 'SHA256SUMS'
 $SigName = 'release-manifest.sig'
 $Utf8 = New-Object System.Text.UTF8Encoding($false)
 
@@ -53,11 +54,12 @@ function Find-SshKeygen {
 function Find-DraftRelease($headers) {
     for ($page = 1; $page -le 5; $page++) {
         $url = "https://api.github.com/repos/$Repo/releases?per_page=100&page=$page"
-        $list = @(Invoke-RestMethod -Uri $url -Headers $headers -Method Get)
-        if ($list.Count -eq 0) { return $null }
-        foreach ($release in $list) {
-            if ($release.tag_name -eq $Tag) { return $release }
+        $seenAny = $false
+        foreach ($release in (Invoke-RestMethod -Uri $url -Headers $headers -Method Get)) {
+            $seenAny = $true
+            if ($release.tag_name -ceq $Tag) { return $release }
         }
+        if (-not $seenAny) { return $null }
     }
     return $null
 }
@@ -98,17 +100,17 @@ function Test-Manifest($path, $folder) {
     if (-not $text.EndsWith("`n")) { throw 'The manifest does not end with a newline.' }
     $lines = $text.Substring(0, $text.Length - 1).Split("`n")
     if ($lines.Count -lt 2) { throw 'The manifest has no file lines.' }
-    if ($lines[0] -ne "tag $Tag") { throw "The manifest first line is not 'tag $Tag'." }
+    if ($lines[0] -cne "tag $Tag") { throw "The manifest first line is not 'tag $Tag'." }
     $seen = @{}
     foreach ($line in $lines[1..($lines.Count - 1)]) {
-        if ($line -notmatch '^([0-9a-f]{64})  (\S+)$') { throw "Malformed manifest line: $line" }
+        if (-not ($line -cmatch '^([0-9a-f]{64})  ([^ ]+)$')) { throw "Malformed manifest line: $line" }
         $hash = $Matches[1]
         $name = $Matches[2]
-        if ($Binaries -notcontains $name) { throw "Unexpected file in the manifest: $name" }
+        if ($Binaries -cnotcontains $name) { throw "Unexpected file in the manifest: $name" }
         if ($seen.ContainsKey($name)) { throw "Listed twice in the manifest: $name" }
         $seen[$name] = $true
         $actual = (Get-FileHash -LiteralPath (Join-Path $folder $name) -Algorithm SHA256).Hash.ToLower()
-        if ($actual -ne $hash) { throw "SHA-256 mismatch for $name." }
+        if ($actual -cne $hash) { throw "SHA-256 mismatch for $name." }
     }
     foreach ($name in $Binaries) {
         if (-not $seen.ContainsKey($name)) { throw "Missing from the manifest: $name" }
@@ -131,7 +133,7 @@ function Invoke-Tool($exe, $argumentLine, $folder, $stdin, $stdout, $stderr) {
     return (Start-Process @params).ExitCode
 }
 
-if ($Tag -notmatch '^v\d+\.\d+\.\d+$') { throw "Tag must look like v1.2.3, got '$Tag'." }
+if ($Tag -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw "Tag must look like v1.2.3, got '$Tag'." }
 if (-not (Test-Path -LiteralPath $Key)) { throw "Private key not found: $Key" }
 $Key = (Resolve-Path -LiteralPath $Key).ProviderPath
 $sshKeygen = Find-SshKeygen
@@ -146,23 +148,23 @@ try {
     if (-not $release.draft) { throw "Release $Tag is not a draft. Refusing to touch it." }
 
     $names = @($release.assets | ForEach-Object { $_.name })
-    $allowedExtra = @($ManifestName, $SigName, 'SHA256SUMS')
+    $allowedExtra = @($ManifestName, $SigName, $SumsName)
     foreach ($name in $names) {
-        if (($Binaries -notcontains $name) -and ($allowedExtra -notcontains $name)) {
+        if (($Binaries -cnotcontains $name) -and ($allowedExtra -cnotcontains $name)) {
             throw "Unexpected asset on the draft: $name"
         }
     }
-    foreach ($name in ($Binaries + $ManifestName)) {
-        if ($names -notcontains $name) { throw "The draft has no asset named $name." }
+    foreach ($name in ($Binaries + $ManifestName + $SumsName)) {
+        if ($names -cnotcontains $name) { throw "The draft has no asset named $name." }
     }
 
-    $existing = @($release.assets | Where-Object { $_.name -eq $SigName })
+    $existing = @($release.assets | Where-Object { $_.name -ceq $SigName })
     if ($existing.Count -gt 0 -and -not $Replace) {
         throw "$SigName is already on the draft. Use -Replace to overwrite it."
     }
 
     foreach ($asset in $release.assets) {
-        if (($Binaries -contains $asset.name) -or $asset.name -eq $ManifestName) {
+        if (($Binaries -ccontains $asset.name) -or $asset.name -ceq $ManifestName -or $asset.name -ceq $SumsName) {
             Write-Host "Downloading $($asset.name)"
             Save-Asset $asset $token $work | Out-Null
         }
@@ -170,6 +172,9 @@ try {
 
     $manifestPath = Join-Path $work $ManifestName
     $manifestText = Test-Manifest $manifestPath $work
+    $sumsText = $Utf8.GetString([IO.File]::ReadAllBytes((Join-Path $work $SumsName)))
+    $manifestFiles = $manifestText.Substring($manifestText.IndexOf("`n") + 1)
+    if ($sumsText -cne $manifestFiles) { throw "$SumsName does not hold the same lines as the manifest." }
     Write-Host ''
     Write-Host $manifestText
     $answer = Read-Host "The checksums match. Sign this manifest for $Tag? (y/N)"
