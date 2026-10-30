@@ -1,116 +1,166 @@
+use alloc::string::String;
+#[cfg(test)]
+use core::cell::Cell;
+use core::sync::atomic::{AtomicU8, Ordering};
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Language {
     English,
     French,
 }
 
-#[cfg(any(windows, test))]
-pub fn from_language_id(id: u16) -> Language {
-    const PRIMARY_LANGUAGE_MASK: u16 = 0x3ff;
-    const LANG_FRENCH: u16 = 0x0c;
-    if id & PRIMARY_LANGUAGE_MASK == LANG_FRENCH {
-        Language::French
-    } else {
-        Language::English
+pub const CODE_ENDS: [char; 4] = ['_', '.', '@', '-'];
+const FORCED: &str = "STATUSLINE_LANG";
+const UNDECIDED: u8 = 0;
+const ENGLISH: u8 = 1;
+const FRENCH: u8 = 2;
+
+static CHOSEN: AtomicU8 = AtomicU8::new(UNDECIDED);
+
+#[cfg(test)]
+std::thread_local! {
+    static TEST_LANGUAGE: Cell<Language> = const { Cell::new(Language::English) };
+}
+
+impl Language {
+    pub fn code(self) -> &'static str {
+        match self {
+            Language::English => "en",
+            Language::French => "fr",
+        }
     }
 }
 
-#[cfg(any(not(windows), test))]
-pub fn from_locale(variable: &dyn Fn(&str) -> Option<alloc::string::String>) -> Language {
-    const VARIABLES: [&str; 3] = ["LC_ALL", "LC_MESSAGES", "LANG"];
-    const CODE_ENDS: [char; 3] = ['_', '.', '@'];
-    let locale = VARIABLES
-        .iter()
-        .find_map(|name| variable(name).filter(|value| !value.is_empty()));
-    let code = locale.as_deref().and_then(|l| l.split(CODE_ENDS).next());
-    if code == Some("fr") {
-        Language::French
+pub fn from_tag(tag: &str) -> Option<Language> {
+    let code = tag.trim().split(CODE_ENDS).next()?;
+    if code.eq_ignore_ascii_case("fr") {
+        Some(Language::French)
+    } else if code.eq_ignore_ascii_case("en") {
+        Some(Language::English)
     } else {
-        Language::English
+        None
     }
+}
+
+pub fn choose(
+    variable: &dyn Fn(&str) -> Option<String>,
+    system: &dyn Fn() -> Option<Language>,
+) -> Language {
+    variable(FORCED)
+        .and_then(|value| from_tag(&value))
+        .or_else(system)
+        .unwrap_or(Language::English)
 }
 
 #[cfg(windows)]
-pub fn current() -> Language {
-    from_language_id(crate::os::ui_language())
+fn system() -> Option<Language> {
+    Some(super::identifier::from_language_id(crate::os::ui_language()))
 }
 
 #[cfg(not(windows))]
+fn system() -> Option<Language> {
+    super::locale::from_locale(&crate::os::env).or_else(super::apple::preferred)
+}
+
+#[cfg(test)]
+fn test_language() -> Option<Language> {
+    Some(TEST_LANGUAGE.get())
+}
+
+#[cfg(not(test))]
+fn test_language() -> Option<Language> {
+    None
+}
+
+#[cfg(test)]
+pub fn with_test_language<R>(language: Language, run: impl FnOnce() -> R) -> R {
+    let before = TEST_LANGUAGE.replace(language);
+    let result = run();
+    TEST_LANGUAGE.set(before);
+    result
+}
+
 pub fn current() -> Language {
-    from_locale(&crate::os::env)
+    if let Some(language) = test_language() {
+        return language;
+    }
+    match CHOSEN.load(Ordering::Relaxed) {
+        ENGLISH => Language::English,
+        FRENCH => Language::French,
+        _ => {
+            let chosen = choose(&crate::os::env, &system);
+            let mark = if chosen == Language::French {
+                FRENCH
+            } else {
+                ENGLISH
+            };
+            CHOSEN.store(mark, Ordering::Relaxed);
+            chosen
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::string::String;
 
-    fn locale(variables: &[(&str, &str)]) -> Language {
-        from_locale(&|name| {
-            variables
-                .iter()
-                .find(|(key, _)| *key == name)
-                .map(|(_, value)| String::from(*value))
-        })
+    fn forced(value: &str) -> Language {
+        let variable = |name: &str| (name == FORCED).then(|| String::from(value));
+        choose(&variable, &|| Some(Language::English))
     }
 
     #[test]
-    fn french_windows_display_languages_pick_french() {
-        assert_eq!(from_language_id(0x040c), Language::French);
-        assert_eq!(from_language_id(0x0c0c), Language::French);
-        assert_eq!(from_language_id(0x100c), Language::French);
+    fn statusline_lang_comes_before_the_system() {
+        let variable = |name: &str| (name == FORCED).then(|| String::from("fr"));
+        assert_eq!(
+            choose(&variable, &|| Some(Language::English)),
+            Language::French
+        );
+        let variable = |name: &str| (name == FORCED).then(|| String::from("en"));
+        assert_eq!(
+            choose(&variable, &|| Some(Language::French)),
+            Language::English
+        );
     }
 
     #[test]
-    fn other_windows_display_languages_pick_english() {
-        assert_eq!(from_language_id(0x0409), Language::English);
-        assert_eq!(from_language_id(0x0407), Language::English);
-        assert_eq!(from_language_id(0x0462), Language::English);
-        assert_eq!(from_language_id(0), Language::English);
-    }
-
-    #[test]
-    fn lc_all_comes_before_lc_messages_and_lang() {
-        let english_first = [
-            ("LC_ALL", "C"),
-            ("LC_MESSAGES", "fr_FR.UTF-8"),
-            ("LANG", "fr_FR.UTF-8"),
-        ];
-        assert_eq!(locale(&english_first), Language::English);
-        let french_first = [("LC_ALL", "fr_CA.UTF-8"), ("LANG", "en_US.UTF-8")];
-        assert_eq!(locale(&french_first), Language::French);
-    }
-
-    #[test]
-    fn lc_messages_comes_before_lang() {
-        let variables = [("LC_MESSAGES", "fr_BE.UTF-8"), ("LANG", "en_GB.UTF-8")];
-        assert_eq!(locale(&variables), Language::French);
-    }
-
-    #[test]
-    fn empty_variables_are_skipped() {
-        let variables = [("LC_ALL", ""), ("LC_MESSAGES", ""), ("LANG", "fr_FR.UTF-8")];
-        assert_eq!(locale(&variables), Language::French);
-    }
-
-    #[test]
-    fn only_the_fr_language_code_means_french() {
-        for value in ["fr", "fr_FR", "fr.UTF-8", "fr@euro", "fr_CH.ISO-8859-1"] {
-            assert_eq!(locale(&[("LANG", value)]), Language::French, "{}", value);
-        }
-        for value in [
-            "fy_NL.UTF-8",
-            "frr_DE.UTF-8",
-            "C.UTF-8",
-            "POSIX",
-            "en_US.UTF-8",
-        ] {
-            assert_eq!(locale(&[("LANG", value)]), Language::English, "{}", value);
+    fn statusline_lang_ignores_case_and_a_region_suffix() {
+        for value in ["FR", " fr ", "fr_FR.UTF-8", "fr-CA"] {
+            assert_eq!(forced(value), Language::French, "{}", value);
         }
     }
 
     #[test]
-    fn no_locale_means_english() {
-        assert_eq!(locale(&[]), Language::English);
+    fn an_unknown_statusline_lang_falls_back_to_the_system() {
+        let variable = |name: &str| (name == FORCED).then(|| String::from("de"));
+        assert_eq!(
+            choose(&variable, &|| Some(Language::French)),
+            Language::French
+        );
+        let variable = |name: &str| (name == FORCED).then(String::new);
+        assert_eq!(
+            choose(&variable, &|| Some(Language::French)),
+            Language::French
+        );
+    }
+
+    #[test]
+    fn nothing_known_means_english() {
+        assert_eq!(choose(&|_| None, &|| None), Language::English);
+    }
+
+    #[test]
+    fn language_tags_with_a_dash_are_read_by_their_first_part() {
+        assert_eq!(from_tag("fr-FR"), Some(Language::French));
+        assert_eq!(from_tag("fr-Latn-CA"), Some(Language::French));
+        assert_eq!(from_tag("en-US"), Some(Language::English));
+        assert_eq!(from_tag("de-DE"), None);
+        assert_eq!(from_tag(""), None);
+    }
+
+    #[test]
+    fn each_language_names_its_code() {
+        assert_eq!(Language::French.code(), "fr");
+        assert_eq!(Language::English.code(), "en");
     }
 }

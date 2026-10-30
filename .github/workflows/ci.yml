@@ -159,6 +159,28 @@ jobs:
           HOME="$RUNNER_TEMP/u" USERPROFILE="$RUNNER_TEMP/u" "$b" --uninstall 2>/dev/null
           [ $? -eq 1 ]
 
+      - name: language
+        run: |
+          b="dist/${{ matrix.asset }}"
+          export HOME="$RUNNER_TEMP/h" USERPROFILE="$RUNNER_TEMP/h" LOCALAPPDATA="$RUNNER_TEMP/h/local" XDG_STATE_HOME="$RUNNER_TEMP/h/state"
+          mkdir -p "$HOME"
+          unset LANGUAGE LC_ALL LC_MESSAGES LANG STATUSLINE_LANG
+          english="With no argument"
+          french="Sans argument"
+          expect() {
+            want="$1"; shift
+            help=$(env "$@" "$b" --help)
+            case "$help" in *"$want"*) ;; *) echo "$* --help lacks: $want"; exit 1 ;; esac
+            demo=$(env "$@" "$b" --demo)
+            case "$demo" in *ctx*) ;; *) echo "$* --demo lacks ctx"; exit 1 ;; esac
+          }
+          expect "$french" STATUSLINE_LANG=fr
+          expect "$english" STATUSLINE_LANG=en
+          if [ "$RUNNER_OS" != Windows ]; then
+            expect "$french" LANG=fr_FR.UTF-8
+            expect "$english" LANG=C
+          fi
+
       - name: memory limit
         if: runner.os == 'Linux'
         run: |

@@ -1,6 +1,12 @@
+#[cfg(not(windows))]
+mod apple;
 mod check;
 mod help;
+#[cfg(any(windows, test))]
+mod identifier;
 mod language;
+#[cfg(any(not(windows), test))]
+mod locale;
 mod table;
 
 pub use check::*;
@@ -13,6 +19,15 @@ use core::fmt;
 use language::Language;
 
 const PLACEHOLDER: &str = "{}";
+
+pub fn language_code() -> &'static str {
+    language::current().code()
+}
+
+#[cfg(test)]
+pub fn in_french<R>(run: impl FnOnce() -> R) -> R {
+    language::with_test_language(Language::French, run)
+}
 
 pub struct Text {
     english: &'static str,
