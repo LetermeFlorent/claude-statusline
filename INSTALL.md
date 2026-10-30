@@ -21,12 +21,30 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 
 The script does four things:
 
-1. It downloads `statusline-windows-x86_64.exe`, or `statusline-windows-arm64.exe` on an Arm processor, and `SHA256SUMS` from the latest release, and stops if the SHA-256 hash of the binary is missing from the list or differs from it. It then puts the program in `%USERPROFILE%\.claude\bin\statusline.exe`. A previous program still in use is first renamed `statusline.exe.old-<timestamp>`, which allows the swap even during a Claude Code session, then deleted when possible, along with the `.old` copies left by an automatic update. The copy is unblocked (`Unblock-File`).
-2. It installs `statusline.json` in `%USERPROFILE%\.claude`, only when that file does not exist yet. The other accounts read this same file, unless they have their own in their folder.
-3. It lists the accounts: `.claude`, every `.claude-compte*` folder in the home folder, and every `Dir` in `.claude-accounts.json` (the registry of [claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)), without duplicates or missing folders. An unreadable registry gives a warning.
+1. It downloads `statusline-windows-x86_64.exe`, or `statusline-windows-arm64.exe` on an Arm processor, and `SHA256SUMS` from the latest release, and stops if the SHA-256 hash of the binary is missing from the list or differs from it. It first writes the new program next to the old one as `statusline.new.exe` and unblocks it (`Unblock-File`), then renames the previous `statusline.exe` to `statusline.exe.old-<timestamp>`, which allows the swap even during a Claude Code session, and renames the new file into `%USERPROFILE%\.claude\bin\statusline.exe`. If any of that fails, the previous program is put back and the script stops with a message, so a failed copy never leaves the account without a program. The `.old` copies are deleted when possible, along with those left by an automatic update.
+2. It installs `statusline.json` in `%USERPROFILE%\.claude`, only when that file does not exist yet and the script has one beside it. The other accounts read this same file, unless they have their own in their folder.
+3. It lists the accounts: `.claude`, every `.claude-compte*` folder in the home folder, and every `Dir` in `.claude-accounts.json` (the registry of [claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)), without duplicates. The registry is read as UTF-8, so accented folder names work. An unreadable registry gives a warning, and so does a listed folder that does not exist.
 4. For each account, it runs `statusline.exe --install` with `CLAUDE_CONFIG_DIR` set to the account folder. The command is rewritten in its portable form, `~/.claude/bin/statusline.exe`: any other command, such as a path from an old PC or an old user name, is replaced, and the script says so. The program also repairs the `statusLine` of the account's global file, `.claude.json` in its folder (and `%USERPROFILE%\.claude.json` for `.claude`), when it points to a statusline program that no longer exists; any other command there, such as `npx ccusage statusline`, is left alone. A failure is reported for that account and does not stop the others.
 
 With `-Build`, the script skips the download and compiles the sources (`cargo build --release`, Rust required). This is also the way out when the download fails, or when the release has no `SHA256SUMS`.
+
+## Installing without a clone
+
+The scripts need no copy of the repository to install a released binary. Download the script alone, then run it. On Windows:
+
+```powershell
+Invoke-WebRequest https://raw.githubusercontent.com/LetermeFlorent/claude-statusline/main/install.ps1 -OutFile install.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+On Linux and macOS:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/LetermeFlorent/claude-statusline/main/install.sh -o install.sh
+sh install.sh
+```
+
+Both scripts then download the binary of the latest release and its `SHA256SUMS`, and refuse to install a binary whose hash is missing from the list or differs from it. A release that publishes no `SHA256SUMS` is therefore refused, and the script stops without touching the account. Without a clone there is no `statusline.json` to copy: `--install` writes a short template in the account folder instead. Compiling needs the sources, so `-Build` on Windows stops with a message outside a clone, and `install.sh` goes straight to the download when it finds no `Cargo.toml` next to it.
 
 ## Installing on Linux or macOS
 
@@ -38,7 +56,7 @@ sh install.sh
 
 The program goes to `~/.claude/bin/statusline`. When `cargo` is available, the script compiles the sources in the `target` folder of the repository. When `cargo` is missing, or the build fails (the script then says so), it downloads the binary of the latest release that matches `uname`, along with the `SHA256SUMS` list of the same release, and stops if the SHA-256 hash of the binary is missing from the list or differs from it. On any other system or architecture it stops with a message pointing to Rust.
 
-The binary is first written as `statusline.new`, then renamed, so that a bar already running keeps the old file until it exits. The rest matches Windows: `statusline.json` installed if missing, then `--install` for `.claude`, every `.claude-compte*` and every `Dir` of the registry (stale paths are repaired the same way, `~/.claude.json` included). The registry is read with `grep` and `sed`, with no JSON parser, so it must keep the format claude-account-menu writes.
+The binary is first written as `statusline.new`, then renamed, so that a bar already running keeps the old file until it exits. The rest matches Windows: `statusline.json` installed if missing, then `--install` for `.claude`, every `.claude-compte*` and every `Dir` of the registry (stale paths are repaired the same way, `~/.claude.json` included). The registry is read with `grep` and `sed`, with no JSON parser, so it must keep the format claude-account-menu writes. A listed folder that does not exist gets a warning there too.
 
 The scripts speak French or English by the same rule as the program: `STATUSLINE_LANG` first, then the display language on Windows, or `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and `LANG` elsewhere. Once the program is copied, they ask it for its language with `--language` and pass the answer to each `--install` through `STATUSLINE_LANG`, so the whole run speaks one language. A release older than this option has no `--language`: the scripts then keep their own choice.
 
@@ -107,9 +125,11 @@ You can also run `git pull` in the cloned folder and run the install script agai
 
 ## Uninstalling
 
+To remove the bar from every account at once, run the install script with its uninstall option: `sh install.sh --uninstall` on Linux and macOS, `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall` on Windows. The script goes through the same accounts as the install (`.claude`, every `.claude-compte*` folder and every `Dir` of the registry, a missing folder giving a warning) and runs `statusline --uninstall` for each one, with the backup and the checks described below. It needs the program in `~/.claude/bin`: without it, the script says so and changes nothing. It downloads nothing and deletes no file.
+
 `statusline --uninstall` removes the `statusLine` block of the current account, after a `settings.json.bak-<timestamp>` copy, and writes the file back the same way as `--install`. For another account, set `CLAUDE_CONFIG_DIR` to its folder before running the command. When the account has no `settings.json`, or no `statusLine` block in it, the command says which and changes nothing. A `settings.json` that cannot be read or is not a JSON object is left alone, with exit code 1.
 
-Then delete the program, `~/.claude/bin/statusline` (`statusline.exe` on Windows, with any `statusline.exe.old-*`). If you no longer want them, also delete `~/.claude/statusline.json`, any `statusline.json` in the account folders, the `settings.json.bak-*` copies, and the state folder:
+Then delete the program, `~/.claude/bin/statusline` (`statusline.exe` on Windows), with any `statusline.new*` and `statusline.exe.old-*` an update left next to it. If you no longer want them, also delete `~/.claude/statusline.json`, any `statusline.json` in the account folders, the `settings.json.bak-*` copies, and the state folder:
 
 - Windows: `%LOCALAPPDATA%\claude-statusline`;
 - macOS: `~/Library/Application Support/claude-statusline`;
@@ -119,7 +139,7 @@ Then delete the program, `~/.claude/bin/statusline` (`statusline.exe` on Windows
 
 If the bar disappeared after a move to another PC or another user name, or after syncing `settings.json` between machines, the command in `statusLine` most likely points to a path on the other machine (`C:/Users/<old>/...`), written by a version older than 2.1.0, and Claude Code can no longer find the program. Run `git pull` in the cloned folder, then the install script again: it puts the program back, writes the portable command into the `settings.json` of each account and repairs the global `statusLine` in `~/.claude.json` when it points to a statusline program that no longer exists.
 
-If `update` stays on screen, an update is running or stopped halfway: the marker is ignored after 15 minutes. `statusline --update` run by hand shows where it fails. The network must let `api.github.com` and `github.com` through.
+If `update` stays on screen, an update is still running: the bar shows it only while an update process holds its lock, and drops the marker of one that stopped halfway. `statusline --update` run by hand shows where it fails. The network must let `api.github.com` and `github.com` through.
 
 If Windows blocks the program, run `Unblock-File "$env:USERPROFILE\.claude\bin\statusline.exe"`. The installer already does it, but unblocking can fail. The program has no digital signature, which can trigger a warning from SmartScreen or the antivirus.
 

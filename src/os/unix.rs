@@ -122,6 +122,33 @@ pub fn make_executable(path: &str) -> bool {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).is_ok()
 }
 
+const CALL_POLL_MS: u32 = 50;
+
+pub fn call_to(exe: &str, args: &[&str], dir: &str, secs: u32, output: &str) -> Option<i32> {
+    use std::process::{Command, Stdio};
+    let file = std::fs::File::create(output).ok()?;
+    let mut child = Command::new(exe)
+        .args(args)
+        .current_dir(dir)
+        .stdin(Stdio::null())
+        .stdout(file)
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    let deadline = ticks() + f64::from(secs);
+    loop {
+        if let Some(status) = child.try_wait().ok()? {
+            return status.code();
+        }
+        if ticks() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+        super::sleep(CALL_POLL_MS);
+    }
+}
+
 pub fn stamp(path: &str) -> Option<(u64, i64)> {
     use std::os::unix::fs::MetadataExt;
     let m = std::fs::metadata(path).ok()?;
@@ -227,8 +254,8 @@ fn stamp_text(path: Option<String>) -> String {
 mod sys {
     use super::*;
     use crate::os::linux::disks::{self, Device};
-    use crate::os::linux::mounts;
-    use crate::os::{Activity, CPU_SOURCE};
+    use crate::os::linux::{mounts, stat};
+    use crate::os::Activity;
 
     const MOUNT_TABLE: &str = "/proc/self/mountinfo";
 
@@ -236,30 +263,8 @@ mod sys {
         std::fs::read_to_string(p).ok()
     }
 
-    const FIELDS_BEFORE_GUEST: usize = 8;
-    const IDLE: usize = 3;
-    const IOWAIT: usize = 4;
-
     pub fn cpu() -> Option<Activity> {
-        let s = read_str("/proc/stat")?;
-        let line = s.lines().next()?;
-        let mut it = line.split_whitespace();
-        if it.next()? != "cpu" {
-            return None;
-        }
-        let jiffies: Vec<i64> = it
-            .take(FIELDS_BEFORE_GUEST)
-            .filter_map(|x| x.parse().ok())
-            .collect();
-        if jiffies.len() <= IOWAIT {
-            return None;
-        }
-        let clock: i64 = jiffies.iter().sum();
-        Some(Activity {
-            source: CPU_SOURCE,
-            clock,
-            busy: clock - jiffies[IDLE] - jiffies[IOWAIT],
-        })
+        stat::parse(&read_str("/proc/stat")?)
     }
 
     const ANONYMOUS_MAJOR: u64 = 0;

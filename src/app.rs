@@ -342,7 +342,7 @@ fn run_on(
     laps.lap(Stage::Compact);
     let sys = readings(&cfg, &mut state, now);
     laps.lap(Stage::System);
-    let updating = update_watch::busy(now);
+    let updating = update_watch::busy();
     let data = Data {
         ctx: session.ctx,
         window,
