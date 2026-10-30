@@ -126,18 +126,28 @@ impl State {
         self.map != self.loaded
     }
 
-    pub fn rebased_on(&self, mut latest: State) -> State {
+    pub fn changes(&self) -> String {
+        let mut out = String::new();
         for (key, value) in &self.map {
             if value_in(&self.loaded, key) != Some(value.as_str()) {
-                latest.set(key, value);
+                out.push_str(&format!("{} {}\n", key, value));
             }
         }
         for (key, _) in &self.loaded {
             if self.get(key).is_none() {
-                latest.remove(key);
+                out.push_str(&format!("{}\n", key));
             }
         }
-        latest
+        out
+    }
+
+    pub fn apply(&mut self, changes: &str) {
+        for line in changes.lines() {
+            match line.split_once(' ') {
+                Some((key, value)) => self.set(key, value),
+                None => self.remove(line),
+            }
+        }
     }
 
     pub fn quotas(
@@ -267,8 +277,8 @@ mod tests {
         mine.set("q5_pct@a", "20");
         mine.remove("q_at@a");
         mine.set("cpu_at", "7");
-        let latest = State::parse("bg_stamp 2\nq5_pct@a 10\nq5_pct@b 30\nq_at@a 5\n");
-        let saved = mine.rebased_on(latest);
+        let mut saved = State::parse("bg_stamp 2\nq5_pct@a 10\nq5_pct@b 30\nq_at@a 5\n");
+        saved.apply(&mine.changes());
         assert_eq!(
             saved.text(),
             "bg_stamp 2\ncpu_at 7\nq5_pct@a 20\nq5_pct@b 30\n"
@@ -281,7 +291,8 @@ mod tests {
         let mut mine = State::parse("q_at@a 5\n");
         mine.remove("q_at@a");
         mine.set("q_at@a", "5");
-        let saved = mine.rebased_on(State::parse("q_at@a 6\n"));
+        let mut saved = State::parse("q_at@a 6\n");
+        saved.apply(&mine.changes());
         assert_eq!(saved.text(), "q_at@a 6\n");
         assert!(!saved.changed());
     }

@@ -3,8 +3,8 @@ use crate::check;
 use crate::compact;
 use crate::config::{Config, Metric};
 use crate::global_config::{self, Repair};
-use crate::messages;
-use crate::os::{self, Contents};
+use crate::messages::{self, Text};
+use crate::os::{self, Claim, Contents};
 use crate::plain;
 use crate::portable;
 use crate::render::{self, Data, SysValue};
@@ -36,6 +36,10 @@ const TEMPLATE: &str = "{
 
 const MS_PER_SECOND: f64 = 1000.0;
 const STATE_LOCK_WAIT_MS: u32 = 500;
+const STATE_LOCK_SLICE_MS: u32 = 25;
+const CHANGES_SUFFIX: &str = ".changes";
+const STATE_READ_TRIES: u32 = 4;
+const STATE_READ_RETRY_MS: u32 = 10;
 const DEFAULT_BENCH_RUNS: usize = 200;
 
 fn config_path() -> Option<String> {
@@ -56,51 +60,145 @@ fn state_path() -> Option<String> {
 }
 
 fn read_state(path: &str) -> Option<State> {
-    match os::read_checked(path, os::MAX_READ_BYTES) {
-        Contents::Bytes(data) => Some(State::parse(&String::from_utf8_lossy(&data))),
-        Contents::Missing => Some(State::parse("")),
-        Contents::Unreadable => None,
+    for attempt in 0..STATE_READ_TRIES {
+        if attempt > 0 {
+            os::sleep(STATE_READ_RETRY_MS);
+        }
+        match os::read_checked(path, os::MAX_READ_BYTES) {
+            Contents::Bytes(data) => return Some(State::parse(&String::from_utf8_lossy(&data))),
+            Contents::Missing => return Some(State::parse("")),
+            Contents::Unreadable => {}
+        }
     }
+    None
+}
+
+fn pending_changes(path: &str) -> Vec<String> {
+    let Some(dir) = os::parent(path) else {
+        return Vec::new();
+    };
+    let prefix = format!("{}.", os::file_name(path));
+    let mut found: Vec<String> = os::list(dir, &prefix)
+        .into_iter()
+        .filter(|name| name.ends_with(CHANGES_SUFFIX))
+        .map(|name| os::join(dir, &[&name]))
+        .collect();
+    found.sort();
+    found
+}
+
+fn read_pending(path: &str) -> Vec<(String, String)> {
+    pending_changes(path)
+        .into_iter()
+        .filter_map(|file| os::read_text(&file).map(|changes| (file, changes)))
+        .collect()
+}
+
+fn with_pending(mut state: State, pending: &[(String, String)]) -> State {
+    for (_, changes) in pending {
+        state.apply(changes);
+    }
+    state
 }
 
 fn load_state() -> State {
-    state_path()
-        .and_then(|p| read_state(&p))
-        .unwrap_or_else(|| State::parse(""))
+    let Some(path) = state_path() else {
+        return State::parse("");
+    };
+    let pending = read_pending(&path);
+    let state = read_state(&path).unwrap_or_else(|| State::parse(""));
+    if pending.is_empty() {
+        return state;
+    }
+    State::parse(&with_pending(state, &pending).text())
+}
+
+fn merge_state(path: &str, own: Option<&State>) -> bool {
+    let pending = read_pending(path);
+    let Some(latest) = read_state(path) else {
+        return own.is_some_and(|state| os::write_atomic(path, state.text().as_bytes()));
+    };
+    let mut merged = with_pending(latest, &pending);
+    if let Some(state) = own {
+        merged.apply(&state.changes());
+    }
+    let written = merged.changed() && os::write_atomic(path, merged.text().as_bytes());
+    if written || !merged.changed() {
+        for (file, _) in &pending {
+            os::remove(file);
+        }
+    }
+    written
+}
+
+fn park_changes(path: &str, lock_path: &str, state: &State) -> bool {
+    let parked = format!("{}.{}{}", path, os::pid(), CHANGES_SUFFIX);
+    if !os::write_atomic(&parked, state.changes().as_bytes()) {
+        return false;
+    }
+    for _ in 0..STATE_LOCK_WAIT_MS / STATE_LOCK_SLICE_MS {
+        if !os::exists(&parked) {
+            break;
+        }
+        if let Claim::Held(_lock) = os::lock(lock_path, STATE_LOCK_SLICE_MS) {
+            merge_state(path, None);
+            break;
+        }
+    }
+    true
 }
 
 fn save_state(state: &State) -> bool {
+    state_path().is_some_and(|path| save_state_at(&path, state))
+}
+
+fn save_state_at(path: &str, state: &State) -> bool {
     if !state.changed() {
         return false;
     }
-    let Some(path) = state_path() else {
-        return false;
-    };
-    if let Some(d) = os::parent(&path) {
+    if let Some(d) = os::parent(path) {
         if !os::exists(d) {
             os::mkdirs(d);
         }
     }
-    let _lock = os::lock(&format!("{}.lock", path), STATE_LOCK_WAIT_MS);
-    let Some(latest) = read_state(&path) else {
-        return os::write_atomic(&path, state.text().as_bytes());
-    };
-    let saved = state.rebased_on(latest);
-    saved.changed() && os::write_atomic(&path, saved.text().as_bytes())
+    let lock_path = format!("{}.lock", path);
+    let claim = os::lock(&lock_path, 0);
+    if let Claim::Busy = claim {
+        return park_changes(path, &lock_path, state);
+    }
+    merge_state(path, Some(state))
 }
 
 fn load_config() -> Config {
     Config::parse(config_path().and_then(|p| os::read_text(&p)).as_deref())
 }
 
+#[derive(Clone, Copy)]
 enum Stage {
     State,
     Config,
     Session,
+    Theme,
+    Compact,
+    System,
     Render,
+    Write,
 }
 
-const STAGE_COUNT: usize = Stage::Render as usize + 1;
+const STAGE_COUNT: usize = Stage::Write as usize + 1;
+const BENCH_THEME: Text = Text::new("theme", "thème");
+const BENCH_COMPACT: Text = Text::new("compact", "compact");
+const BENCH_SYSTEM: Text = Text::new("system", "système");
+const STAGE_LABELS: [(Stage, &Text); STAGE_COUNT] = [
+    (Stage::State, &messages::BENCH_STATE),
+    (Stage::Config, &messages::BENCH_CONFIG),
+    (Stage::Session, &messages::BENCH_SESSION),
+    (Stage::Theme, &BENCH_THEME),
+    (Stage::Compact, &BENCH_COMPACT),
+    (Stage::System, &BENCH_SYSTEM),
+    (Stage::Render, &messages::BENCH_RENDER),
+    (Stage::Write, &messages::BENCH_WRITE),
+];
 
 struct Laps {
     seconds: [f64; STAGE_COUNT],
@@ -152,13 +250,18 @@ fn sample(cfg: &Config, state: &mut State, now: f64) -> Vec<SysValue> {
     out
 }
 
+fn local_only(dir: Option<&str>) -> Option<&str> {
+    dir.filter(|dir| !os::on_network(dir))
+}
+
 fn compact_files(cwd: Option<&str>) -> [String; 3] {
     let main = os::claude_dir()
         .map(|d| os::join(&d, &["settings.json"]))
         .unwrap_or_default();
     let cwd = cwd.map(String::from).or_else(os::cwd);
+    let folder = local_only(cwd.as_deref());
     let project = |f: &str| {
-        cwd.as_deref()
+        folder
             .map(|c| os::join(c, &[".claude", f]))
             .unwrap_or_default()
     };
@@ -186,18 +289,24 @@ fn read_file(p: &str) -> Option<String> {
 }
 
 fn run(input: &str, now: f64, laps: &mut Laps) -> (String, State, bool) {
+    let state = load_state();
+    laps.lap(Stage::State);
+    run_on(input, state, now, laps)
+}
+
+fn run_on(input: &str, mut state: State, now: f64, laps: &mut Laps) -> (String, State, bool) {
     let cfg = load_config();
     laps.lap(Stage::Config);
     let session = Session::parse(input);
-    laps.lap(Stage::Session);
-    let mut state = load_state();
-    let project = session.project.as_deref().or(session.cwd.as_deref());
-    let light = theme::detect_light(cfg.light_override, project, &mut state);
     let quotas = state.quotas(
         session.live,
         now,
         &state::account_tag(&os::claude_dir().unwrap_or_default()),
     );
+    laps.lap(Stage::Session);
+    let project = local_only(session.project.as_deref().or(session.cwd.as_deref()));
+    let light = theme::detect_light(cfg.light_override, project, &mut state);
+    laps.lap(Stage::Theme);
     let window = if cfg.seg_ctx {
         let env = os::env("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
         let files = compact_files(session.cwd.as_deref());
@@ -212,8 +321,9 @@ fn run(input: &str, now: f64, laps: &mut Laps) -> (String, State, bool) {
     } else {
         None
     };
+    laps.lap(Stage::Compact);
     let sys = sample(&cfg, &mut state, now);
-    laps.lap(Stage::State);
+    laps.lap(Stage::System);
     let updating = update_watch::busy(now);
     let data = Data {
         ctx: session.ctx,
@@ -246,41 +356,78 @@ fn demo_input(now: f64) -> String {
     )
 }
 
-fn bench(runs: usize) {
-    let input = demo_input(os::now());
-    let target = state_path().map(|p| format!("{}.bench", p));
+struct Rounds {
+    laps: Laps,
+    bytes: usize,
+    seconds: f64,
+}
+
+fn round(input: &str, target: Option<&str>, laps: &mut Laps) -> usize {
+    laps.last = os::ticks();
+    let state = target
+        .and_then(read_state)
+        .unwrap_or_else(|| State::parse(""));
+    laps.lap(Stage::State);
+    let (out, state, _) = run_on(input, state, os::now(), laps);
+    if let Some(path) = target {
+        save_state_at(path, &state);
+    }
+    laps.lap(Stage::Write);
+    out.len()
+}
+
+fn rounds(input: &str, target: Option<&str>, runs: usize) -> Rounds {
+    if let Some(path) = target {
+        clear_bench(path);
+    }
     let mut laps = Laps::new();
-    let mut write = 0.0;
     let mut bytes = 0;
     let start = os::ticks();
     for _ in 0..runs {
-        laps.last = os::ticks();
-        let (out, state, _) = run(&input, os::now(), &mut laps);
-        bytes = out.len();
-        let write_start = os::ticks();
-        if let Some(path) = &target {
-            os::write_atomic(path, state.text().as_bytes());
-        }
-        write += os::ticks() - write_start;
+        bytes = round(input, target, &mut laps);
     }
-    let total = os::ticks() - start;
+    Rounds {
+        laps,
+        bytes,
+        seconds: os::ticks() - start,
+    }
+}
+
+fn bench_target(state: &str, pid: u32) -> String {
+    format!("{}-bench-{}", state, pid)
+}
+
+fn clear_bench(target: &str) {
+    for file in pending_changes(target) {
+        os::remove(&file);
+    }
+    os::remove(&format!("{}.lock", target));
+    os::remove(target);
+}
+
+fn bench(runs: usize) {
+    let input = demo_input(os::now());
+    let target = state_path().map(|p| bench_target(&p, os::pid()));
+    if let Some(d) = target.as_deref().and_then(os::parent) {
+        if !os::exists(d) {
+            os::mkdirs(d);
+        }
+    }
+    let done = rounds(&input, target.as_deref(), runs);
     if let Some(path) = &target {
-        os::remove(path);
+        clear_bench(path);
     }
     let per_run_ms = |seconds: f64| format!("{:.3}", seconds * MS_PER_SECOND / runs as f64);
-    let mut report =
-        messages::BENCH_SUMMARY.with(&[&runs.to_string(), &per_run_ms(total), &bytes.to_string()]);
-    for (label, seconds) in [
-        (messages::BENCH_STATE, laps.spent(Stage::State)),
-        (messages::BENCH_CONFIG, laps.spent(Stage::Config)),
-        (messages::BENCH_SESSION, laps.spent(Stage::Session)),
-        (messages::BENCH_RENDER, laps.spent(Stage::Render)),
-        (messages::BENCH_WRITE, write),
-    ] {
+    let mut report = messages::BENCH_SUMMARY.with(&[
+        &runs.to_string(),
+        &per_run_ms(done.seconds),
+        &done.bytes.to_string(),
+    ]);
+    for (stage, label) in STAGE_LABELS {
         report.push_str(&format!(
             "  {:<10}{} ms\n",
             label.text(),
-            per_run_ms(seconds)
+            per_run_ms(done.laps.spent(stage))
         ));
     }
     os::out(&report);
@@ -462,7 +609,9 @@ pub fn main(args: Vec<String>) -> i32 {
         Some("--theme") => {
             let cfg = load_config();
             let mut state = load_state();
-            let light = theme::detect_light(cfg.light_override, os::cwd().as_deref(), &mut state);
+            let cwd = os::cwd();
+            let light =
+                theme::detect_light(cfg.light_override, local_only(cwd.as_deref()), &mut state);
             save_state(&state);
             os::out(if light { "light\n" } else { "dark\n" });
             0
@@ -544,9 +693,114 @@ mod tests {
         assert_eq!(told, backup_told + &messages::REMOVED.with(&[&path]));
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn a_state_file_held_a_moment_without_read_sharing_is_still_read() {
+        use std::os::windows::fs::OpenOptionsExt;
+        const SHARE_WRITE_AND_DELETE: u32 = 6;
+        const HELD_MS: u64 = 5;
+        let sandbox = Sandbox::new("held-state");
+        let path = sandbox.path("state");
+        std::fs::write(&path, "q5_pct@a 40\n").unwrap();
+        let holder = std::fs::OpenOptions::new()
+            .write(true)
+            .share_mode(SHARE_WRITE_AND_DELETE)
+            .open(&path)
+            .unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(HELD_MS));
+            drop(holder);
+        });
+        let state = read_state(&path);
+        release.join().unwrap();
+        let pct = state.as_ref().and_then(|s| s.get("q5_pct@a"));
+        assert_eq!(pct, Some("40"));
+    }
+
     #[test]
     fn the_written_template_passes_the_check() {
         assert!(check::problems(TEMPLATE).is_empty());
+    }
+
+    #[test]
+    fn a_bench_round_carries_the_state_of_the_previous_round() {
+        let sandbox = Sandbox::new("bench-round");
+        let target = sandbox.path("state.bench");
+        std::fs::write(&target, "kept 1\n").unwrap();
+        let input = demo_input(os::now());
+        round(&input, Some(&target), &mut Laps::new());
+        let written = std::fs::read_to_string(&target).unwrap();
+        assert!(written.contains("kept 1\n"), "{}", written);
+        assert_eq!(sandbox.files(), ["state.bench", "state.bench.lock"]);
+    }
+
+    #[test]
+    fn the_bench_leaves_the_state_folder_as_it_found_it() {
+        let sandbox = Sandbox::new("bench-clean");
+        std::fs::write(
+            sandbox.path("state"),
+            "kept 1
+",
+        )
+        .unwrap();
+        let before = sandbox.files();
+        let target = bench_target(&sandbox.path("state"), 7);
+        rounds(&demo_input(os::now()), Some(&target), 2);
+        let parked = format!("{}.9{}", target, CHANGES_SUFFIX);
+        std::fs::write(
+            &parked, "kept 2
+",
+        )
+        .unwrap();
+        assert_ne!(sandbox.files(), before);
+        clear_bench(&target);
+        assert_eq!(sandbox.files(), before);
+    }
+
+    #[test]
+    fn two_bench_targets_of_different_pids_do_not_touch_each_other() {
+        let sandbox = Sandbox::new("bench-pids");
+        let state = sandbox.path("state");
+        let (first, second) = (bench_target(&state, 1), bench_target(&state, 2));
+        assert_ne!(first, second);
+        let input = demo_input(os::now());
+        rounds(&input, Some(&first), 1);
+        let kept = std::fs::read_to_string(&first).unwrap();
+        rounds(&input, Some(&second), 2);
+        clear_bench(&second);
+        assert_eq!(std::fs::read_to_string(&first).unwrap(), kept);
+        assert_eq!(sandbox.files(), ["state-bench-1", "state-bench-1.lock"]);
+    }
+
+    #[test]
+    fn a_bench_target_is_never_a_changes_file_of_the_real_state() {
+        let sandbox = Sandbox::new("bench-name");
+        let state = sandbox.path("state");
+        let target = bench_target(&state, 3);
+        std::fs::write(
+            format!("{}.4{}", target, CHANGES_SUFFIX),
+            "x 1
+",
+        )
+        .unwrap();
+        assert!(pending_changes(&state).is_empty());
+    }
+
+    #[test]
+    fn the_bench_starts_from_an_empty_state() {
+        let sandbox = Sandbox::new("bench-empty");
+        let target = sandbox.path("state.bench");
+        std::fs::write(&target, "left 1\n").unwrap();
+        rounds(&demo_input(os::now()), Some(&target), 1);
+        let written = std::fs::read_to_string(&target).unwrap();
+        assert!(!written.contains("left"), "{}", written);
+    }
+
+    #[test]
+    fn each_bench_stage_has_its_own_label() {
+        for (at, (stage, _)) in STAGE_LABELS.into_iter().enumerate() {
+            assert_eq!(stage as usize, at);
+        }
     }
 
     #[test]

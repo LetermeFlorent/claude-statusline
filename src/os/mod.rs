@@ -30,6 +30,12 @@ pub struct Activity {
     pub busy: i64,
 }
 
+pub enum Claim {
+    Held(Lock),
+    Busy,
+    Unavailable,
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Contents {
     Missing,
@@ -72,6 +78,22 @@ pub fn file_name(path: &str) -> &str {
     path.rfind([SEP, '/']).map_or(path, |i| &path[i + 1..])
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
+fn mount_holds(point: &str, path: &str) -> bool {
+    point == "/"
+        || path
+            .strip_prefix(point)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos", test))]
+pub fn deepest_mount<T>(mounts: impl Iterator<Item = (String, T)>, path: &str) -> Option<T> {
+    mounts
+        .filter(|(point, _)| mount_holds(point, path))
+        .max_by_key(|(point, _)| point.len())
+        .map(|(_, mount)| mount)
+}
+
 pub fn claude_dir() -> Option<String> {
     match env("CLAUDE_CONFIG_DIR") {
         Some(d) if !d.trim().is_empty() => Some(d),
@@ -107,6 +129,32 @@ mod tests {
         std::fs::write(&path, vec![b' '; MAX_READ_BYTES + 1]).unwrap();
         let read_whole = read_limited(&path, 2 * MAX_READ_BYTES).map(|data| data.len());
         assert_eq!(read_whole, Some(MAX_READ_BYTES + 1));
+    }
+
+    const KIB: usize = 1 << 10;
+
+    #[test]
+    fn files_of_every_size_up_to_the_limit_read_whole() {
+        let sandbox = Sandbox::new("sizes");
+        let path = sandbox.path("state");
+        for size in [0, 1, 4 * KIB, 4 * KIB + 1, 64 * KIB + 1, MAX_READ_BYTES] {
+            let data: Vec<u8> = (0..size).map(|at| (at % 251) as u8).collect();
+            std::fs::write(&path, &data).unwrap();
+            assert!(read(&path) == Some(data), "{}", size);
+        }
+    }
+
+    #[test]
+    fn the_read_limit_holds_at_every_size() {
+        let sandbox = Sandbox::new("limits");
+        let path = sandbox.path("state");
+        for limit in [0, 1, 4 * KIB, 64 * KIB] {
+            std::fs::write(&path, vec![b'x'; limit]).unwrap();
+            let at_limit = read_limited(&path, limit).map(|data| data.len());
+            std::fs::write(&path, vec![b'x'; limit + 1]).unwrap();
+            assert_eq!(at_limit, Some(limit));
+            assert_eq!(read_limited(&path, limit), None, "{}", limit);
+        }
     }
 
     #[test]
@@ -231,6 +279,26 @@ mod tests {
         assert_eq!(sandbox.files(), ["state"]);
     }
 
+    #[test]
+    fn a_reader_racing_the_swaps_always_gets_one_whole_version() {
+        const SWAPS: usize = 300;
+        const VERSIONS: [&[u8]; 2] = [b"q5_pct@a 10\n", b"q5_pct@a 20\nq7_pct@a 30\n"];
+        let sandbox = Sandbox::new("racing-reader");
+        let path = sandbox.path("state");
+        std::fs::write(&path, VERSIONS[0]).unwrap();
+        let target = path.clone();
+        let writer = std::thread::spawn(move || {
+            (0..SWAPS).all(|swap| write_atomic(&target, VERSIONS[swap % 2]))
+        });
+        while !writer.is_finished() {
+            let seen = read(&path);
+            let whole = seen.as_deref().is_some_and(|data| VERSIONS.contains(&data));
+            assert!(whole, "{:?}", seen);
+        }
+        assert!(writer.join().unwrap());
+        assert_eq!(sandbox.files(), ["state"]);
+    }
+
     #[cfg(windows)]
     #[test]
     fn a_file_held_without_delete_sharing_is_left_whole() {
@@ -267,13 +335,14 @@ mod tests {
         const RELEASE_WAIT_MS: u32 = 1000;
         let sandbox = Sandbox::new("lock");
         let path = sandbox.path("state.lock");
-        let held = lock(&path, 0).unwrap();
+        let held = lock(&path, 0);
+        assert!(matches!(held, Claim::Held(_)));
         let start = std::time::Instant::now();
-        assert!(lock(&path, WAIT_MS).is_none());
+        assert!(matches!(lock(&path, WAIT_MS), Claim::Busy));
         let waited = start.elapsed().as_millis() as u64;
         assert!((SURELY_WAITED_MS..BOUND_MS).contains(&waited), "{}", waited);
         drop(held);
-        assert!(lock(&path, RELEASE_WAIT_MS).is_some());
+        assert!(matches!(lock(&path, RELEASE_WAIT_MS), Claim::Held(_)));
     }
 
     #[test]
