@@ -5,6 +5,9 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,6 +17,7 @@ env:
 
 jobs:
   build:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     strategy:
       fail-fast: false
       matrix:
@@ -181,6 +185,43 @@ jobs:
             expect "$english" LANG=C
           fi
 
+      - name: measured values
+        run: |
+          b="dist/${{ matrix.asset }}"
+          export HOME="$RUNNER_TEMP/v" USERPROFILE="$RUNNER_TEMP/v" LOCALAPPDATA="$RUNNER_TEMP/v/local" XDG_STATE_HOME="$RUNNER_TEMP/v/state"
+          mkdir -p "$HOME"
+          escape=$(printf '\033')
+          plain() { LC_ALL=C sed "s/${escape}\[[0-9;]*m//g"; }
+          now=$(date +%s)
+          full='{"model":{"id":"claude-opus-5","display_name":"Opus 5"},"effort":{"level":"max"},"context_window":{"context_window_size":1000000,"used_percentage":34,"current_usage":{"input_tokens":12000,"cache_creation_input_tokens":48000,"cache_read_input_tokens":280000}},"rate_limits":{"five_hour":{"used_percentage":36,"resets_at":'$((now+12600))'},"seven_day":{"used_percentage":61,"resets_at":'$((now+320400))'}}}'
+          short='{"model":{"display_name":"Sonnet"},"context_window":{"context_window_size":200000,"used_percentage":85}}'
+          echo "$full" | "$b" > /dev/null
+          sleep 1
+          out=$(echo "$full" | "$b" | plain)
+          printf '%s\n' "$out"
+          first=$(echo "$out" | head -n 1)
+          last=$(echo "$out" | tail -n 1)
+          echo "$first" | grep -Eq 'ctx .*340k/1M'
+          echo "$first" | grep -Eq '5h .*36% 3h(29|30)m'
+          echo "$first" | grep -Eq '7d .*61% 3d1[67]h'
+          echo "$first" | grep -Eq 'Opus 5:max'
+          ram=$(echo "$last" | sed -En 's/.*ram .* ([0-9]+\.[0-9])\/([0-9]+\.[0-9])G.*/\1 \2/p')
+          [ -n "$ram" ] || { echo "ram value missing"; exit 1; }
+          echo "$last" | grep -Eq 'cpu .* [0-9]+%' || { echo "cpu value missing"; exit 1; }
+          used=${ram% *}
+          total=${ram#* }
+          case "$RUNNER_OS" in
+            Linux) bytes=$(free -b | awk '/^Mem:/ {print $2}') ;;
+            macOS) bytes=$(sysctl -n hw.memsize) ;;
+            *) bytes="" ;;
+          esac
+          if [ -n "$bytes" ]; then
+            awk -v shown="$total" -v bytes="$bytes" 'BEGIN { d = shown - bytes / 1073741824; if (d < 0) d = -d; exit !(d <= 0.05 + 1e-9) }' || { echo "total ram $total does not match $bytes bytes"; exit 1; }
+          fi
+          awk -v used="$used" -v total="$total" 'BEGIN { exit !(used <= total) }'
+          out=$(echo "$short" | "$b" | plain)
+          echo "$out" | head -n 1 | grep -Eq 'ctx .*170k/200k'
+
       - name: memory limit
         if: runner.os == 'Linux'
         run: |
@@ -188,38 +229,194 @@ jobs:
           echo "$out" | grep -q '/0\.5G'
 
       - name: installer
+        timeout-minutes: 20
         run: |
           export RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
-          root="$RUNNER_TEMP/i"
-          mkdir -p "$root/.claude" "$root/.claude-compte2"
-          printf '{"model": "opus", "env": {"B": "1", "A": "2"}}' > "$root/.claude/settings.json"
-          export HOME="$root"
           ext=""
-          if [ "$RUNNER_OS" = Windows ]; then
-            ext=.exe
-            export USERPROFILE="$(cygpath -w "$root")" LOCALAPPDATA="$(cygpath -w "$root/local")"
-            run_installer() { powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -Build; }
-          else
-            export XDG_STATE_HOME="$root/state"
-            run_installer() { sh install.sh; }
-          fi
+          [ "$RUNNER_OS" = Windows ] && ext=.exe
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
           line='  "statusLine": {\n    "type": "command",\n    "command": "~/.claude/bin/statusline'$ext'",\n    "refreshInterval": 3\n  }\n'
           printf '{\n  "model": "opus",\n  "env": {\n    "B": "1",\n    "A": "2"\n  },\n'"$line"'}\n' > "$RUNNER_TEMP/main.json"
           printf '{\n'"$line"'}\n' > "$RUNNER_TEMP/account.json"
-          for run in first second; do
-            echo "installer, $run run"
-            run_installer
-            test "$("$root/.claude/bin/statusline$ext" --version)" = "statusline $version"
-            diff "$RUNNER_TEMP/main.json" "$root/.claude/settings.json"
-            diff "$RUNNER_TEMP/account.json" "$root/.claude-compte2/settings.json"
-            cmp statusline.json "$root/.claude/statusline.json"
-          done
+          config=statusline.json
+          home_of() {
+            root="$RUNNER_TEMP/i-$1"
+            mkdir -p "$root/.claude" "$root/.claude-compte2"
+            export HOME="$root"
+            if [ "$RUNNER_OS" = Windows ]; then
+              export USERPROFILE="$(cygpath -w "$root")" LOCALAPPDATA="$(cygpath -w "$root/local")"
+            else
+              export XDG_STATE_HOME="$root/state"
+            fi
+          }
+          absent() {
+            if grep -q "$1" "$2" 2> /dev/null; then
+              echo "$2 still holds $1"
+              exit 1
+            fi
+          }
+          install_in() {
+            label="$1"; built="$2"; shift 2
+            home_of "$label"
+            printf '{"model": "opus", "env": {"B": "1", "A": "2"}}' > "$root/.claude/settings.json"
+            if [ "$built" = refused ]; then
+              cp "$root/.claude/settings.json" "$root/settings.before"
+              if "$@" > /dev/null 2> "$root/refusal.log"; then
+                echo "install.sh accepted a release without checksums"
+                exit 1
+              fi
+              cat "$root/refusal.log"
+              grep -Eq 'download failed|SHA-256 hash' "$root/refusal.log"
+              test ! -e "$root/.claude/bin/statusline"
+              cmp "$root/settings.before" "$root/.claude/settings.json"
+              test ! -e "$root/.claude-compte2/settings.json"
+              return 0
+            fi
+            for run in first second; do
+              echo "installer $label, $run run"
+              "$@"
+              shipped=$("$root/.claude/bin/statusline$ext" --version)
+              if [ "$built" = yes ]; then
+                test "$shipped" = "statusline $version"
+                diff "$RUNNER_TEMP/main.json" "$root/.claude/settings.json"
+                diff "$RUNNER_TEMP/account.json" "$root/.claude-compte2/settings.json"
+              else
+                case "$shipped" in "statusline "[0-9]*) ;; *) echo "$shipped"; exit 1 ;; esac
+                grep -q '"statusLine"' "$root/.claude/settings.json"
+                grep -q '"statusLine"' "$root/.claude-compte2/settings.json"
+              fi
+              [ "$config" = none ] || cmp "$config" "$root/.claude/statusline.json"
+            done
+          }
+          uninstall_in() {
+            label="$1"; shift
+            home_of "$label"
+            for run in first second; do
+              echo "uninstaller $label, $run run"
+              out=$(env STATUSLINE_LANG=en "$@" 2>&1)
+              echo "$out"
+              case "$out" in *"removed from the accounts"*) ;; *) echo "no uninstall message"; exit 1 ;; esac
+              absent '"statusLine"' "$root/.claude/settings.json"
+              absent '"statusLine"' "$root/.claude-compte2/settings.json"
+              grep -q '"model": "opus"' "$root/.claude/settings.json"
+              test -e "$root/.claude/bin/statusline$ext"
+            done
+          }
+          say_in() {
+            want="$1"; shift
+            home_of language
+            out=$(env -u STATUSLINE_LANG -u LANGUAGE -u LC_ALL -u LC_MESSAGES -u LANG "$@" 2>&1)
+            case "$out" in *"$want"*) ;; *) echo "$*: no '$want' in:"; echo "$out"; exit 1 ;; esac
+          }
+          registry_in() {
+            label="$1"; shift
+            home_of "$label"
+            accent=".claude-compt$(printf '\303\251')"
+            mkdir -p "$root/$accent"
+            printf '[{"Dir": "%s"}, {"Dir": ".claude-absent"}]' "$accent" > "$root/.claude-accounts.json"
+            out=$(env STATUSLINE_LANG=en "$@" 2>&1)
+            echo "$out"
+            case "$out" in *"account folder not found, skipped"*".claude-absent"*) ;; *) echo "missing folder not reported"; exit 1 ;; esac
+            grep -q '"statusLine"' "$root/$accent/settings.json"
+            test ! -e "$root/.claude-absent"
+          }
+          if [ "$RUNNER_OS" = Windows ]; then
+            install_in powershell yes powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -Build
+            uninstall_in powershell powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -Uninstall
+            install_in pwsh yes pwsh -NoProfile -File ./install.ps1 -Build
+            uninstall_in pwsh pwsh -NoProfile -File ./install.ps1 -Uninstall
+            registry_in registry-powershell powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -Build
+            registry_in registry-pwsh pwsh -NoProfile -File ./install.ps1 -Build
+            for shell in powershell pwsh; do
+              case "$shell" in powershell) options="-NoProfile -ExecutionPolicy Bypass" ;; *) options=-NoProfile ;; esac
+              say_in 'relancez Claude Code' STATUSLINE_LANG=fr "$shell" $options -File ./install.ps1 -Build
+              say_in 'restart Claude Code' STATUSLINE_LANG=en "$shell" $options -File ./install.ps1 -Build
+              say_in 'des comptes' STATUSLINE_LANG=fr_FR.UTF-8 "$shell" $options -File ./install.ps1 -Uninstall
+              say_in 'from the accounts' STATUSLINE_LANG=en "$shell" $options -File ./install.ps1 -Uninstall
+            done
+          else
+            install_in sh yes sh install.sh
+            uninstall_in sh sh install.sh --uninstall
+            registry_in registry-sh sh install.sh
+            say_in 'relancez Claude Code' STATUSLINE_LANG=fr sh install.sh
+            say_in 'restart Claude Code' STATUSLINE_LANG=en sh install.sh
+            say_in 'relancez Claude Code' LANG=fr_FR.UTF-8 sh install.sh
+            say_in 'restart Claude Code' LANG=C sh install.sh
+            say_in 'relancez Claude Code' LANG=en_US.UTF-8 LANGUAGE=de:fr sh install.sh
+            say_in 'restart Claude Code' LANG=C LANGUAGE=de:fr sh install.sh
+            say_in 'restart Claude Code' STATUSLINE_LANG=en LANG=fr_FR.UTF-8 sh install.sh
+            say_in 'des comptes' STATUSLINE_LANG=fr sh install.sh --uninstall
+            nocargo=$(
+              hash -r
+              for _ in 1 2 3 4 5 6 7 8; do
+                command -v cargo > /dev/null || break
+                folder=$(dirname "$(command -v cargo)")
+                PATH=$(printf '%s' "$PATH" | tr ':' '\n' | grep -vxF "$folder" | paste -sd: -)
+                hash -r
+              done
+              printf '%s' "$PATH"
+            )
+            PATH="$nocargo" command -v cargo > /dev/null && exit 1
+            sums="https://github.com/LetermeFlorent/claude-statusline/releases/latest/download/SHA256SUMS"
+            if curl -fsIL --proto =https -o /dev/null "$sums"; then
+              release=no
+            else
+              release=refused
+            fi
+            echo "latest release install: $release"
+            install_in release "$release" env LC_ALL=C PATH="$nocargo" sh install.sh
+            alone="$RUNNER_TEMP/alone"
+            mkdir -p "$alone"
+            cp install.sh "$alone/install.sh"
+            config=none
+            install_in alone "$release" sh "$alone/install.sh"
+            config=statusline.json
+            test "$(ls -A "$alone")" = install.sh
+          fi
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ matrix.asset }}
           path: dist/${{ matrix.asset }}
+
+  toolchain:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        channel: [stable, beta]
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTUP_TOOLCHAIN: ${{ matrix.channel }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+
+      - name: rust toolchain
+        run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --no-self-update --profile minimal
+
+      - name: unit tests
+        env:
+          RUSTFLAGS: ${{ matrix.os == 'windows-latest' && '-Cdebuginfo=0' || '' }}
+        run: cargo test --locked -- --include-ignored
+
+      - name: release build
+        run: cargo build --release --locked
+
+      - name: binary smoke test
+        run: |
+          ext=""
+          [ "$RUNNER_OS" = Windows ] && ext=.exe
+          export HOME="$RUNNER_TEMP/h" USERPROFILE="$RUNNER_TEMP/h" LOCALAPPDATA="$RUNNER_TEMP/h/local" XDG_STATE_HOME="$RUNNER_TEMP/h/state"
+          mkdir -p "$HOME"
+          out=$(target/release/statusline$ext --demo)
+          echo "$out" | grep -q ctx
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')

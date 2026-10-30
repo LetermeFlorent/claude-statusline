@@ -98,9 +98,18 @@ pub const UPDATE_RUNNING: Text = Text::new(
 );
 #[cfg(any(windows, test))]
 pub const PANICKED: Text = Text::new("internal error at {}\n", "erreur interne dans {}\n");
+#[cfg(any(windows, test))]
+pub const NOT_RESTORED: Text = Text::new(
+    "the old program could not be put back: rename {} to {}\n",
+    "l'ancien programme n'a pas pu être remis : renommez {} en {}\n",
+);
+pub const WRONG_VERSION: Text = Text::new(
+    "the downloaded program reports {} instead of {}, nothing was replaced\n",
+    "le programme téléchargé annonce {} au lieu de {}, rien n'a été remplacé\n",
+);
 
 #[cfg(test)]
-pub const ALL: [&Text; 46] = [
+pub const ALL: [&Text; 48] = [
     &BENCH_SUMMARY,
     &BENCH_STATE,
     &BENCH_CONFIG,
@@ -147,4 +156,6 @@ pub const ALL: [&Text; 46] = [
     &NO_STATE_DIR,
     &UPDATE_RUNNING,
     &PANICKED,
+    &NOT_RESTORED,
+    &WRONG_VERSION,
 ];
