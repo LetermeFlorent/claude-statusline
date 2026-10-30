@@ -2,8 +2,9 @@
 
 All notable changes to this project are listed here, newest first. Versions follow the `version` in Cargo.toml and the git tag of the same name.
 
-## Unreleased
+## 2.2.1 - 2026-10-30
 
+- The auto-compact marker is a dimmed `ª` against `ctx` again, as in 2.1.1, with no space between them. A marker set in `statusline.json` is drawn the same way, and an empty one still hides it.
 - Releases are signed and published by CI. The release job signs the manifest with the key held in the `release` environment, checks the signature against the key embedded in the program, then publishes the release, so updates reach users with no step by hand. When the key is missing, the job leaves an unsigned draft for the signing scripts in `scripts/`, as before. A tag whose commit is not on `main` stops the job before signing.
 
 ## 2.2.0 - 2026-10-30
