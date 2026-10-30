@@ -41,8 +41,20 @@ fn small(tools: &Tools, tag: &str, name: &str, to: &str, limit: usize) -> Option
 
 pub fn signed_sum(fresh: &str, tag: &str, name: &str, tools: &Tools) -> Result<[u8; 32], Failure> {
     let unsigned = || Failure::from(messages::UNSIGNED.with(&[tag]));
-    let manifest = small(tools, tag, MANIFEST, &format!("{fresh}.manifest"), MAX_MESSAGE);
-    let signature = small(tools, tag, SIGNATURE, &format!("{fresh}.sig"), MAX_SIGNATURE);
+    let manifest = small(
+        tools,
+        tag,
+        MANIFEST,
+        &format!("{fresh}.manifest"),
+        MAX_MESSAGE,
+    );
+    let signature = small(
+        tools,
+        tag,
+        SIGNATURE,
+        &format!("{fresh}.sig"),
+        MAX_SIGNATURE,
+    );
     let (Some(manifest), Some(signature)) = (manifest, signature) else {
         return Err(unsigned());
     };

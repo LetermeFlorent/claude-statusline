@@ -1,4 +1,6 @@
-use super::fake::{failed, manifest, release, update, Release, EXE_NAME, OLD_BINARY, WORKING_BINARY};
+use super::fake::{
+    failed, manifest, release, update, Release, EXE_NAME, OLD_BINARY, WORKING_BINARY,
+};
 use super::*;
 use crate::upgrade::sign::sshsig::NAMESPACE;
 use crate::upgrade::sign::testkit::{sign, test_key, MANIFEST, OTHER_NAMESPACE, SIGNATURE};
@@ -76,7 +78,11 @@ fn a_signature_in_another_namespace_is_refused() {
 
 #[test]
 fn a_manifest_of_another_release_is_refused() {
-    refused("other-tag", signed(manifest("v98.0.0", WORKING_BINARY)), &unsigned());
+    refused(
+        "other-tag",
+        signed(manifest("v98.0.0", WORKING_BINARY)),
+        &unsigned(),
+    );
 }
 
 #[test]
