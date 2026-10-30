@@ -81,9 +81,16 @@ pub fn background_word(s: &str) -> Option<bool> {
 pub fn hex(v: Option<&Value>) -> Option<Rgb> {
     let s = v?.str()?.trim();
     let s = s.strip_prefix('#').unwrap_or(s);
-    let d: Vec<u32> = s.chars().map(|c| c.to_digit(16)).collect::<Option<Vec<u32>>>()?;
+    let d: Vec<u32> = s
+        .chars()
+        .map(|c| c.to_digit(16))
+        .collect::<Option<Vec<u32>>>()?;
     match d.len() {
-        6 => Some([(d[0] * 16 + d[1]) as f64, (d[2] * 16 + d[3]) as f64, (d[4] * 16 + d[5]) as f64]),
+        6 => Some([
+            (d[0] * 16 + d[1]) as f64,
+            (d[2] * 16 + d[3]) as f64,
+            (d[4] * 16 + d[5]) as f64,
+        ]),
         3 => Some([(d[0] * 17) as f64, (d[1] * 17) as f64, (d[2] * 17) as f64]),
         _ => None,
     }
@@ -110,7 +117,11 @@ fn palette(raw: &Value, path: &[&str], ok: Rgb, warn: Rgb, hot: Rgb) -> Palette 
         p.push(k);
         hex(raw.at(&p)).unwrap_or(def)
     };
-    Palette { ok: get("ok", ok), warn: get("warn", warn), hot: get("hot", hot) }
+    Palette {
+        ok: get("ok", ok),
+        warn: get("warn", warn),
+        hot: get("hot", hot),
+    }
 }
 
 impl Config {
@@ -119,7 +130,10 @@ impl Config {
             .and_then(|t| json::parse(t, true))
             .filter(|v| v.is_obj())
             .unwrap_or(Value::Obj(Vec::new()));
-        let background = raw.get("terminal_background").and_then(|v| v.str()).and_then(background_word);
+        let background = raw
+            .get("terminal_background")
+            .and_then(|v| v.str())
+            .and_then(background_word);
         let width = match raw.get("bar_width").and_then(|v| v.num()) {
             Some(w) => (num::trunc(w) as i64).clamp(1, 40) as usize,
             None => 8,
@@ -149,7 +163,11 @@ impl Config {
             filled: glyph(&raw, "filled", "\u{25A0}"),
             empty: glyph(&raw, "empty", "\u{25A0}"),
             half: glyph(&raw, "half", "\u{25AA}"),
-            marker: String::from(raw.get("auto_compact_marker").and_then(|v| v.str()).unwrap_or("\u{AA}")),
+            marker: String::from(
+                raw.get("auto_compact_marker")
+                    .and_then(|v| v.str())
+                    .unwrap_or("\u{AA}"),
+            ),
             effort_flat: raw.get("effort_style").and_then(|v| v.str()) == Some("flat"),
             seg_ctx: shown(&raw, "ctx"),
             seg_5h: shown(&raw, "5h"),
@@ -162,11 +180,41 @@ impl Config {
             quota_hot: number(raw.at(&["thresholds", "quota_hot"]), 70.0),
             sys_warn: number(raw.at(&["thresholds", "system_warn"]), 70.0),
             sys_hot: number(raw.at(&["thresholds", "system_hot"]), 85.0),
-            pal_5h: palette(&raw, &["palettes", "5h"], [120.0, 110.0, 200.0], [170.0, 90.0, 175.0], [200.0, 60.0, 95.0]),
-            pal_7d: palette(&raw, &["palettes", "7d"], [83.0, 137.0, 119.0], [184.0, 129.0, 67.0], [185.0, 85.0, 85.0]),
-            pal_ram: palette(&raw, &["system", "colors", "ram"], [30.0, 120.0, 125.0], WARN_SYS, HOT_SYS),
-            pal_dsk: palette(&raw, &["system", "colors", "dsk"], [105.0, 120.0, 85.0], WARN_SYS, HOT_SYS),
-            pal_cpu: palette(&raw, &["system", "colors", "cpu"], [55.0, 90.0, 140.0], WARN_SYS, HOT_SYS),
+            pal_5h: palette(
+                &raw,
+                &["palettes", "5h"],
+                [120.0, 110.0, 200.0],
+                [170.0, 90.0, 175.0],
+                [200.0, 60.0, 95.0],
+            ),
+            pal_7d: palette(
+                &raw,
+                &["palettes", "7d"],
+                [83.0, 137.0, 119.0],
+                [184.0, 129.0, 67.0],
+                [185.0, 85.0, 85.0],
+            ),
+            pal_ram: palette(
+                &raw,
+                &["system", "colors", "ram"],
+                [30.0, 120.0, 125.0],
+                WARN_SYS,
+                HOT_SYS,
+            ),
+            pal_dsk: palette(
+                &raw,
+                &["system", "colors", "dsk"],
+                [105.0, 120.0, 85.0],
+                WARN_SYS,
+                HOT_SYS,
+            ),
+            pal_cpu: palette(
+                &raw,
+                &["system", "colors", "cpu"],
+                [55.0, 90.0, 140.0],
+                WARN_SYS,
+                HOT_SYS,
+            ),
             sys_enabled: sysget("enabled").and_then(|v| v.bool()) != Some(false),
             metrics,
             disk_path,
@@ -203,7 +251,12 @@ impl Config {
     // Lettre du lecteur sous Windows ("C:"), "dsk" ailleurs
     pub fn disk_label(&self) -> String {
         if cfg!(windows) {
-            let mut s: String = self.disk_path.chars().take(1).flat_map(|c| c.to_uppercase()).collect();
+            let mut s: String = self
+                .disk_path
+                .chars()
+                .take(1)
+                .flat_map(|c| c.to_uppercase())
+                .collect();
             s.push(':');
             s
         } else {
@@ -228,7 +281,10 @@ mod tests {
         assert_eq!(Config::parse(Some("{\"bar_width\": 1000}")).width, 40);
         assert_eq!(Config::parse(Some("{\"bar_width\": -3}")).width, 1);
         assert_eq!(Config::parse(Some("[1]")).width, 8);
-        assert_eq!(hex(Some(&Value::Str(String::from(" #abc ")))), Some([170.0, 187.0, 204.0]));
+        assert_eq!(
+            hex(Some(&Value::Str(String::from(" #abc ")))),
+            Some([170.0, 187.0, 204.0])
+        );
         assert_eq!(hex(Some(&Value::Str(String::from("#GG0000")))), None);
     }
 }

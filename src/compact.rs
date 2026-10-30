@@ -22,7 +22,10 @@ pub fn window(
     if let Some(n) = env.and_then(positive) {
         return Some(n);
     }
-    let cached = state.get("compact_window").and_then(|s| s.parse::<u64>().ok()).filter(|n| *n > 0);
+    let cached = state
+        .get("compact_window")
+        .and_then(|s| s.parse::<u64>().ok())
+        .filter(|n| *n > 0);
     // Plusieurs sessions dans des dossiers differents partagent l'etat : le cache
     // ne vaut que pour le meme trio de fichiers
     let key = format!("{:016x}", fnv(files));
@@ -46,12 +49,21 @@ pub fn window(
     }
     let mut w: Option<u64> = None;
     for f in files {
-        let Some(v) = read(f).and_then(|t| json::parse(&t, true)).filter(|v| v.is_obj()) else { continue };
+        let Some(v) = read(f)
+            .and_then(|t| json::parse(&t, true))
+            .filter(|v| v.is_obj())
+        else {
+            continue;
+        };
         if v.get("autoCompactEnabled").and_then(|x| x.bool()) == Some(false) {
             w = None;
             continue;
         }
-        if let Some(n) = v.at(&["env", "CLAUDE_CODE_AUTO_COMPACT_WINDOW"]).and_then(|x| x.str()).and_then(positive) {
+        if let Some(n) = v
+            .at(&["env", "CLAUDE_CODE_AUTO_COMPACT_WINDOW"])
+            .and_then(|x| x.str())
+            .and_then(positive)
+        {
             w = Some(n);
             continue;
         }
@@ -93,27 +105,54 @@ mod tests {
     fn reglages() {
         let read = |f: &str| match f {
             "a" => Some(String::from("{\"autoCompactWindow\": 1.5e5}")),
-            "b" => Some(String::from("{\"env\": {\"CLAUDE_CODE_AUTO_COMPACT_WINDOW\": \"90000\"}}")),
+            "b" => Some(String::from(
+                "{\"env\": {\"CLAUDE_CODE_AUTO_COMPACT_WINDOW\": \"90000\"}}",
+            )),
             _ => None,
         };
         let stat = |f: &str| if f == "c" { None } else { Some((10, 20)) };
         let mut s = State::parse("");
-        assert_eq!(window(None, &files(), &mut s, 1000.0, &stat, &read), Some(90000));
+        assert_eq!(
+            window(None, &files(), &mut s, 1000.0, &stat, &read),
+            Some(90000)
+        );
         assert_eq!(s.get("compact_stamp"), Some("10:20;10:20;0;"));
         // Dans les 30 s : aucune lecture
         let none = |_: &str| -> Option<String> { panic!() };
-        assert_eq!(window(None, &files(), &mut s, 1010.0, &stat, &none), Some(90000));
+        assert_eq!(
+            window(None, &files(), &mut s, 1010.0, &stat, &none),
+            Some(90000)
+        );
         // Fichiers inchanges : pas de relecture
-        assert_eq!(window(None, &files(), &mut s, 2000.0, &stat, &none), Some(90000));
-        assert_eq!(window(Some(" 5 "), &files(), &mut s, 2000.0, &stat, &none), Some(5));
+        assert_eq!(
+            window(None, &files(), &mut s, 2000.0, &stat, &none),
+            Some(90000)
+        );
+        assert_eq!(
+            window(Some(" 5 "), &files(), &mut s, 2000.0, &stat, &none),
+            Some(5)
+        );
         // Autre dossier de travail, meme dans les 30 s : relu
         let other = [String::from("a"), String::from("x"), String::from("y")];
         let only_a = |f: &str| if f == "a" { read(f) } else { None };
-        assert_eq!(window(None, &other, &mut s, 2001.0, &stat, &only_a), Some(150000));
-        assert_eq!(window(None, &files(), &mut s, 2002.0, &stat, &read), Some(90000));
-        let off = |_: &str| Some(String::from("{\"autoCompactEnabled\": false, \"autoCompactWindow\": 5}"));
+        assert_eq!(
+            window(None, &other, &mut s, 2001.0, &stat, &only_a),
+            Some(150000)
+        );
+        assert_eq!(
+            window(None, &files(), &mut s, 2002.0, &stat, &read),
+            Some(90000)
+        );
+        let off = |_: &str| {
+            Some(String::from(
+                "{\"autoCompactEnabled\": false, \"autoCompactWindow\": 5}",
+            ))
+        };
         let stat2 = |_: &str| Some((1, 1));
-        assert_eq!(window(Some("1.5"), &files(), &mut s, 3000.0, &stat2, &off), None);
+        assert_eq!(
+            window(Some("1.5"), &files(), &mut s, 3000.0, &stat2, &off),
+            None
+        );
         assert_eq!(s.get("compact_window"), None);
     }
 }
