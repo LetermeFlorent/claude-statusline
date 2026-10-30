@@ -1,6 +1,6 @@
 # Releasing
 
-Every release is signed by hand with an Ed25519 key that only the owner holds. CI builds and checksums the binaries, the owner signs the manifest, and the updater and the installers refuse anything the key did not sign.
+Every release is signed by hand with an Ed25519 key that only the owner holds. CI builds and checksums the binaries, the owner signs the manifest, and the program's own updater refuses anything the key did not sign. The installers check the signature when they find a usable `ssh-keygen`, and otherwise warn and check only the SHA-256 hash from the manifest.
 
 ## One-time key setup
 
@@ -24,12 +24,12 @@ Keep the private key off GitHub and keep an offline backup of it. The public key
 
         scripts/sign-release.sh -t vX.Y.Z
 
-    The script asks for a GitHub token (or reads `GITHUB_TOKEN`), downloads the draft, checks every checksum against the manifest, shows the manifest, signs after you answer `y`, verifies the signature, and uploads `release-manifest.sig`. Use `-Replace` (or `-R` in the shell script) to overwrite an existing signature.
+    The script asks for a GitHub token (or reads `GITHUB_TOKEN`), downloads the draft, checks every checksum against the manifest and `SHA256SUMS` against the manifest lines, shows the manifest, signs after you answer `y`, verifies the signature, and uploads `release-manifest.sig`. Use `-Replace` (or `-R` in the shell script) to overwrite an existing signature.
 6. Read the draft, then publish it by hand as the latest release.
 
 ## Unsigned releases
 
-A release without `release-manifest.sig`, or with a signature that does not verify, is refused by the updater and by the installers. Publishing before signing therefore leaves users on their current version.
+A release without `release-manifest.sig`, or with a signature that does not verify, is refused by the updater, and by the installers that have a usable `ssh-keygen`. Installers without one warn and go on with the SHA-256 hash from the manifest only. Publishing before signing therefore leaves updating users on their current version.
 
 ## If the key is lost
 

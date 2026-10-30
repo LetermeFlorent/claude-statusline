@@ -47,7 +47,7 @@ Status line binaries for Windows, Linux and macOS. Pick the file for your system
 
 ## Install
 
-You do not have to download a file by hand: the install script fetches the one for your system, checks its signature and SHA-256 hash and sets up every Claude Code account. On Windows, in PowerShell:
+You do not have to download a file by hand: the install script fetches the one for your system, checks its SHA-256 hash and, when `ssh-keygen` is available, the signature of the release, and sets up every Claude Code account. On Windows, in PowerShell:
 
 ```powershell
 Invoke-WebRequest https://raw.githubusercontent.com/LetermeFlorent/claude-statusline/main/install.ps1 -OutFile install.ps1
@@ -72,7 +72,7 @@ sed "s/@TAG@/$tag/g" <<'EOF'
 
 SHA256SUMS lists the SHA-256 hash of every file above. Put it in the folder of the files you downloaded and run `sha256sum -c SHA256SUMS --ignore-missing`.
 
-`release-manifest` holds the tag and the same hashes, and `release-manifest.sig` is its signature by the release key, which the install scripts and `statusline --update` check before they install anything:
+`release-manifest` holds the tag and the same hashes, and `release-manifest.sig` is its signature by the release key, which `statusline --update` always checks before it installs anything, and the install scripts check when they find a usable `ssh-keygen`:
 
 ```
 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAc/fOxJG/NBMFcBqV6k6pwGdOCfLsloZuAqCWBFmRtN claude-statusline release signing

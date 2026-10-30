@@ -23,4 +23,4 @@ Only the latest release gets fixes.
 
 ## Automatic updates
 
-The program can replace itself with `--update`, but automatic updates are off by default. Release binaries are not signed yet, and updates stay opt-in until they are.
+The program can replace itself with `--update`, and it checks for a new release by itself unless `statusline.json` sets `"auto_update": false`. Every release is signed by the maintainer with an Ed25519 key, and the public half of that key is embedded in the program. The updater downloads `release-manifest` and `release-manifest.sig` and refuses the new binary unless the signature verifies and the SHA-256 hash of the binary matches the manifest. The installers do the same check when they find a usable `ssh-keygen`; without one they warn and check only the SHA-256 hash from the manifest.
