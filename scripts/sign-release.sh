@@ -1,5 +1,7 @@
 #!/bin/sh
 set -eu
+LC_ALL=C
+export LC_ALL
 
 usage() {
     echo "usage: sign-release.sh -t vX.Y.Z [-k private_key] [-r owner/repo] [-R]" >&2
@@ -24,6 +26,7 @@ PUBLIC_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAc/fOxJG/NBMFcBqV6k6pwGdOCfLslo
 PRINCIPAL="statusline-release"
 BINARIES="statusline-windows-x86_64.exe statusline-windows-arm64.exe statusline-linux-x86_64 statusline-linux-arm64 statusline-macos-arm64 statusline-macos-x86_64"
 MANIFEST="release-manifest"
+SUMS="SHA256SUMS"
 SIG="release-manifest.sig"
 
 die() {
@@ -73,6 +76,12 @@ api() {
             -H "X-GitHub-Api-Version: 2022-11-28" -A statusline-sign-release "$@"
 }
 
+fetch() {
+    printf 'Authorization: Bearer %s\n' "$TOKEN" |
+        curl -fsSL -H @- -H "Accept: application/octet-stream" \
+            -A statusline-sign-release -o "$2" "$1"
+}
+
 PARSE='
 import json, sys
 tag = sys.argv[2]
@@ -112,12 +121,12 @@ asset_field() {
 }
 
 for name in $(printf '%s\n' "$ASSETS" | awk '{ print $3 }'); do
-    case " $BINARIES $MANIFEST $SIG SHA256SUMS " in
+    case " $BINARIES $MANIFEST $SIG $SUMS " in
         *" $name "*) ;;
         *) die "unexpected asset on the draft: $name" ;;
     esac
 done
-for name in $BINARIES $MANIFEST; do
+for name in $BINARIES $MANIFEST $SUMS; do
     [ -n "$(asset_field "$name" 2)" ] || die "the draft has no asset named $name"
 done
 
@@ -126,18 +135,19 @@ if [ -n "$OLD_SIG" ] && [ "$REPLACE" -ne 1 ]; then
     die "$SIG is already on the draft, use -R to overwrite it"
 fi
 
-for name in $BINARIES $MANIFEST; do
+for name in $BINARIES $MANIFEST $SUMS; do
     echo "Downloading $name"
-    api -L -H "Accept: application/octet-stream" -o "$WORK/$name" "$(asset_field "$name" 4)"
+    fetch "$(asset_field "$name" 4)" "$WORK/$name"
 done
 
 MF="$WORK/$MANIFEST"
+FILES="$WORK/manifest.files"
+[ -s "$MF" ] || die "the manifest is empty"
 [ -z "$(tail -c 1 "$MF")" ] || die "the manifest does not end with a newline"
-if grep -q "$(printf '\r')" "$MF"; then
-    die "the manifest contains carriage returns"
-fi
+tr -d '\r' <"$MF" | cmp -s - "$MF" || die "the manifest contains carriage returns"
 [ "$(sed -n '1p' "$MF")" = "tag $TAG" ] || die "the manifest first line is not 'tag $TAG'"
 [ "$(wc -l <"$MF" | tr -d ' ')" -ge 2 ] || die "the manifest has no file lines"
+sed '1d' "$MF" >"$FILES"
 
 SEEN=" "
 while IFS= read -r line; do
@@ -153,15 +163,14 @@ while IFS= read -r line; do
     esac
     SEEN="$SEEN$name "
     [ "$(sha256 "$WORK/$name")" = "$want" ] || die "SHA-256 mismatch for $name"
-done <<EOF
-$(sed '1d' "$MF")
-EOF
+done <"$FILES"
 for name in $BINARIES; do
     case "$SEEN" in
         *" $name "*) ;;
         *) die "missing from the manifest: $name" ;;
     esac
 done
+cmp -s "$FILES" "$WORK/$SUMS" || die "$SUMS does not hold the same lines as the manifest"
 
 echo
 cat "$MF"
