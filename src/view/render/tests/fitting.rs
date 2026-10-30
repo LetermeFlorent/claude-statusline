@@ -15,8 +15,8 @@ fn the_line_fits_in_80_columns() {
 fn the_reset_times_go_first_then_the_effort_then_the_bar_width() {
     let text = |columns| glyphs(&fitted(columns, None));
     let bar = "\u{25A0}".repeat(8);
-    assert!(text(85).contains("1h00"), "{}", text(85));
-    let no_resets = text(84);
+    assert!(text(84).contains("1h00"), "{}", text(84));
+    let no_resets = text(83);
     assert!(!no_resets.contains("1h00"), "{}", no_resets);
     assert!(no_resets.contains(":high"), "{}", no_resets);
     let no_effort = text(70);

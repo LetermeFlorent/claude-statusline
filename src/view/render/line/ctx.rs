@@ -25,8 +25,7 @@ impl Out<'_> {
         }
         if marked && !self.cfg.marker.is_empty() {
             let marker = self.cfg.marker.clone();
-            self.label(&marker);
-            self.line.push(' ');
+            self.faint(&marker);
         }
         self.label("ctx");
         self.line.push(' ');
