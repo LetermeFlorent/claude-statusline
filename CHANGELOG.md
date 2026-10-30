@@ -2,6 +2,10 @@
 
 All notable changes to this project are listed here, newest first. Versions follow the `version` in Cargo.toml and the git tag of the same name.
 
+## Unreleased
+
+- Releases are signed and published by CI. The release job signs the manifest with the key held in the `release` environment, checks the signature against the key embedded in the program, then publishes the release, so updates reach users with no step by hand. When the key is missing, the job leaves an unsigned draft for the signing scripts in `scripts/`, as before. A tag whose commit is not on `main` stops the job before signing.
+
 ## 2.2.0 - 2026-10-30
 
 Changes since v2.1.1.
@@ -37,7 +41,7 @@ Changes since v2.1.1.
 Tagged, but never published: the release job failed on the `wcslen` link error described under 2.1.1, so no binary was attached to it. Use 2.1.1 or later.
 
 - The `statusLine` command is written as `~/.claude/bin/statusline.exe` on Windows and `~/.claude/bin/statusline` elsewhere. It holds on every PC whatever the user name, and the installers replace the old absolute path.
-- Automatic updates: at most every 6 hours, the bar looks for a newer version on GitHub, downloads it in the background, replaces its binary and shows `update` at the bottom meanwhile. Setting `auto_update` to `false` in `statusline.json` stops the check. (Updates became opt-in after this version, see Unreleased.)
+- Automatic updates: at most every 6 hours, the bar looks for a newer version on GitHub, downloads it in the background, replaces its binary and shows `update` at the bottom meanwhile. Setting `auto_update` to `false` in `statusline.json` stops the check. (Updates became opt-in after this version, see 2.2.0.)
 - The installers repair stale paths left after an account migration.
 - CI refuses a tag that does not match the version in Cargo.toml.
 - The documentation was reviewed line by line against the code.
