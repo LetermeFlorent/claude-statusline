@@ -1,17 +1,17 @@
-# Installer claude-statusline
+# Installing claude-statusline
 
-Ce guide installe la barre d'état dans Claude Code et explique comment la vérifier, la régler, la mettre à jour et la retirer, sous Windows, Linux et macOS. Le détail de l'affichage et de chaque réglage est dans le [README](README.md).
+This guide installs the status line in Claude Code, then shows how to check it, configure it, update it and remove it, on Windows, Linux and macOS. The [README](README.md) describes the display and every setting in detail.
 
-## Avant de commencer
+## Before you start
 
-Il faut Claude Code installé. Le reste dépend du système :
+You need Claude Code installed. The rest depends on the system:
 
-- Windows : rien d'autre. Le script télécharge le binaire publié pour Windows 10 ou plus récent en 64 bits (x86_64). Rust n'est utile que pour compiler soi-même avec `-Build`.
-- Linux et macOS : `install.sh` compile les sources si Rust est présent (https://rustup.rs). Sans Rust, il télécharge le binaire publié avec `curl`, pour Linux x86_64 ou arm64 et macOS sur puce Apple ou Intel.
+- Windows: nothing else. The script downloads the released binary for Windows 10 or later, x86_64 or arm64 depending on the processor. Rust is only needed to build it yourself with `-Build`.
+- Linux and macOS: `install.sh` compiles the sources when Rust is installed (https://rustup.rs). Without Rust, it downloads the released binary with `curl`, for Linux x86_64 or arm64 and for macOS on Apple silicon or Intel.
 
-La barre envoie ses couleurs en 24 bits et dessine ses carrés avec des caractères Unicode (`■`, `▪`). Windows Terminal, le terminal de VS Code, iTerm2, GNOME Terminal, Konsole, Ghostty et Zed les affichent sans réglage. Un terminal limité à 256 couleurs montre des teintes approchées ou fausses.
+The bar sends 24-bit colors and draws its squares with Unicode characters (`■`, `▪`). Windows Terminal, the VS Code terminal, iTerm2, GNOME Terminal, Konsole, Ghostty and Zed show them with no setup. A terminal limited to 256 colors shows approximate or wrong hues.
 
-## Installer sous Windows
+## Installing on Windows
 
 ```powershell
 git clone https://github.com/LetermeFlorent/claude-statusline.git
@@ -19,16 +19,16 @@ cd claude-statusline
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-Le script fait quatre choses :
+The script does four things:
 
-1. Il télécharge `statusline-windows-x86_64.exe` et `SHA256SUMS` dans la dernière version publiée, et s'arrête si l'empreinte SHA-256 du binaire manque à la liste ou en diffère. Il place ensuite le programme dans `%USERPROFILE%\.claude\bin\statusline.exe`. Un ancien programme en cours d'utilisation est d'abord renommé en `statusline.exe.old-<horodatage>`, ce qui permet le remplacement même pendant une session Claude Code, puis supprimé quand c'est possible, avec les copies `.old` laissées par une mise à jour automatique. La copie est débloquée (`Unblock-File`).
-2. Il installe `statusline.json` dans `%USERPROFILE%\.claude`, seulement s'il n'existe pas. Les autres comptes lisent ce même fichier, sauf s'ils ont le leur dans leur dossier.
-3. Il dresse la liste des comptes : `.claude`, chaque dossier `.claude-compte*` du dossier personnel, et chaque `Dir` de `.claude-accounts.json` (le registre de [claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)), sans doublon et sans les dossiers absents. Un registre illisible donne un avertissement.
-4. Pour chaque compte, il lance `statusline.exe --install` avec `CLAUDE_CONFIG_DIR` pointé sur son dossier. La commande est réécrite sous sa forme portable, `~/.claude/bin/statusline.exe` : une autre commande, comme le chemin d'un ancien PC ou d'un ancien nom d'utilisateur, est remplacée et signalée par "commande remplacee pour". Le programme répare aussi le `statusLine` du fichier global du compte, `.claude.json` dans son dossier (et `%USERPROFILE%\.claude.json` pour `.claude`), quand il désigne un programme statusline absent : une autre commande, comme `npx ccusage statusline`, n'y est jamais touchée. Un échec est signalé par "compte laisse tel quel" et n'arrête pas les autres comptes.
+1. It downloads `statusline-windows-x86_64.exe`, or `statusline-windows-arm64.exe` on an Arm processor, and `SHA256SUMS` from the latest release, and stops if the SHA-256 hash of the binary is missing from the list or differs from it. It then puts the program in `%USERPROFILE%\.claude\bin\statusline.exe`. A previous program still in use is first renamed `statusline.exe.old-<timestamp>`, which allows the swap even during a Claude Code session, then deleted when possible, along with the `.old` copies left by an automatic update. The copy is unblocked (`Unblock-File`).
+2. It installs `statusline.json` in `%USERPROFILE%\.claude`, only when that file does not exist yet. The other accounts read this same file, unless they have their own in their folder.
+3. It lists the accounts: `.claude`, every `.claude-compte*` folder in the home folder, and every `Dir` in `.claude-accounts.json` (the registry of [claude-account-menu](https://github.com/LetermeFlorent/claude-account-menu)), without duplicates or missing folders. An unreadable registry gives a warning.
+4. For each account, it runs `statusline.exe --install` with `CLAUDE_CONFIG_DIR` set to the account folder. The command is rewritten in its portable form, `~/.claude/bin/statusline.exe`: any other command, such as a path from an old PC or an old user name, is replaced, and the script says so. The program also repairs the `statusLine` of the account's global file, `.claude.json` in its folder (and `%USERPROFILE%\.claude.json` for `.claude`), when it points to a statusline program that no longer exists; any other command there, such as `npx ccusage statusline`, is left alone. A failure is reported for that account and does not stop the others.
 
-Avec `-Build`, le script compile les sources (`cargo build --release`, Rust requis) au lieu de télécharger le binaire publié. C'est aussi le recours quand le téléchargement échoue, ou quand la version publiée n'a pas de `SHA256SUMS`.
+With `-Build`, the script skips the download and compiles the sources (`cargo build --release`, Rust required). This is also the way out when the download fails, or when the release has no `SHA256SUMS`.
 
-## Installer sous Linux ou macOS
+## Installing on Linux or macOS
 
 ```sh
 git clone https://github.com/LetermeFlorent/claude-statusline.git
@@ -36,85 +36,85 @@ cd claude-statusline
 sh install.sh
 ```
 
-Le programme va dans `~/.claude/bin/statusline`. Si `cargo` est présent, le script compile les sources dans le dossier `target` du dépôt. Si `cargo` manque, ou si la compilation échoue (le script affiche alors "compilation impossible, passage au binaire publie"), il télécharge le binaire de la dernière version publiée qui correspond à `uname`, avec la liste `SHA256SUMS` de la même version, et s'arrête si l'empreinte SHA-256 du binaire manque à la liste ou en diffère. Sur un autre système ou une autre architecture, il s'arrête avec un message qui renvoie vers Rust.
+The program goes to `~/.claude/bin/statusline`. When `cargo` is available, the script compiles the sources in the `target` folder of the repository. When `cargo` is missing, or the build fails (the script then says so), it downloads the binary of the latest release that matches `uname`, along with the `SHA256SUMS` list of the same release, and stops if the SHA-256 hash of the binary is missing from the list or differs from it. On any other system or architecture it stops with a message pointing to Rust.
 
-Le binaire est d'abord écrit en `statusline.new`, puis renommé, pour qu'une barre en cours d'exécution garde l'ancien fichier jusqu'à la fin. La suite est la même que sous Windows : `statusline.json` installé s'il manque, puis `--install` pour `.claude`, chaque `.claude-compte*` et chaque `Dir` du registre (les chemins périmés y sont réparés de la même façon, `~/.claude.json` compris). Le registre est lu par `grep` et `sed`, sans analyseur JSON : il doit garder le format écrit par claude-account-menu.
+The binary is first written as `statusline.new`, then renamed, so that a bar already running keeps the old file until it exits. The rest matches Windows: `statusline.json` installed if missing, then `--install` for `.claude`, every `.claude-compte*` and every `Dir` of the registry (stale paths are repaired the same way, `~/.claude.json` included). The registry is read with `grep` and `sed`, with no JSON parser, so it must keep the format claude-account-menu writes.
 
-## Ce que fait --install
+## What --install does
 
-`--install` modifie le `settings.json` du compte courant : celui du dossier `CLAUDE_CONFIG_DIR` s'il est défini, sinon `~/.claude/settings.json`. Les étapes sont les suivantes :
+`--install` edits the `settings.json` of the current account: the one in the `CLAUDE_CONFIG_DIR` folder when that variable is set, `~/.claude/settings.json` otherwise. It goes through these steps:
 
-- Une copie du fichier est gardée à côté, sous le nom `settings.json.bak-<horodatage>`, où l'horodatage est en secondes depuis 1970 (`-1`, `-2` sont ajoutés en cas de collision). Il n'y a pas de copie si le fichier n'existait pas.
-- Le bloc `statusLine` reçoit `"type": "command"` et `"command"`. Quand le programme est dans le dossier personnel, la commande part de `~` : `~/.claude/bin/statusline.exe` sous Windows, `~/.claude/bin/statusline` ailleurs. Elle vaut alors sur tous les PC, ce qui permet de synchroniser `settings.json` entre postes. Le chemin complet, écrit avec des `/`, est gardé quand le programme est hors du dossier personnel, quand la suite de son chemin contient une espace, ou quand `HOME` désigne un autre dossier que `USERPROFILE` sous Windows. `refreshInterval` est mis à 3 seulement s'il manque, et les autres clés du bloc sont conservées.
-- Le fichier est réécrit avec une indentation de 2 espaces et ses clés triées par ordre alphabétique. Les valeurs ne changent pas, mais la mise en forme et l'ordre des clés, oui.
-- Si aucun `statusline.json` n'est trouvé, un modèle réduit est écrit dans le dossier du compte.
+- A copy of the file is kept next to it, named `settings.json.bak-<timestamp>`, where the timestamp counts seconds since 1970 (`-1`, `-2` are added on a collision). The three newest copies are kept and older ones are deleted. There is no copy when the file did not exist.
+- The `statusLine` block gets `"type": "command"` and `"command"`. When the program sits in the home folder, the command starts with `~`: `~/.claude/bin/statusline.exe` on Windows, `~/.claude/bin/statusline` elsewhere. It then works on every PC, so `settings.json` can be synced between machines. The full path, written with `/`, is used when the program is outside the home folder, when `HOME` names a folder other than `USERPROFILE` on Windows, or when the rest of its path holds a character other than ASCII letters, digits and `_./:@%+=,-`. A full path holding such a character, a space for instance, is put in single quotes for the shell. `refreshInterval` is set to 3 only when it is missing, and the other keys of the block are kept.
+- The file is written back with a 2-space indent. Keys keep their order and values keep their exact text; a new `statusLine` block goes at the end.
+- When no `statusline.json` is found, a short template is written in the account folder.
 
-Un `settings.json` illisible (JSON invalide, commentaires, fichier vide) n'est jamais touché : la commande affiche "reglages illisibles, rien n'est modifie" et sort avec le code 1. Chaque nouvelle installation laisse une copie `.bak-` de plus, sans jamais purger les anciennes.
+An unreadable `settings.json` (invalid JSON, comments, empty file) is never touched: the command says the settings cannot be read, changes nothing and exits with code 1.
 
-## Vérifier
+## Checking
 
-Fermer puis relancer Claude Code : la barre s'affiche sous le prompt. Pour essayer le programme seul, sans Claude Code :
+Close and restart Claude Code: the bar shows under the prompt. To try the program alone, without Claude Code:
 
 ```sh
 ~/.claude/bin/statusline --demo
 ```
 
-Sous Windows, `& "$env:USERPROFILE\.claude\bin\statusline.exe" --demo`. Deux lignes de barres doivent s'afficher. Si rien n'apparaît dans Claude Code alors que ce test fonctionne, ouvrir le `settings.json` du compte et vérifier la présence du bloc suivant (`~/.claude/bin/statusline` hors Windows) :
+On Windows, `& "$env:USERPROFILE\.claude\bin\statusline.exe" --demo`. Two lines of bars should appear. If nothing shows in Claude Code while this test works, open the `settings.json` of the account and check that it holds this block (`~/.claude/bin/statusline` outside Windows):
 
 ```json
 "statusLine": {
+  "type": "command",
   "command": "~/.claude/bin/statusline.exe",
-  "refreshInterval": 3,
-  "type": "command"
+  "refreshInterval": 3
 }
 ```
 
-`--version` affiche la version installée, `--theme` le fond détecté.
+`--version` prints the installed version, and `--theme` the detected background.
 
-## Régler l'apparence
+## Configuring the look
 
-Tout se règle dans `~/.claude/statusline.json`, relu à chaque rafraîchissement, sans relancer Claude Code. Les couleurs suivent seules le fond du terminal, et `statusline --theme` affiche le fond détecté (`light` ou `dark`). Si la détection se trompe, mettre `terminal_background` à `light` ou `dark` dans le fichier, ou définir la variable `STATUSLINE_BG`.
+Everything is set in `~/.claude/statusline.json`, read again on every refresh, with no need to restart Claude Code. Colors follow the terminal background on their own, and `statusline --theme` prints the detected background (`light` or `dark`). If detection gets it wrong, set `terminal_background` to `light` or `dark` in the file, or set the `STATUSLINE_BG` variable.
 
-Les réglages courants sont les suivants :
+These are the settings most often changed:
 
-- `bar_width` change le nombre de carrés (1 à 40) ;
-- `segments` active ou masque `ctx`, `5h`, `7d` et `model` ;
-- `gradient` règle la force de l'éclaircissement des barres 5 h et 7 j, `system.gradient` celle de la seconde ligne ;
-- `thresholds` et `palettes` changent les seuils et les teintes des quotas ;
-- dans le bloc `system`, `metrics` choisit les métriques et leur ordre (`ram`, `io`, `cpu`), `"enabled": false` supprime la seconde ligne, et `disk_path` choisit le disque suivi sous Windows et Linux.
+- `bar_width` changes the number of squares (1 to 40);
+- `segments` shows or hides `ctx`, `5h`, `7d` and `model`;
+- `gradient` sets how strongly the 5h and 7d bars lighten, and `system.gradient` does the same for the second line;
+- `thresholds` and `palettes` change the thresholds and hues of the quotas;
+- in the `system` block, `metrics` picks the metrics and their order (`ram`, `io`, `cpu`), `"enabled": false` removes the second line, and `disk_path` picks the disk to watch on Windows and Linux.
 
-Une liste `metrics` vide revient aux trois métriques : pour tout masquer, il faut `"enabled": false`. Pour utiliser un autre fichier de réglages, définir `STATUSLINE_CONFIG` avec son chemin. La liste complète des clés, avec leurs valeurs par défaut, est dans le README.
+An empty `metrics` list falls back to the three metrics: to hide them all, use `"enabled": false`. To use another settings file, set `STATUSLINE_CONFIG` to its path. The README lists every key with its default value.
 
-## Mettre à jour
+## Updating
 
-La mise à jour automatique est coupée par défaut. Avec `"auto_update": true` dans `statusline.json`, la barre cherche au plus toutes les 6 heures une version plus récente sur GitHub, l'installe en arrière-plan et affiche `update` le temps du remplacement, sans que Claude Code ait à redémarrer. Le détail est dans la section "Mise à jour automatique" du README.
+Automatic updates are off by default. With `"auto_update": true` in `statusline.json`, the bar looks for a newer release on GitHub at most every 6 hours, installs it in the background and shows `update` during the swap, with no need to restart Claude Code. The "Automatic updates" section of the README has the details.
 
-`statusline --update` lance la même mise à jour à la main et affiche son résultat : "deja a jour", "mise a jour : 2.1.0 -> v2.2.0", ou la raison d'un échec.
+`statusline --update` runs the same update by hand and prints the outcome: already up to date, the version change (for example `2.1.0 -> v2.2.0`), or the reason it failed.
 
-On peut aussi faire `git pull` dans le dossier cloné et relancer le script d'installation. Le programme est remplacé, même si une session Claude Code tourne. `statusline.json` et le reste des réglages sont conservés, et chaque `settings.json` reçoit une nouvelle copie `.bak-`.
+You can also run `git pull` in the cloned folder and run the install script again. The program is replaced even while a Claude Code session is running. `statusline.json` and the other settings are kept, and each `settings.json` gets a new `.bak-` copy.
 
-## Désinstaller
+## Uninstalling
 
-`statusline --uninstall` retire le bloc `statusLine` du compte courant, après une copie `settings.json.bak-<horodatage>`, et réécrit le fichier avec ses clés triées. Pour un autre compte, définir `CLAUDE_CONFIG_DIR` avec son dossier avant de lancer la commande. Si le compte n'a pas de bloc `statusLine`, la commande l'indique et ne touche à rien.
+`statusline --uninstall` removes the `statusLine` block of the current account, after a `settings.json.bak-<timestamp>` copy, and writes the file back the same way as `--install`. For another account, set `CLAUDE_CONFIG_DIR` to its folder before running the command. When the account has no `statusLine` block, the command says so and changes nothing.
 
-Supprimer ensuite le programme, `~/.claude/bin/statusline` (`statusline.exe` sous Windows, avec les éventuels `statusline.exe.old-*`). Si on n'en veut plus, supprimer aussi `~/.claude/statusline.json`, les éventuels `statusline.json` des dossiers de comptes, les copies `settings.json.bak-*`, et le dossier d'état :
+Then delete the program, `~/.claude/bin/statusline` (`statusline.exe` on Windows, with any `statusline.exe.old-*`). If you no longer want them, also delete `~/.claude/statusline.json`, any `statusline.json` in the account folders, the `settings.json.bak-*` copies, and the state folder:
 
-- Windows : `%LOCALAPPDATA%\claude-statusline` ;
-- macOS : `~/Library/Application Support/claude-statusline` ;
-- Linux : `~/.local/state/claude-statusline`, ou `$XDG_STATE_HOME/claude-statusline`.
+- Windows: `%LOCALAPPDATA%\claude-statusline`;
+- macOS: `~/Library/Application Support/claude-statusline`;
+- Linux: `~/.local/state/claude-statusline`, or `$XDG_STATE_HOME/claude-statusline`.
 
-## En cas de problème
+## Troubleshooting
 
-Si la barre a disparu après une migration vers un autre PC ou un autre nom d'utilisateur, ou après une synchronisation de `settings.json` entre postes, la commande inscrite dans `statusLine` désigne sans doute un chemin de l'autre poste (`C:/Users/<ancien>/...`), écrit par une version antérieure à la 2.1.0, et Claude Code ne trouve plus le programme. Faire `git pull` dans le dossier cloné puis relancer le script d'installation : il repose le programme, inscrit la commande portable dans le `settings.json` de chaque compte et répare le `statusLine` global de `~/.claude.json` quand il désigne un programme statusline absent.
+If the bar disappeared after a move to another PC or another user name, or after syncing `settings.json` between machines, the command in `statusLine` most likely points to a path on the other machine (`C:/Users/<old>/...`), written by a version older than 2.1.0, and Claude Code can no longer find the program. Run `git pull` in the cloned folder, then the install script again: it puts the program back, writes the portable command into the `settings.json` of each account and repairs the global `statusLine` in `~/.claude.json` when it points to a statusline program that no longer exists.
 
-Si `update` reste affiché, la mise à jour est en cours ou s'est arrêtée en route : le marqueur est ignoré au bout de 15 minutes. `statusline --update` lancé à la main montre où elle échoue. Le réseau doit laisser passer `api.github.com` et `github.com`.
+If `update` stays on screen, an update is running or stopped halfway: the marker is ignored after 15 minutes. `statusline --update` run by hand shows where it fails. The network must let `api.github.com` and `github.com` through.
 
-Si Windows bloque le programme, lancer `Unblock-File "$env:USERPROFILE\.claude\bin\statusline.exe"`. L'installeur le fait déjà, mais le déblocage peut échouer. Le programme n'est pas signé numériquement, ce qui peut déclencher un avertissement de SmartScreen ou de l'antivirus.
+If Windows blocks the program, run `Unblock-File "$env:USERPROFILE\.claude\bin\statusline.exe"`. The installer already does it, but unblocking can fail. The program has no digital signature, which can trigger a warning from SmartScreen or the antivirus.
 
-Si les segments `5h` et `7d` n'apparaissent pas, Claude Code n'a pas encore transmis les quotas pour cette session, et la barre n'a pas de valeur de moins de 10 minutes pour ce compte : ils apparaissent après la première réponse. Avec claude-account-menu, le hook `SessionStart` les remplit dès le lancement. Si le 5 h affiche `--%`, le compte n'a pas de fenêtre de 5 heures ouverte, c'est-à-dire pas encore de message depuis la dernière remise à zéro.
+If the `5h` and `7d` segments do not appear, Claude Code has not sent the quotas for this session yet, and the bar has no value less than 10 minutes old for this account: they appear after the first response. With claude-account-menu, the `SessionStart` hook fills them in at startup. If the 5-hour quota shows `--%`, the account has no 5-hour window open, meaning no message since the last reset.
 
-Le disque et le processeur affichent `--%` au premier rafraîchissement, le temps d'avoir deux relevés à comparer. Ils restent à `--%` sur un système autre que Windows, Linux et macOS.
+Disk and CPU show `--%` on the first refresh, until there are two readings to compare. They stay at `--%` on systems other than Windows, Linux and macOS.
 
-Si les couleurs sont fausses ou les carrés remplacés par des points d'interrogation, le terminal ne gère pas les couleurs 24 bits ou la police n'a pas les caractères `■` et `▪`. Ces caractères se changent dans `glyphs`.
+If the colors are wrong or the squares turn into question marks, the terminal does not handle 24-bit colors or the font lacks the `■` and `▪` characters. These characters can be changed in `glyphs`.
 
-Un changement de seuil d'auto-compactage peut mettre 30 secondes à se voir dans la barre.
+A change of auto-compact threshold can take 30 seconds to show in the bar.

@@ -12,6 +12,8 @@ const CHECK_EVERY: f64 = 21600.0;
 pub fn asset() -> Option<&'static str> {
     if cfg!(all(windows, target_arch = "x86_64")) {
         Some("statusline-windows-x86_64.exe")
+    } else if cfg!(all(windows, target_arch = "aarch64")) {
+        Some("statusline-windows-arm64.exe")
     } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         Some("statusline-linux-x86_64")
     } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
