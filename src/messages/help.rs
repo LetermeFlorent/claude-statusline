@@ -9,9 +9,11 @@ bar on standard output.
   --install     adds the statusLine entry to settings.json in the account
                 folder, $CLAUDE_CONFIG_DIR or else ~/.claude
   --uninstall   removes it
-  --demo        prints a sample bar, without Claude Code
+  --demo [low|warn|hot]
+                prints a sample bar, without Claude Code, at that level
   --bench [n]   times the work alone, process start excluded
   --theme       background detected for the terminal: light or dark
+  --language    language of the messages: fr or en
   --check       lists the mistakes in the settings file, with their line
   --update      installs the latest release published on GitHub
   --version     version number
@@ -28,9 +30,11 @@ barre sur la sortie standard.
   --install     pose l'entrée statusLine dans le settings.json du dossier
                 du compte, $CLAUDE_CONFIG_DIR ou sinon ~/.claude
   --uninstall   la retire
-  --demo        affiche un rendu d'exemple, sans Claude Code
+  --demo [low|warn|hot]
+                affiche un rendu d'exemple, sans Claude Code, à ce niveau
   --bench [n]   coût du travail seul, lancement du processus exclu
   --theme       fond détecté pour le terminal : light ou dark
+  --language    langue des messages : fr ou en
   --check       liste les erreurs du fichier de réglages, avec leur ligne
   --update      installe la dernière version publiée sur GitHub
   --version     numéro de version

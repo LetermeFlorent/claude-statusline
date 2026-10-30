@@ -171,6 +171,7 @@ The program is installed in `~/.claude/bin`, as `statusline.exe` on Windows and 
 | `--demo [low\|warn\|hot]` | sample rendering without Claude Code (Opus 5, effort `max`, context 340k of 1M, 5h at 36%, 7d at 61%), with the real settings and theme. The disk and the cpu show sample values (12% and 18%) and the memory is the real one. `warn` and `hot` move the context, memory, disk and cpu bars across the warning and hot thresholds (disk 76% and 93%, cpu 78% and 96%, context 74% and 93%), to see their colors. The state file is left alone. |
 | `--bench [n]` | renders the sample `n` times (200 by default) and prints the average time per rendering, then its breakdown: state, config, session, theme, compact, system, render, write. The first rendering starts from an empty state; each one then reads the state the previous one wrote, and writes it back only when it changed. Process startup is not counted. |
 | `--theme` | prints the background in use, `light` or `dark`, and on a second line where that choice came from |
+| `--language` | prints the language of the messages, `fr` or `en`; the install scripts ask for it |
 | `--check` | lists the mistakes in `statusline.json` with their line and column, and exits with code 1 when there is one (see [Settings](#settings)) |
 | `--install` | writes the `statusLine` block into the `settings.json` of the current account (see [INSTALL.md](INSTALL.md)) |
 | `--uninstall` | removes that block |
@@ -180,7 +181,9 @@ The program is installed in `~/.claude/bin`, as `statusline.exe` on Windows and 
 
 Only the first argument is read, along with the count after `--bench`. The exit code is 0 on success, 1 when `--install`, `--uninstall` or `--update` fails, and 2 for a usage error: an unknown argument, printed back with the help, or a `--bench` count that is not a whole number above 0.
 
-The help and the messages follow the system language: French on a system set to French, English on any other. On Windows that is the display language of the user account. On Linux and macOS the first of `LC_ALL`, `LC_MESSAGES` and `LANG` that holds a value decides, and French means a language code of `fr`, as in `fr_FR.UTF-8` or `fr_CA`. The two install scripts follow the same rule.
+The help and the messages follow the system language: French on a system set to French, English on any other. `STATUSLINE_LANG` comes first, with `fr` or `en` in any case. A value that is neither is ignored. Otherwise, on Windows, the display language of the user account decides. On Linux and macOS the first of `LC_ALL`, `LC_MESSAGES` and `LANG` that holds a value decides, and French means a language code of `fr`, as in `fr_FR.UTF-8` or `fr_CA`; a locale of `C` or `POSIX` means English. On Linux, `LANGUAGE` is read before them and its first entry in French or English wins, so `de:fr` gives French. On macOS, when none of the three holds a value, the first language of the system preferences (`AppleLanguages`) that is French or English decides. The two install scripts follow the same rule, in the shell for the first messages. Once the program is copied they ask it for its language, which also covers `AppleLanguages` on macOS, then pass the answer to `--install` through `STATUSLINE_LANG`. The bar follows it too, for its units only: `7j`, `2j07h`, `1h20min`, `11,3/15,3Go`, `Md` for billions of tokens and `maj` for the update mark in French, `7d`, `2d07h`, `1h20m`, `11.3/15.3G`, `B` and `update` in English. The labels `ctx`, `ram`, `cpu`, `5h` and the percentages are the same in both.
+
+All text in and out is UTF-8: the session JSON is read as UTF-8, and anything the program writes to a pipe or a file is UTF-8, on every system. On a Windows console the text goes out through the wide-character console call, so the code page set with `chcp` changes nothing. An invalid byte in the input becomes U+FFFD instead of stopping the bar.
 
 ## Automatic updates
 
@@ -212,6 +215,7 @@ The program reads the following variables, all of them optional:
 |---|---|
 | `STATUSLINE_BG` | forces the background: `light`, `clair`, `dark` or `sombre` |
 | `STATUSLINE_CONFIG` | path of the settings file |
+| `STATUSLINE_LANG` | forces the language of the help and the messages: `fr` or `en` |
 | `CLAUDE_CONFIG_DIR` | account folder: settings, auto-compact threshold, quota keys, target of `--install` |
 | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | auto-compact threshold |
 | `COLORFGBG` | terminal colors, for the background |
@@ -240,7 +244,7 @@ The tests (`cargo test`) run as they are on Linux and macOS. On Windows they nee
 
 ## CI and releases
 
-CI runs on every push to `main`, on every `v*` tag and on every pull request. On each of the six targets it checks the formatting, runs `clippy` and the unit tests, builds in release mode, then tries the binary: version, theme, sample rendering, reading a session JSON, even one holding an invalid UTF-8 byte, benchmark, install then uninstall, install from `~/.claude/bin` with its `~` command, plain text under `NO_COLOR` and `TERM=dumb`, and refusal of an unknown argument or of a bad `--bench` count. On Linux it also reads the memory shown inside a systemd scope capped at 512 MB. It then runs the installer twice in an empty home folder, `install.sh` on Linux and macOS and `install.ps1 -Build` on Windows, and compares each `settings.json` with the expected text. It also checks the ASLR and NX flags of both Windows binaries and the CET flag of the x86_64 one, and that the Linux x86_64 binary is position-independent.
+CI runs on every push to `main`, on every `v*` tag and on every pull request. On each of the six targets it checks the formatting, runs `clippy` and the unit tests, builds in release mode, then tries the binary: version, theme, sample rendering, reading a session JSON, even one holding an invalid UTF-8 byte, benchmark, install then uninstall, install from `~/.claude/bin` with its `~` command, plain text under `NO_COLOR` and `TERM=dumb`, and refusal of an unknown argument or of a bad `--bench` count. On Linux it also reads the memory shown inside a systemd scope capped at 512 MB. It runs `--help` and `--demo` in French and in English through `STATUSLINE_LANG`, and through `LANG` on Linux and macOS, and checks that the help text is in the right language. It then runs the installer twice in an empty home folder, `install.sh` on Linux and macOS and `install.ps1 -Build` on Windows, and compares each `settings.json` with the expected text. It also checks the ASLR and NX flags of both Windows binaries and the CET flag of the x86_64 one, and that the Linux x86_64 binary is position-independent.
 
 A `v*` tag publishes a release with the binaries below. The tag must match the version in `Cargo.toml` (`v2.1.0` for `2.1.0`), or CI fails before building. The automatic update compares that version with its own.
 

@@ -1,7 +1,14 @@
 ﻿param([switch]$Build)
 $ErrorActionPreference = "Stop"
 
-$french = (Get-UICulture).TwoLetterISOLanguageName -eq "fr"
+function Get-LanguageCode([string]$tag) {
+  $code = ($tag.Trim() -split "[_.@-]")[0].ToLowerInvariant()
+  if ($code -eq "fr" -or $code -eq "en") { return $code }
+  return $null
+}
+$language = Get-LanguageCode "$env:STATUSLINE_LANG"
+if (-not $language) { $language = Get-LanguageCode (Get-UICulture).TwoLetterISOLanguageName }
+$french = $language -eq "fr"
 $texts = @{
   downloading = "downloading {0}", "téléchargement de {0}"
   checksum = "SHA-256 hash missing from SHA256SUMS or different.", "empreinte SHA-256 absente de SHA256SUMS ou différente."
@@ -26,6 +33,12 @@ New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 $exe = Join-Path $binDir "statusline.exe"
 $releaseUrl = "https://github.com/LetermeFlorent/claude-statusline/releases/latest/download/"
 $asset = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "statusline-windows-arm64.exe" } else { "statusline-windows-x86_64.exe" }
+function Get-BinaryLanguage([string]$file) {
+  $saved = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try { $answer = & $file --language 2>$null | Select-Object -First 1 } catch { $answer = $null } finally { $ErrorActionPreference = $saved }
+  return Get-LanguageCode "$answer"
+}
 function Remove-OldCopies { Get-ChildItem -LiteralPath $binDir -Filter "statusline.exe.old*" | Remove-Item -Force -ErrorAction SilentlyContinue }
 function Get-StatusCommand([string]$file) {
   if (-not (Test-Path -LiteralPath $file)) { return $null }
@@ -72,6 +85,8 @@ if (Test-Path -LiteralPath $exe) {
 if ($Build) { Copy-Item -LiteralPath $src -Destination $exe } else { Move-Item -LiteralPath $src -Destination $exe }
 Unblock-File -LiteralPath $exe -ErrorAction SilentlyContinue
 Remove-OldCopies
+$asked = Get-BinaryLanguage $exe
+if ($asked) { $language = $asked; $french = $language -eq "fr" }
 Write-Host (Get-Text copied $exe)
 
 $conf = Join-Path $main "statusline.json"
@@ -94,6 +109,8 @@ foreach ($d in $found) {
 }
 
 $prev = $env:CLAUDE_CONFIG_DIR
+$prevLanguage = $env:STATUSLINE_LANG
+$env:STATUSLINE_LANG = $language
 try {
   foreach ($d in $dirs.Values) {
     $sfile = Join-Path $d "settings.json"
@@ -104,5 +121,5 @@ try {
     $new = Get-StatusCommand $sfile
     if ($old -and $old -ne $new) { Write-Host (Get-Text command_replaced $d $old) }
   }
-} finally { $env:CLAUDE_CONFIG_DIR = $prev }
+} finally { $env:CLAUDE_CONFIG_DIR = $prev; $env:STATUSLINE_LANG = $prevLanguage }
 Write-Host (Get-Text done)
