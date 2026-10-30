@@ -155,17 +155,63 @@ fn shown(raw: &Value, k: &str) -> bool {
     raw.at(&["segments", k]).and_then(|v| v.bool()) != Some(false)
 }
 
-fn palette(raw: &Value, path: &[&str], ok: Rgb, warn: Rgb, hot: Rgb) -> Palette {
+struct PaletteSpec {
+    path: &'static [&'static str],
+    ok: Rgb,
+    warn: Rgb,
+    hot: Rgb,
+}
+
+const PAL_5H: PaletteSpec = PaletteSpec {
+    path: &["palettes", "5h"],
+    ok: [120.0, 110.0, 200.0],
+    warn: [170.0, 90.0, 175.0],
+    hot: [200.0, 60.0, 95.0],
+};
+const PAL_7D: PaletteSpec = PaletteSpec {
+    path: &["palettes", "7d"],
+    ok: [83.0, 137.0, 119.0],
+    warn: [184.0, 129.0, 67.0],
+    hot: [185.0, 85.0, 85.0],
+};
+const PAL_RAM: PaletteSpec = PaletteSpec {
+    path: &["system", "colors", "ram"],
+    ok: [30.0, 120.0, 125.0],
+    warn: WARN_SYS,
+    hot: HOT_SYS,
+};
+const PAL_DSK: PaletteSpec = PaletteSpec {
+    path: &["system", "colors", "dsk"],
+    ok: [105.0, 120.0, 85.0],
+    warn: WARN_SYS,
+    hot: HOT_SYS,
+};
+const PAL_CPU: PaletteSpec = PaletteSpec {
+    path: &["system", "colors", "cpu"],
+    ok: [79.0, 127.0, 196.0],
+    warn: WARN_SYS,
+    hot: HOT_SYS,
+};
+
+fn palette(raw: &Value, spec: &PaletteSpec) -> Palette {
     let get = |k: &str, def: Rgb| {
-        let mut p: Vec<&str> = path.to_vec();
+        let mut p: Vec<&str> = spec.path.to_vec();
         p.push(k);
         hex(raw.at(&p)).unwrap_or(def)
     };
     Palette {
-        ok: get("ok", ok),
-        warn: get("warn", warn),
-        hot: get("hot", hot),
+        ok: get("ok", spec.ok),
+        warn: get("warn", spec.warn),
+        hot: get("hot", spec.hot),
     }
+}
+
+fn threshold(raw: &Value, key: &str, def: f64) -> f64 {
+    number(raw.at(&["thresholds", key]), def)
+}
+
+fn gradient(raw: &Value, key: &str, def: f64) -> f64 {
+    num::clamp(number(raw.at(&["gradient", key]), def), 0.0, 1.0)
 }
 
 impl Config {
@@ -211,50 +257,20 @@ impl Config {
             seg_spend: shown(&raw, "spend"),
             cold_cache_marker: raw.get("cold_cache_marker").and_then(Value::bool) == Some(true),
             seg_model: shown(&raw, "model"),
-            grad_5h: num::clamp(number(raw.at(&["gradient", "5h"]), 0.55), 0.0, 1.0),
-            grad_7d: num::clamp(number(raw.at(&["gradient", "7d"]), 0.3), 0.0, 1.0),
+            grad_5h: gradient(&raw, "5h", 0.55),
+            grad_7d: gradient(&raw, "7d", 0.3),
             grad_sys: num::clamp(number(sysget("gradient"), 0.45), 0.0, 1.0),
-            ctx_warn: number(raw.at(&["thresholds", "ctx_warn"]), 70.0),
-            ctx_hot: number(raw.at(&["thresholds", "ctx_hot"]), 90.0),
-            quota_warn: number(raw.at(&["thresholds", "quota_warn"]), 30.0),
-            quota_hot: number(raw.at(&["thresholds", "quota_hot"]), 70.0),
-            sys_warn: number(raw.at(&["thresholds", "system_warn"]), 70.0),
-            sys_hot: number(raw.at(&["thresholds", "system_hot"]), 85.0),
-            pal_5h: palette(
-                &raw,
-                &["palettes", "5h"],
-                [120.0, 110.0, 200.0],
-                [170.0, 90.0, 175.0],
-                [200.0, 60.0, 95.0],
-            ),
-            pal_7d: palette(
-                &raw,
-                &["palettes", "7d"],
-                [83.0, 137.0, 119.0],
-                [184.0, 129.0, 67.0],
-                [185.0, 85.0, 85.0],
-            ),
-            pal_ram: palette(
-                &raw,
-                &["system", "colors", "ram"],
-                [30.0, 120.0, 125.0],
-                WARN_SYS,
-                HOT_SYS,
-            ),
-            pal_dsk: palette(
-                &raw,
-                &["system", "colors", "dsk"],
-                [105.0, 120.0, 85.0],
-                WARN_SYS,
-                HOT_SYS,
-            ),
-            pal_cpu: palette(
-                &raw,
-                &["system", "colors", "cpu"],
-                [79.0, 127.0, 196.0],
-                WARN_SYS,
-                HOT_SYS,
-            ),
+            ctx_warn: threshold(&raw, "ctx_warn", 70.0),
+            ctx_hot: threshold(&raw, "ctx_hot", 90.0),
+            quota_warn: threshold(&raw, "quota_warn", 30.0),
+            quota_hot: threshold(&raw, "quota_hot", 70.0),
+            sys_warn: threshold(&raw, "system_warn", 70.0),
+            sys_hot: threshold(&raw, "system_hot", 85.0),
+            pal_5h: palette(&raw, &PAL_5H),
+            pal_7d: palette(&raw, &PAL_7D),
+            pal_ram: palette(&raw, &PAL_RAM),
+            pal_dsk: palette(&raw, &PAL_DSK),
+            pal_cpu: palette(&raw, &PAL_CPU),
             sys_enabled: sysget("enabled").and_then(|v| v.bool()) != Some(false),
             metrics: listed_metrics(sysget("metrics")),
             disk_path,
@@ -372,6 +388,54 @@ mod tests {
         assert!(!auto_update("{\"auto_update\": false}"));
         assert!(!auto_update("{\"auto_update\": \"yes\"}"));
         assert!(auto_update("{\"auto_update\": true}"));
+    }
+
+    const EVERY_KEY: &str = r##"{
+        "gradient": {"5h": 0.1, "7d": 2, "x": 1},
+        "thresholds": {"ctx_warn": 1, "ctx_hot": 2, "quota_warn": 3,
+            "quota_hot": 4, "system_warn": 5, "system_hot": 6},
+        "palettes": {"5h": {"ok": "#010203", "warn": "#040506", "hot": "#070809"},
+            "7d": {"ok": "#0a0b0c", "warn": "#0d0e0f", "hot": "#101112"}},
+        "segments": {"ctx": false, "5h": false, "7d": false, "model": false},
+        "system": {"gradient": -1, "disk_path": "D:\\", "enabled": false,
+            "colors": {"ram": {"ok": "#111111"}, "dsk": {"warn": "#222222"},
+                "cpu": {"hot": "#333333"}}}
+    }"##;
+
+    #[test]
+    fn every_key_reaches_its_field() {
+        let c = Config::parse(Some(EVERY_KEY));
+        assert_eq!([c.grad_5h, c.grad_7d, c.grad_sys], [0.1, 1.0, 0.0]);
+        assert_eq!([c.ctx_warn, c.ctx_hot], [1.0, 2.0]);
+        assert_eq!([c.quota_warn, c.quota_hot], [3.0, 4.0]);
+        assert_eq!([c.sys_warn, c.sys_hot], [5.0, 6.0]);
+        assert_eq!(c.pal_5h.ok, [1.0, 2.0, 3.0]);
+        assert_eq!(c.pal_5h.hot, [7.0, 8.0, 9.0]);
+        assert_eq!(c.pal_7d.warn, [13.0, 14.0, 15.0]);
+        assert_eq!(c.pal_7d.hot, [16.0, 17.0, 18.0]);
+        assert_eq!(c.pal_ram.ok, [17.0, 17.0, 17.0]);
+        assert_eq!(c.pal_dsk.warn, [34.0, 34.0, 34.0]);
+        assert_eq!(c.pal_cpu.hot, [51.0, 51.0, 51.0]);
+        assert_eq!(c.pal_ram.warn, WARN_SYS);
+        assert_eq!(c.disk_path, "D:\\");
+        assert!(!c.sys_enabled);
+        assert!(!c.seg_ctx && !c.seg_5h && !c.seg_7d && !c.seg_model);
+    }
+
+    #[test]
+    fn missing_keys_keep_their_defaults() {
+        let c = Config::parse(None);
+        assert_eq!([c.grad_5h, c.grad_7d, c.grad_sys], [0.55, 0.3, 0.45]);
+        assert_eq!([c.ctx_warn, c.ctx_hot], [70.0, 90.0]);
+        assert_eq!([c.quota_warn, c.quota_hot], [30.0, 70.0]);
+        assert_eq!([c.sys_warn, c.sys_hot], [70.0, 85.0]);
+        assert_eq!(c.pal_5h.warn, [170.0, 90.0, 175.0]);
+        assert_eq!(c.pal_7d.ok, [83.0, 137.0, 119.0]);
+        assert_eq!(c.pal_ram.ok, [30.0, 120.0, 125.0]);
+        assert_eq!(c.pal_dsk.ok, [105.0, 120.0, 85.0]);
+        assert_eq!(c.pal_cpu.hot, HOT_SYS);
+        assert_eq!(c.disk_path, DEFAULT_DISK);
+        assert!(c.sys_enabled && c.seg_ctx && c.seg_model);
     }
 
     #[test]

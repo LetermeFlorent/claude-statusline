@@ -94,6 +94,11 @@ pub fn deepest_mount<T>(mounts: impl Iterator<Item = (String, T)>, path: &str) -
         .map(|(_, mount)| mount)
 }
 
+pub fn fail(message: &str, code: i32) -> i32 {
+    err(message);
+    code
+}
+
 pub fn claude_dir() -> Option<String> {
     match env("CLAUDE_CONFIG_DIR") {
         Some(d) if !d.trim().is_empty() => Some(d),
@@ -109,6 +114,11 @@ mod tests {
     use std::os::unix::fs::symlink;
     #[cfg(windows)]
     use std::os::windows::fs::symlink_file as symlink;
+
+    #[test]
+    fn fail_gives_back_the_exit_code_it_was_given() {
+        assert_eq!(fail("", 7), 7);
+    }
 
     #[test]
     fn files_over_one_mebibyte_are_refused() {
