@@ -87,6 +87,18 @@ jobs:
             grep -q 'Type:.*DYN' <<< "$(readelf -h "$b")"
           fi
 
+      - name: rebuild check
+        run: |
+          copy="$RUNNER_TEMP/rebuild"
+          mkdir "$copy"
+          git archive HEAD | (cd "$copy" && tar -xf -)
+          ext=""
+          [ "$RUNNER_OS" = Windows ] && ext=.exe
+          (cd "$copy" && cargo build --release --locked --target ${{ matrix.target }})
+          rebuilt="$copy/target/${{ matrix.target }}/release/statusline$ext"
+          shipped="dist/${{ matrix.asset }}"
+          cmp "$rebuilt" "$shipped" || { ls -l "$rebuilt" "$shipped"; cmp -l "$rebuilt" "$shipped" | head -n 40; exit 1; }
+
       - name: essai du binaire
         run: |
           b="dist/${{ matrix.asset }}"
@@ -128,9 +140,8 @@ jobs:
           ext=""
           if [ "$RUNNER_OS" = Windows ]; then
             ext=.exe
-            cp "dist/${{ matrix.asset }}" bin/statusline.exe
             export USERPROFILE="$(cygpath -w "$root")" LOCALAPPDATA="$(cygpath -w "$root/local")"
-            run_installer() { powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1; }
+            run_installer() { powershell -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 -Build; }
           else
             export XDG_STATE_HOME="$root/state"
             run_installer() { sh install.sh; }
