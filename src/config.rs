@@ -1,5 +1,6 @@
-use crate::json::{self, Value};
+use crate::json::{self, Syntax, Value};
 use crate::num;
+use crate::render::printable;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -21,8 +22,7 @@ pub struct Palette {
 
 pub struct Config {
     raw: Value,
-    // Some(true) : clair force, Some(false) : sombre force, None : detection
-    pub background: Option<bool>,
+    pub light_override: Option<bool>,
     pub width: usize,
     pub bold: bool,
     pub filled: String,
@@ -68,7 +68,6 @@ pub const DEFAULT_DISK: &str = "C:\\";
 #[cfg(not(windows))]
 pub const DEFAULT_DISK: &str = "/";
 
-// light/clair ou dark/sombre, casse ignoree
 pub fn background_word(s: &str) -> Option<bool> {
     let w = s.trim().to_lowercase();
     match w.as_str() {
@@ -81,17 +80,21 @@ pub fn background_word(s: &str) -> Option<bool> {
 pub fn hex(v: Option<&Value>) -> Option<Rgb> {
     let s = v?.str()?.trim();
     let s = s.strip_prefix('#').unwrap_or(s);
-    let d: Vec<u32> = s
+    let digits: Vec<u32> = s
         .chars()
         .map(|c| c.to_digit(16))
         .collect::<Option<Vec<u32>>>()?;
-    match d.len() {
+    match digits.len() {
         6 => Some([
-            (d[0] * 16 + d[1]) as f64,
-            (d[2] * 16 + d[3]) as f64,
-            (d[4] * 16 + d[5]) as f64,
+            (digits[0] * 16 + digits[1]) as f64,
+            (digits[2] * 16 + digits[3]) as f64,
+            (digits[4] * 16 + digits[5]) as f64,
         ]),
-        3 => Some([(d[0] * 17) as f64, (d[1] * 17) as f64, (d[2] * 17) as f64]),
+        3 => Some([
+            (digits[0] * 17) as f64,
+            (digits[1] * 17) as f64,
+            (digits[2] * 17) as f64,
+        ]),
         _ => None,
     }
 }
@@ -101,10 +104,7 @@ fn number(v: Option<&Value>, def: f64) -> f64 {
 }
 
 fn glyph(raw: &Value, k: &str, def: &str) -> String {
-    match raw.at(&["glyphs", k]).and_then(|v| v.str()) {
-        Some(s) => String::from(s),
-        None => String::from(def),
-    }
+    printable(raw.at(&["glyphs", k]).and_then(|v| v.str()).unwrap_or(def))
 }
 
 fn shown(raw: &Value, k: &str) -> bool {
@@ -127,10 +127,10 @@ fn palette(raw: &Value, path: &[&str], ok: Rgb, warn: Rgb, hot: Rgb) -> Palette 
 impl Config {
     pub fn parse(text: Option<&str>) -> Config {
         let raw = text
-            .and_then(|t| json::parse(t, true))
+            .and_then(|t| json::parse(t, Syntax::Commented))
             .filter(|v| v.is_obj())
             .unwrap_or(Value::Obj(Vec::new()));
-        let background = raw
+        let light_override = raw
             .get("terminal_background")
             .and_then(|v| v.str())
             .and_then(background_word);
@@ -157,13 +157,13 @@ impl Config {
             _ => String::from(DEFAULT_DISK),
         };
         Config {
-            background,
+            light_override,
             width,
             bold: raw.get("bold").and_then(|v| v.bool()) != Some(false),
             filled: glyph(&raw, "filled", "\u{25A0}"),
             empty: glyph(&raw, "empty", "\u{25A0}"),
             half: glyph(&raw, "half", "\u{25AA}"),
-            marker: String::from(
+            marker: printable(
                 raw.get("auto_compact_marker")
                     .and_then(|v| v.str())
                     .unwrap_or("\u{AA}"),
@@ -218,47 +218,46 @@ impl Config {
             sys_enabled: sysget("enabled").and_then(|v| v.bool()) != Some(false),
             metrics,
             disk_path,
-            auto_update: raw.get("auto_update").and_then(|v| v.bool()) != Some(false),
+            auto_update: raw.get("auto_update").and_then(|v| v.bool()) == Some(true),
             raw,
         }
     }
 
     pub fn colors(&self, light: bool) -> Colors {
         let t = if light { "light" } else { "dark" };
-        let c = |k: &str, def: Rgb| {
+        let color = |k: &str, def: Rgb| {
             let key = alloc::format!("{}_{}", k, t);
             hex(self.raw.at(&["colors", &key])).unwrap_or(def)
         };
         if light {
             Colors {
                 light,
-                ink: c("ink", [0.0, 0.0, 0.0]),
-                empty: c("empty", [190.0, 180.0, 165.0]),
-                ctx_from: c("ctx_from", [125.0, 185.0, 255.0]),
-                ctx_to: c("ctx_to", [40.0, 90.0, 180.0]),
+                ink: color("ink", [0.0, 0.0, 0.0]),
+                empty: color("empty", [190.0, 180.0, 165.0]),
+                ctx_from: color("ctx_from", [125.0, 185.0, 255.0]),
+                ctx_to: color("ctx_to", [40.0, 90.0, 180.0]),
             }
         } else {
             Colors {
                 light,
-                ink: c("ink", [232.0, 234.0, 237.0]),
-                empty: c("empty", [226.0, 229.0, 234.0]),
-                ctx_from: c("ctx_from", [150.0, 205.0, 255.0]),
-                ctx_to: c("ctx_to", [70.0, 130.0, 220.0]),
+                ink: color("ink", [232.0, 234.0, 237.0]),
+                empty: color("empty", [226.0, 229.0, 234.0]),
+                ctx_from: color("ctx_from", [150.0, 205.0, 255.0]),
+                ctx_to: color("ctx_to", [70.0, 130.0, 220.0]),
             }
         }
     }
 
-    // Lettre du lecteur sous Windows ("C:"), "dsk" ailleurs
     pub fn disk_label(&self) -> String {
         if cfg!(windows) {
-            let mut s: String = self
+            let mut label: String = self
                 .disk_path
                 .chars()
                 .take(1)
                 .flat_map(|c| c.to_uppercase())
                 .collect();
-            s.push(':');
-            s
+            label.push(':');
+            label
         } else {
             String::from("dsk")
         }
@@ -270,14 +269,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn valeurs() {
+    fn values_are_clamped_and_bad_ones_ignored() {
         let c = Config::parse(Some("{\"bar_width\": 2.7, \"bold\": 0, \"glyphs\": {\"empty\": \"\"}, // x\n \"system\": {\"metrics\": [\"io\", \"RAM\", \"io\"]},}"));
         assert_eq!(c.width, 2);
         assert!(c.bold);
         assert_eq!(c.empty, "");
         assert_eq!(c.metrics, [Metric::Io, Metric::Io]);
-        assert!(c.auto_update);
-        assert!(!Config::parse(Some("{\"auto_update\": false}")).auto_update);
         assert_eq!(Config::parse(Some("{\"bar_width\": 1000}")).width, 40);
         assert_eq!(Config::parse(Some("{\"bar_width\": -3}")).width, 1);
         assert_eq!(Config::parse(Some("[1]")).width, 8);
@@ -286,5 +283,26 @@ mod tests {
             Some([170.0, 187.0, 204.0])
         );
         assert_eq!(hex(Some(&Value::Str(String::from("#GG0000")))), None);
+    }
+
+    #[test]
+    fn automatic_updates_stay_off_unless_turned_on() {
+        let auto_update = |text: &str| Config::parse(Some(text)).auto_update;
+        assert!(!Config::parse(None).auto_update);
+        assert!(!auto_update("{}"));
+        assert!(!auto_update("{\"auto_update\": false}"));
+        assert!(!auto_update("{\"auto_update\": \"yes\"}"));
+        assert!(auto_update("{\"auto_update\": true}"));
+    }
+
+    #[test]
+    fn glyphs_lose_terminal_controls() {
+        let config = Config::parse(Some(
+            r#"{"glyphs": {"filled": "\u001b[5m#", "half": "\u202e+", "empty": "\u0085."}, "auto_compact_marker": "\u0007*"}"#,
+        ));
+        assert_eq!(
+            [config.filled, config.half, config.empty, config.marker],
+            ["[5m#", "+", ".", "*"]
+        );
     }
 }

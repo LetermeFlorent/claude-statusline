@@ -1,6 +1,3 @@
-// Couche systeme Windows sans bibliotheque standard : appels Win32 directs,
-// lies sans CRT pour un binaire de quelques dizaines de Ko qui demarre vite.
-
 use alloc::format;
 use alloc::string::String;
 use alloc::vec;
@@ -15,65 +12,85 @@ const INVALID: Handle = -1;
 
 #[link(name = "kernel32", kind = "raw-dylib")]
 extern "system" {
-    fn GetStdHandle(n: u32) -> Handle;
-    fn GetFileType(h: Handle) -> u32;
-    fn GetConsoleMode(h: Handle, m: *mut u32) -> i32;
-    fn SetConsoleMode(h: Handle, m: u32) -> i32;
-    fn WriteConsoleW(h: Handle, b: *const u16, n: u32, w: *mut u32, r: *mut c_void) -> i32;
-    fn ReadFile(h: Handle, b: *mut u8, n: u32, r: *mut u32, o: *mut c_void) -> i32;
-    fn WriteFile(h: Handle, b: *const u8, n: u32, w: *mut u32, o: *mut c_void) -> i32;
+    fn GetStdHandle(which: u32) -> Handle;
+    fn GetFileType(file: Handle) -> u32;
+    fn GetConsoleMode(console: Handle, mode: *mut u32) -> i32;
+    fn SetConsoleMode(console: Handle, mode: u32) -> i32;
+    fn WriteConsoleW(
+        console: Handle,
+        text: *const u16,
+        len: u32,
+        written: *mut u32,
+        reserved: *mut c_void,
+    ) -> i32;
+    fn ReadFile(
+        file: Handle,
+        buf: *mut u8,
+        len: u32,
+        read: *mut u32,
+        overlapped: *mut c_void,
+    ) -> i32;
+    fn WriteFile(
+        file: Handle,
+        buf: *const u8,
+        len: u32,
+        written: *mut u32,
+        overlapped: *mut c_void,
+    ) -> i32;
     fn CreateFileW(
         name: *const u16,
         access: u32,
         share: u32,
-        sa: *mut c_void,
-        disp: u32,
+        security: *mut c_void,
+        disposition: u32,
         flags: u32,
-        tmpl: Handle,
+        template: Handle,
     ) -> Handle;
-    fn CloseHandle(h: Handle) -> i32;
-    fn GetFileSizeEx(h: Handle, size: *mut i64) -> i32;
-    fn GetFileAttributesExW(name: *const u16, level: u32, data: *mut u32) -> i32;
+    fn CloseHandle(handle: Handle) -> i32;
+    fn GetFileSizeEx(file: Handle, size: *mut i64) -> i32;
+    fn GetFileAttributesExW(name: *const u16, level: u32, data: *mut FileAttributeData) -> i32;
     fn GetFileAttributesW(name: *const u16) -> u32;
+    fn GetFinalPathNameByHandleW(file: Handle, buf: *mut u16, size: u32, flags: u32) -> u32;
     fn MoveFileExW(from: *const u16, to: *const u16, flags: u32) -> i32;
     fn DeleteFileW(name: *const u16) -> i32;
-    fn CreateDirectoryW(name: *const u16, sa: *mut c_void) -> i32;
-    fn FindFirstFileW(pattern: *const u16, data: *mut u32) -> Handle;
-    fn FindNextFileW(h: Handle, data: *mut u32) -> i32;
-    fn FindClose(h: Handle) -> i32;
+    fn CreateDirectoryW(name: *const u16, security: *mut c_void) -> i32;
+    fn FindFirstFileW(pattern: *const u16, data: *mut FindData) -> Handle;
+    fn FindNextFileW(search: Handle, data: *mut FindData) -> i32;
+    fn FindClose(search: Handle) -> i32;
     fn GetCommandLineW() -> *const u16;
-    fn LocalFree(p: *mut c_void) -> *mut c_void;
+    fn LocalFree(memory: *mut c_void) -> *mut c_void;
     fn GetEnvironmentVariableW(name: *const u16, buf: *mut u16, size: u32) -> u32;
-    fn GetModuleFileNameW(m: Handle, buf: *mut u16, size: u32) -> u32;
+    fn GetModuleFileNameW(module: Handle, buf: *mut u16, size: u32) -> u32;
+    fn GetSystemDirectoryW(buf: *mut u16, size: u32) -> u32;
     fn GetCurrentDirectoryW(size: u32, buf: *mut u16) -> u32;
     fn GetCurrentProcessId() -> u32;
-    fn GetSystemTimePreciseAsFileTime(ft: *mut u64);
-    fn QueryPerformanceCounter(c: *mut i64) -> i32;
-    fn QueryPerformanceFrequency(f: *mut i64) -> i32;
+    fn GetSystemTimePreciseAsFileTime(time: *mut u64);
+    fn QueryPerformanceCounter(count: *mut i64) -> i32;
+    fn QueryPerformanceFrequency(frequency: *mut i64) -> i32;
     fn GetSystemTimes(idle: *mut u64, kernel: *mut u64, user: *mut u64) -> i32;
-    fn GlobalMemoryStatusEx(m: *mut u64) -> i32;
+    fn GlobalMemoryStatusEx(status: *mut MemoryStatus) -> i32;
     fn DeviceIoControl(
-        h: Handle,
+        device: Handle,
         code: u32,
-        i: *mut c_void,
-        il: u32,
-        o: *mut c_void,
-        ol: u32,
-        r: *mut u32,
-        ov: *mut c_void,
+        input: *mut c_void,
+        input_len: u32,
+        output: *mut c_void,
+        output_len: u32,
+        returned: *mut u32,
+        overlapped: *mut c_void,
     ) -> i32;
 }
 
 #[link(name = "shell32", kind = "raw-dylib")]
 extern "system" {
-    fn CommandLineToArgvW(line: *const u16, n: *mut i32) -> *mut *mut u16;
+    fn CommandLineToArgvW(line: *const u16, count: *mut i32) -> *mut *mut u16;
 }
 
 #[link(name = "advapi32", kind = "raw-dylib")]
 extern "system" {
     fn RegGetValueW(
         key: isize,
-        sub: *const u16,
+        subkey: *const u16,
         value: *const u16,
         flags: u32,
         kind: *mut u32,
@@ -84,11 +101,114 @@ extern "system" {
 
 const GENERIC_READ: u32 = 0x8000_0000;
 const GENERIC_WRITE: u32 = 0x4000_0000;
-const SHARE_ALL: u32 = 7;
+const DEVICE_ATTRIBUTES_ONLY: u32 = 0;
+const FILE_SHARE_READ: u32 = 1;
+const FILE_SHARE_WRITE: u32 = 2;
+const FILE_SHARE_DELETE: u32 = 4;
+const SHARE_ALL: u32 = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
+const SHARE_NONE: u32 = 0;
 const OPEN_EXISTING: u32 = 3;
 const CREATE_ALWAYS: u32 = 2;
 const CREATE_NEW: u32 = 1;
-const EPOCH: u64 = 116_444_736_000_000_000;
+const FILE_ATTRIBUTE_NORMAL: u32 = 0x80;
+const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+const FILE_TYPE_DISK: u32 = 1;
+const FILE_TYPE_CHAR: u32 = 2;
+const MOVEFILE_REPLACE_EXISTING: u32 = 1;
+const GET_FILE_EX_INFO_STANDARD: u32 = 0;
+const STD_INPUT_HANDLE: u32 = -10i32 as u32;
+const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;
+const STD_ERROR_HANDLE: u32 = -12i32 as u32;
+const ENABLE_VIRTUAL_TERMINAL_PROCESSING: u32 = 4;
+const IOCTL_DISK_PERFORMANCE: u32 = 0x70020;
+const HKEY_CURRENT_USER: isize = 0x8000_0001u32 as i32 as isize;
+const RRF_RT_REG_DWORD: u32 = 0x10;
+const ERROR_SUCCESS: i32 = 0;
+const VOLUME_NAME_DOS: u32 = 0;
+const ERROR_FILE_NOT_FOUND: i32 = 2;
+const MAX_PATH: u32 = 260;
+const DRIVE_ROOT_INDEX: usize = 2;
+const MAX_BUFFER_UNITS: u32 = 1 << 20;
+const READ_CHUNK_BYTES: usize = 64 << 10;
+const MAX_WRITE_BYTES: usize = 1 << 30;
+const CONSOLE_CHUNK_UNITS: usize = 8192;
+const STDIN_SIZE_HINT: usize = 4096;
+const UNIX_EPOCH_TICKS: u64 = 116_444_736_000_000_000;
+const TICKS_PER_SECOND: i64 = 10_000_000;
+
+#[repr(C)]
+#[derive(Default)]
+struct FileTime {
+    low: u32,
+    high: u32,
+}
+
+impl FileTime {
+    fn ticks(&self) -> u64 {
+        (self.high as u64) << 32 | self.low as u64
+    }
+}
+
+#[repr(C)]
+#[derive(Default)]
+struct FileAttributeData {
+    attributes: u32,
+    created: FileTime,
+    accessed: FileTime,
+    written: FileTime,
+    size_high: u32,
+    size_low: u32,
+}
+
+#[repr(C)]
+struct FindData {
+    info: FileAttributeData,
+    reserved: [u32; 2],
+    name: [u16; MAX_PATH as usize],
+    short_name: [u16; 14],
+}
+
+impl FindData {
+    fn new() -> Self {
+        FindData {
+            info: FileAttributeData::default(),
+            reserved: [0; 2],
+            name: [0; MAX_PATH as usize],
+            short_name: [0; 14],
+        }
+    }
+
+    fn name(&self) -> String {
+        let len = self.name.iter().position(|&c| c == 0);
+        String::from_utf16_lossy(&self.name[..len.unwrap_or(self.name.len())])
+    }
+}
+
+#[repr(C)]
+#[derive(Default)]
+struct DiskPerformance {
+    bytes_read: i64,
+    bytes_written: i64,
+    read_time: i64,
+    write_time: i64,
+    idle_time: i64,
+    counts: [u32; 4],
+    query_time: i64,
+    device_number: u32,
+    manager_name: [u16; 8],
+}
+
+#[repr(C)]
+#[derive(Default)]
+struct MemoryStatus {
+    length: u32,
+    load: u32,
+    total: u64,
+    available: u64,
+    page_file: [u64; 2],
+    virtual_space: [u64; 2],
+    extended_virtual: u64,
+}
 
 pub(super) fn wide(s: &str) -> Vec<u16> {
     let mut v: Vec<u16> = s.encode_utf16().collect();
@@ -96,28 +216,27 @@ pub(super) fn wide(s: &str) -> Vec<u16> {
     v
 }
 
-unsafe fn from_ptr(p: *const u16) -> String {
-    let mut n = 0;
-    while *p.add(n) != 0 {
-        n += 1;
+unsafe fn from_ptr(text: *const u16) -> String {
+    let mut len = 0;
+    while *text.add(len) != 0 {
+        len += 1;
     }
-    String::from_utf16_lossy(core::slice::from_raw_parts(p, n))
+    String::from_utf16_lossy(core::slice::from_raw_parts(text, len))
 }
 
-// Remplit un tampon de taille croissante tant que l'appel demande plus de place
-fn grow(f: &dyn Fn(*mut u16, u32) -> u32) -> Option<String> {
-    let mut size = 260u32;
+fn with_growing_buffer(call: &dyn Fn(*mut u16, u32) -> u32) -> Option<String> {
+    let mut size = MAX_PATH;
     loop {
         let mut buf: Vec<u16> = vec![0; size as usize];
-        let n = f(buf.as_mut_ptr(), size);
-        if n == 0 {
+        let needed = call(buf.as_mut_ptr(), size);
+        if needed == 0 {
             return None;
         }
-        if n < size {
-            return Some(String::from_utf16_lossy(&buf[..n as usize]));
+        if needed < size {
+            return Some(String::from_utf16_lossy(&buf[..needed as usize]));
         }
-        size = if n > size { n + 1 } else { size * 2 };
-        if size > 1 << 20 {
+        size = if needed > size { needed + 1 } else { size * 2 };
+        if size > MAX_BUFFER_UNITS {
             return None;
         }
     }
@@ -126,47 +245,47 @@ fn grow(f: &dyn Fn(*mut u16, u32) -> u32) -> Option<String> {
 pub fn args() -> Vec<String> {
     let mut out = Vec::new();
     unsafe {
-        let mut n = 0i32;
-        let v = CommandLineToArgvW(GetCommandLineW(), &mut n);
-        if v.is_null() {
+        let mut count = 0i32;
+        let argv = CommandLineToArgvW(GetCommandLineW(), &mut count);
+        if argv.is_null() {
             return out;
         }
-        for i in 0..n as usize {
-            out.push(from_ptr(*v.add(i)));
+        for i in 0..count as usize {
+            out.push(from_ptr(*argv.add(i)));
         }
-        LocalFree(v as *mut c_void);
+        LocalFree(argv as *mut c_void);
     }
     out
 }
 
 pub fn env(name: &str) -> Option<String> {
-    let w = wide(name);
-    grow(&|b, n| unsafe { GetEnvironmentVariableW(w.as_ptr(), b, n) })
+    let wide_name = wide(name);
+    with_growing_buffer(&|b, n| unsafe { GetEnvironmentVariableW(wide_name.as_ptr(), b, n) })
 }
 
 fn open_read(path: &str) -> Handle {
-    let w = wide(path);
+    let wide_path = wide(path);
     unsafe {
         CreateFileW(
-            w.as_ptr(),
+            wide_path.as_ptr(),
             GENERIC_READ,
             SHARE_ALL,
             null_mut(),
             OPEN_EXISTING,
-            0x80,
+            FILE_ATTRIBUTE_NORMAL,
             0,
         )
     }
 }
 
-fn read_all(h: Handle, hint: usize) -> Vec<u8> {
+fn read_all(file: Handle, hint: usize, limit: usize) -> Vec<u8> {
     let mut out: Vec<u8> = Vec::with_capacity(hint + 1);
-    let mut chunk = vec![0u8; 65536];
-    loop {
+    let mut chunk = vec![0u8; READ_CHUNK_BYTES];
+    while out.len() <= limit {
         let mut got = 0u32;
         let ok = unsafe {
             ReadFile(
-                h,
+                file,
                 chunk.as_mut_ptr(),
                 chunk.len() as u32,
                 &mut got,
@@ -181,223 +300,233 @@ fn read_all(h: Handle, hint: usize) -> Vec<u8> {
     out
 }
 
-pub fn read(path: &str) -> Option<Vec<u8>> {
-    let h = open_read(path);
-    if h == INVALID {
+pub fn read_limited(path: &str, limit: usize) -> Option<Vec<u8>> {
+    let file = open_read(path);
+    if file == INVALID {
         return None;
     }
     let mut size = 0i64;
-    unsafe { GetFileSizeEx(h, &mut size) };
-    let data = read_all(h, if size > 0 { size as usize } else { 0 });
-    unsafe { CloseHandle(h) };
-    Some(data)
+    let on_disk = unsafe { GetFileType(file) } == FILE_TYPE_DISK
+        && unsafe { GetFileSizeEx(file, &mut size) } != 0
+        && (0..=limit as i64).contains(&size);
+    let data = on_disk.then(|| read_all(file, size as usize, limit));
+    unsafe { CloseHandle(file) };
+    data.filter(|d| d.len() <= limit)
 }
 
-fn write_handle(h: Handle, data: &[u8]) -> bool {
+fn write_handle(file: Handle, data: &[u8]) -> bool {
     let mut done = 0usize;
     while done < data.len() {
-        let mut w = 0u32;
-        let n = core::cmp::min(data.len() - done, 1 << 30) as u32;
-        let ok = unsafe { WriteFile(h, data.as_ptr().add(done), n, &mut w, null_mut()) };
-        if ok == 0 || w == 0 {
+        let mut written = 0u32;
+        let len = core::cmp::min(data.len() - done, MAX_WRITE_BYTES) as u32;
+        let ok = unsafe { WriteFile(file, data.as_ptr().add(done), len, &mut written, null_mut()) };
+        if ok == 0 || written == 0 {
             return false;
         }
-        done += w as usize;
+        done += written as usize;
     }
     true
 }
 
-pub fn write(path: &str, data: &[u8]) -> bool {
-    let w = wide(path);
-    let h = unsafe {
+fn write_with(path: &str, share: u32, disposition: u32, data: &[u8]) -> bool {
+    let wide_path = wide(path);
+    let file = unsafe {
         CreateFileW(
-            w.as_ptr(),
+            wide_path.as_ptr(),
             GENERIC_WRITE,
-            1,
+            share,
             null_mut(),
-            CREATE_ALWAYS,
-            0x80,
+            disposition,
+            FILE_ATTRIBUTE_NORMAL,
             0,
         )
     };
-    if h == INVALID {
+    if file == INVALID {
         return false;
     }
-    let ok = write_handle(h, data);
-    unsafe { CloseHandle(h) };
+    let ok = write_handle(file, data);
+    unsafe { CloseHandle(file) };
     ok
 }
 
-// Ecrit a cote puis renomme, pour qu'un lecteur concurrent ne voie jamais un fichier tronque
+pub fn write(path: &str, data: &[u8]) -> bool {
+    write_with(path, FILE_SHARE_READ, CREATE_ALWAYS, data)
+}
+
+fn resolved(path: &str) -> String {
+    let wide_path = wide(path);
+    let attributes = unsafe { GetFileAttributesW(wide_path.as_ptr()) };
+    let linked = attributes != u32::MAX && attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+    let file = if linked { open_read(path) } else { INVALID };
+    if file == INVALID {
+        return String::from(path);
+    }
+    let target = with_growing_buffer(&|b, n| unsafe {
+        GetFinalPathNameByHandleW(file, b, n, VOLUME_NAME_DOS)
+    });
+    unsafe { CloseHandle(file) };
+    target.unwrap_or_else(|| String::from(path))
+}
+
 pub fn write_atomic(path: &str, data: &[u8]) -> bool {
-    let tmp = format!("{}.{}.tmp", path, unsafe { GetCurrentProcessId() });
-    let wt = wide(&tmp);
+    let target = resolved(path);
+    let tmp = format!("{}.{}.tmp", target, unsafe { GetCurrentProcessId() });
     if write(&tmp, data) {
-        let wp = wide(path);
-        if unsafe { MoveFileExW(wt.as_ptr(), wp.as_ptr(), 1) } != 0 {
+        if rename(&tmp, &target) {
             return true;
         }
-        unsafe { DeleteFileW(wt.as_ptr()) };
+        remove(&tmp);
     }
-    write(path, data)
+    write(&target, data)
 }
 
 pub fn remove(path: &str) -> bool {
-    let w = wide(path);
-    unsafe { DeleteFileW(w.as_ptr()) != 0 }
+    let wide_path = wide(path);
+    unsafe { DeleteFileW(wide_path.as_ptr()) != 0 }
 }
 
 pub fn rename(from: &str, to: &str) -> bool {
-    let (f, t) = (wide(from), wide(to));
-    unsafe { MoveFileExW(f.as_ptr(), t.as_ptr(), 1) != 0 }
+    let (wide_from, wide_to) = (wide(from), wide(to));
+    let flags = MOVEFILE_REPLACE_EXISTING;
+    unsafe { MoveFileExW(wide_from.as_ptr(), wide_to.as_ptr(), flags) != 0 }
 }
 
-pub fn create_new(path: &str) -> bool {
-    let w = wide(path);
-    let h = unsafe {
-        CreateFileW(
-            w.as_ptr(),
-            GENERIC_WRITE,
-            0,
-            null_mut(),
-            CREATE_NEW,
-            0x80,
-            0,
-        )
-    };
-    if h == INVALID {
-        return false;
-    }
-    unsafe { CloseHandle(h) };
-    true
+pub fn create_private(path: &str, data: &[u8]) -> bool {
+    write_with(path, SHARE_NONE, CREATE_NEW, data)
 }
 
 pub fn make_executable(path: &str) -> bool {
     exists(path)
 }
 
-// (taille, date de modification en secondes Unix)
 pub fn stamp(path: &str) -> Option<(u64, i64)> {
-    let w = wide(path);
-    let mut d = [0u32; 9];
-    if unsafe { GetFileAttributesExW(w.as_ptr(), 0, d.as_mut_ptr()) } == 0 {
+    let wide_path = wide(path);
+    let mut data = FileAttributeData::default();
+    let level = GET_FILE_EX_INFO_STANDARD;
+    if unsafe { GetFileAttributesExW(wide_path.as_ptr(), level, &mut data) } == 0 {
         return None;
     }
-    let ft = (d[6] as u64) << 32 | d[5] as u64;
-    let secs = (ft as i64 - EPOCH as i64).div_euclid(10_000_000);
-    Some(((d[7] as u64) << 32 | d[8] as u64, secs))
+    let since_epoch = data.written.ticks() as i64 - UNIX_EPOCH_TICKS as i64;
+    let size = (data.size_high as u64) << 32 | data.size_low as u64;
+    Some((size, since_epoch.div_euclid(TICKS_PER_SECOND)))
 }
 
 pub fn exists(path: &str) -> bool {
-    let w = wide(path);
-    unsafe { GetFileAttributesW(w.as_ptr()) != u32::MAX }
+    let wide_path = wide(path);
+    unsafe { GetFileAttributesW(wide_path.as_ptr()) != u32::MAX }
 }
 
 pub fn mkdirs(path: &str) -> bool {
     for (i, c) in path.char_indices() {
-        if (c == '\\' || c == '/') && i > 2 {
-            let w = wide(&path[..i]);
-            unsafe { CreateDirectoryW(w.as_ptr(), null_mut()) };
+        if (c == '\\' || c == '/') && i > DRIVE_ROOT_INDEX {
+            let wide_parent = wide(&path[..i]);
+            unsafe { CreateDirectoryW(wide_parent.as_ptr(), null_mut()) };
         }
     }
-    let w = wide(path);
-    unsafe { CreateDirectoryW(w.as_ptr(), null_mut()) };
+    let wide_path = wide(path);
+    unsafe { CreateDirectoryW(wide_path.as_ptr(), null_mut()) };
     exists(path)
 }
 
-// Noms des entrees de dir qui commencent par prefix
 pub fn list(dir: &str, prefix: &str) -> Vec<String> {
     let mut out = Vec::new();
-    let w = wide(&format!("{}\\{}*", dir, prefix));
-    let mut d = [0u32; 148];
-    let h = unsafe { FindFirstFileW(w.as_ptr(), d.as_mut_ptr()) };
-    if h == INVALID {
+    let pattern = wide(&format!("{}\\{}*", dir, prefix));
+    let mut data = FindData::new();
+    let search = unsafe { FindFirstFileW(pattern.as_ptr(), &mut data) };
+    if search == INVALID {
         return out;
     }
     loop {
-        let name = unsafe { from_ptr((d.as_ptr() as *const u16).add(22)) };
+        let name = data.name();
         if name != "." && name != ".." {
             out.push(name);
         }
-        if unsafe { FindNextFileW(h, d.as_mut_ptr()) } == 0 {
+        if unsafe { FindNextFileW(search, &mut data) } == 0 {
             break;
         }
     }
-    unsafe { FindClose(h) };
+    unsafe { FindClose(search) };
     out
 }
 
-// Rien a lire quand l'entree est une console : on ne bloque pas
 pub fn stdin() -> Option<String> {
-    let h = unsafe { GetStdHandle(-10i32 as u32) };
-    if h == 0 || h == INVALID || unsafe { GetFileType(h) } == 2 {
+    let input = unsafe { GetStdHandle(STD_INPUT_HANDLE) };
+    if input == 0 || input == INVALID || unsafe { GetFileType(input) } == FILE_TYPE_CHAR {
         return None;
     }
-    let data = read_all(h, 4096);
+    let data = read_all(input, STDIN_SIZE_HINT, usize::MAX);
     Some(String::from_utf8_lossy(&data).into_owned())
 }
 
-fn put(n: i32, s: &str) {
-    let h = unsafe { GetStdHandle(n as u32) };
-    if h == 0 || h == INVALID {
+fn write_console(console: Handle, s: &str) {
+    let units: Vec<u16> = s.encode_utf16().collect();
+    let mut done = 0usize;
+    while done < units.len() {
+        let mut written = 0u32;
+        let len = core::cmp::min(units.len() - done, CONSOLE_CHUNK_UNITS) as u32;
+        let text = unsafe { units.as_ptr().add(done) };
+        if unsafe { WriteConsoleW(console, text, len, &mut written, null_mut()) } == 0
+            || written == 0
+        {
+            return;
+        }
+        done += written as usize;
+    }
+}
+
+fn put(which: u32, s: &str) {
+    let output = unsafe { GetStdHandle(which) };
+    if output == 0 || output == INVALID {
         return;
     }
     let mut mode = 0u32;
-    if unsafe { GetConsoleMode(h, &mut mode) } != 0 {
-        unsafe { SetConsoleMode(h, mode | 4) };
-        let w: Vec<u16> = s.encode_utf16().collect();
-        let mut done = 0usize;
-        while done < w.len() {
-            let mut n = 0u32;
-            let len = core::cmp::min(w.len() - done, 8192) as u32;
-            if unsafe { WriteConsoleW(h, w.as_ptr().add(done), len, &mut n, null_mut()) } == 0
-                || n == 0
-            {
-                return;
-            }
-            done += n as usize;
-        }
+    if unsafe { GetConsoleMode(output, &mut mode) } != 0 {
+        unsafe { SetConsoleMode(output, mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING) };
+        write_console(output, s);
     } else {
-        write_handle(h, s.as_bytes());
+        write_handle(output, s.as_bytes());
     }
 }
 
 pub fn out(s: &str) {
-    put(-11, s);
+    put(STD_OUTPUT_HANDLE, s);
 }
 
 pub fn err(s: &str) {
-    put(-12, s);
+    put(STD_ERROR_HANDLE, s);
 }
 
 pub fn exe() -> Option<String> {
-    grow(&|b, n| unsafe { GetModuleFileNameW(0, b, n) })
+    with_growing_buffer(&|b, n| unsafe { GetModuleFileNameW(0, b, n) })
+}
+
+pub fn system_dir() -> Option<String> {
+    with_growing_buffer(&|b, n| unsafe { GetSystemDirectoryW(b, n) })
 }
 
 pub fn cwd() -> Option<String> {
-    grow(&|b, n| unsafe { GetCurrentDirectoryW(n, b) })
+    with_growing_buffer(&|b, n| unsafe { GetCurrentDirectoryW(n, b) })
 }
 
 pub fn now() -> f64 {
-    let mut ft = 0u64;
-    unsafe { GetSystemTimePreciseAsFileTime(&mut ft) };
-    (ft as f64 - EPOCH as f64) / 1e7
+    let mut ticks = 0u64;
+    unsafe { GetSystemTimePreciseAsFileTime(&mut ticks) };
+    (ticks as f64 - UNIX_EPOCH_TICKS as f64) / TICKS_PER_SECOND as f64
 }
 
 pub fn ticks() -> f64 {
-    let (mut c, mut f) = (0i64, 0i64);
+    let (mut count, mut frequency) = (0i64, 0i64);
     unsafe {
-        QueryPerformanceCounter(&mut c);
-        QueryPerformanceFrequency(&mut f);
+        QueryPerformanceCounter(&mut count);
+        QueryPerformanceFrequency(&mut frequency);
     }
-    if f == 0 {
+    if frequency == 0 {
         0.0
     } else {
-        c as f64 / f as f64
+        count as f64 / frequency as f64
     }
 }
 
-// (horloge, temps occupe) en centaines de nanosecondes
 pub fn cpu() -> Option<(i64, i64)> {
     let (mut idle, mut kernel, mut user) = (0u64, 0u64, 0u64);
     if unsafe { GetSystemTimes(&mut idle, &mut kernel, &mut user) } == 0 {
@@ -407,70 +536,86 @@ pub fn cpu() -> Option<(i64, i64)> {
     Some((clock as i64, clock.wrapping_sub(idle) as i64))
 }
 
-// IOCTL_DISK_PERFORMANCE sur le volume : (QueryTime, ReadTime + WriteTime)
 pub fn disk(path: &str) -> Option<(i64, i64)> {
     let letter: String = path
         .chars()
         .take(1)
         .flat_map(|c| c.to_uppercase())
         .collect();
-    let w = wide(&format!("\\\\.\\{}:", letter));
-    let h = unsafe { CreateFileW(w.as_ptr(), 0, 3, null_mut(), OPEN_EXISTING, 0, 0) };
-    if h == INVALID {
+    let volume = wide(&format!("\\\\.\\{}:", letter));
+    let share = FILE_SHARE_READ | FILE_SHARE_WRITE;
+    let access = DEVICE_ATTRIBUTES_ONLY;
+    let device = unsafe {
+        CreateFileW(
+            volume.as_ptr(),
+            access,
+            share,
+            null_mut(),
+            OPEN_EXISTING,
+            0,
+            0,
+        )
+    };
+    if device == INVALID {
         return None;
     }
-    let mut p = [0i64; 11];
+    let mut perf = DiskPerformance::default();
     let mut got = 0u32;
     let ok = unsafe {
         DeviceIoControl(
-            h,
-            0x70020,
+            device,
+            IOCTL_DISK_PERFORMANCE,
             null_mut(),
             0,
-            p.as_mut_ptr() as *mut c_void,
-            88,
+            &mut perf as *mut DiskPerformance as *mut c_void,
+            size_of::<DiskPerformance>() as u32,
             &mut got,
             null_mut(),
         )
     };
-    unsafe { CloseHandle(h) };
-    if ok == 0 || got < 64 {
+    unsafe { CloseHandle(device) };
+    let needed = core::mem::offset_of!(DiskPerformance, device_number);
+    if ok == 0 || (got as usize) < needed {
         return None;
     }
-    Some((p[7], p[2].wrapping_add(p[3])))
+    Some((
+        perf.query_time,
+        perf.read_time.wrapping_add(perf.write_time),
+    ))
 }
 
-// (total, disponible) en octets
 pub fn memory() -> Option<(f64, f64)> {
-    let mut m = [0u64; 8];
-    m[0] = 64;
-    if unsafe { GlobalMemoryStatusEx(m.as_mut_ptr()) } == 0 {
+    let mut status = MemoryStatus {
+        length: size_of::<MemoryStatus>() as u32,
+        ..MemoryStatus::default()
+    };
+    if unsafe { GlobalMemoryStatusEx(&mut status) } == 0 {
         return None;
     }
-    Some((m[1] as f64, m[2] as f64))
+    Some((status.total as f64, status.available as f64))
 }
+
+const LIGHT_THEME_BY_DEFAULT: bool = true;
 
 pub fn os_theme() -> Option<bool> {
     let key = wide("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
     let name = wide("AppsUseLightTheme");
-    let mut v = 0u32;
-    let mut size = 4u32;
-    let hkcu = 0x8000_0001u32 as i32 as isize;
-    let r = unsafe {
+    let mut light = 0u32;
+    let mut size = size_of::<u32>() as u32;
+    let status = unsafe {
         RegGetValueW(
-            hkcu,
+            HKEY_CURRENT_USER,
             key.as_ptr(),
             name.as_ptr(),
-            0x10,
+            RRF_RT_REG_DWORD,
             null_mut(),
-            &mut v as *mut u32 as *mut c_void,
+            &mut light as *mut u32 as *mut c_void,
             &mut size,
         )
     };
-    match r {
-        0 => Some(v != 0),
-        // Valeur jamais posee : Windows est en mode clair par defaut
-        2 => Some(true),
+    match status {
+        ERROR_SUCCESS => Some(light != 0),
+        ERROR_FILE_NOT_FOUND => Some(LIGHT_THEME_BY_DEFAULT),
         _ => None,
     }
 }
@@ -496,7 +641,6 @@ pub fn state_dir() -> Option<String> {
     Some(super::join(&base, &["claude-statusline"]))
 }
 
-// Tout ce que la CRT fournirait : allocateur, panique, fonctions memoire, point d'entree
 #[cfg(not(test))]
 mod rt {
     use super::*;
@@ -506,43 +650,48 @@ mod rt {
     extern "system" {
         fn ExitProcess(code: u32) -> !;
         fn GetProcessHeap() -> Handle;
-        fn HeapAlloc(h: Handle, flags: u32, n: usize) -> *mut u8;
-        fn HeapReAlloc(h: Handle, flags: u32, p: *mut u8, n: usize) -> *mut u8;
-        fn HeapFree(h: Handle, flags: u32, p: *mut u8) -> i32;
+        fn HeapAlloc(heap: Handle, flags: u32, size: usize) -> *mut u8;
+        fn HeapReAlloc(heap: Handle, flags: u32, ptr: *mut u8, size: usize) -> *mut u8;
+        fn HeapFree(heap: Handle, flags: u32, ptr: *mut u8) -> i32;
     }
+
+    const HEAP_ZERO_MEMORY: u32 = 8;
+    const MEMORY_ALLOCATION_ALIGNMENT: usize = 16;
+    const PANIC_EXIT_CODE: u32 = 101;
+    const UNWIND_EXIT_CODE: u32 = 102;
 
     struct Heap;
 
     unsafe impl GlobalAlloc for Heap {
-        unsafe fn alloc(&self, l: Layout) -> *mut u8 {
-            if l.align() > 16 {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            if layout.align() > MEMORY_ALLOCATION_ALIGNMENT {
                 return null_mut();
             }
-            HeapAlloc(GetProcessHeap(), 0, l.size())
+            HeapAlloc(GetProcessHeap(), 0, layout.size())
         }
-        unsafe fn alloc_zeroed(&self, l: Layout) -> *mut u8 {
-            if l.align() > 16 {
+        unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
+            if layout.align() > MEMORY_ALLOCATION_ALIGNMENT {
                 return null_mut();
             }
-            HeapAlloc(GetProcessHeap(), 8, l.size())
+            HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, layout.size())
         }
-        unsafe fn dealloc(&self, p: *mut u8, _l: Layout) {
-            HeapFree(GetProcessHeap(), 0, p);
+        unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
+            HeapFree(GetProcessHeap(), 0, ptr);
         }
-        unsafe fn realloc(&self, p: *mut u8, l: Layout, n: usize) -> *mut u8 {
-            if l.align() > 16 {
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
+            if layout.align() > MEMORY_ALLOCATION_ALIGNMENT {
                 return null_mut();
             }
-            HeapReAlloc(GetProcessHeap(), 0, p, n)
+            HeapReAlloc(GetProcessHeap(), 0, ptr, new_size)
         }
     }
 
     #[global_allocator]
-    static A: Heap = Heap;
+    static ALLOCATOR: Heap = Heap;
 
     #[panic_handler]
     fn panic(_: &core::panic::PanicInfo) -> ! {
-        unsafe { ExitProcess(101) }
+        unsafe { ExitProcess(PANIC_EXIT_CODE) }
     }
 
     #[no_mangle]
@@ -550,7 +699,7 @@ mod rt {
 
     #[no_mangle]
     pub extern "C" fn __CxxFrameHandler3() -> ! {
-        unsafe { ExitProcess(102) }
+        unsafe { ExitProcess(UNWIND_EXIT_CODE) }
     }
 
     core::arch::global_asm!(
@@ -634,7 +783,6 @@ mod rt {
         "jmp wcslen_loop",
         "wcslen_end:",
         "ret",
-        // Sonde de pile pour les cadres de plus d'une page
         ".globl __chkstk",
         "__chkstk:",
         "push rcx",

@@ -148,7 +148,7 @@ Il est relu à chaque rafraîchissement. Le JSON y tolère les commentaires `//`
 | `system.disk_path` | `C:\` sous Windows, `/` ailleurs | disque suivi |
 | `system.colors.ram.ok`, `.dsk.ok`, `.cpu.ok` | `#1E787D`, `#697855`, `#375A8C` | teinte normale de chaque métrique |
 | `system.colors.<métrique>.warn`, `.hot` | `#BE823C`, `#C83C3C` | teintes d'alerte et critique |
-| `auto_update` | `true` | `false` coupe la recherche automatique de mises à jour |
+| `auto_update` | `false` | `true` active la recherche automatique de mises à jour |
 
 Les noms de `system.metrics` s'écrivent en minuscules, et les noms inconnus sont ignorés. Une liste vide, ou absente, revient aux trois métriques. La couleur du disque se règle sous `dsk`, même si la métrique s'appelle `io`.
 
@@ -174,13 +174,13 @@ Seul le premier argument est lu. Le code de sortie vaut 0 en cas de succès, 1 q
 
 ## Mise à jour automatique
 
-Au plus toutes les 6 heures, un rendu de la barre lance `statusline --update` en arrière-plan, sans fenêtre et en priorité basse, puis rend la main sans l'attendre. Ce lancement n'a lieu que si le programme tourne depuis `~/.claude/bin` et qu'un binaire est publié pour le système. L'heure de la dernière recherche est gardée dans le fichier d'état, sous la clé `update_at`.
+Avec `"auto_update": true` dans `statusline.json`, un rendu de la barre lance `statusline --update` au plus toutes les 6 heures, en arrière-plan, sans fenêtre et en priorité basse, puis rend la main sans l'attendre. Ce lancement n'a lieu que si le programme tourne depuis `~/.claude/bin` et qu'un binaire est publié pour le système. L'heure de la dernière recherche est gardée dans le fichier d'état, sous la clé `update_at`.
 
-`--update` demande la dernière version publiée à l'API GitHub, avec `curl`. Si elle est plus récente, il télécharge le binaire du système à côté du programme (`statusline.new.exe`, ou `statusline.new`), vérifie qu'il répond à `--version`, puis le met à la place de l'ancien. Sous Windows, le programme en cours d'exécution ne peut pas être écrasé : il est renommé `statusline.exe.old-<horodatage>`, et ce fichier est supprimé à la recherche suivante.
+`--update` demande la dernière version publiée à l'API GitHub, avec `curl` (sous Windows, le `curl.exe` du dossier système). Si elle est plus récente, il télécharge le binaire du système à côté du programme (`statusline.new.exe`, ou `statusline.new`), vérifie qu'il répond à `--version`, puis le met à la place de l'ancien. Sous Windows, le programme en cours d'exécution ne peut pas être écrasé : il est renommé `statusline.exe.old-<horodatage>`, et ce fichier est supprimé à la recherche suivante.
 
 Pendant le téléchargement, puis 5 secondes après le remplacement, la barre affiche `update`. Le rafraîchissement suivant lance le nouveau programme, sans redémarrer Claude Code. Un échec (réseau coupé, binaire absent, remplacement refusé) laisse l'ancien programme en place jusqu'à la recherche suivante.
 
-Un verrou `update.lock`, dans le dossier du fichier d'état, empêche deux mises à jour en même temps. Il est ignoré au bout de 15 minutes, tout comme le marqueur `updating` qui fait afficher `update`. `"auto_update": false` dans `statusline.json` coupe la recherche automatique, et `statusline --update` reste utilisable à la main.
+Un verrou `update.lock`, dans le dossier du fichier d'état, empêche deux mises à jour en même temps. Il est ignoré au bout de 15 minutes, tout comme le marqueur `updating` qui fait afficher `update`. La recherche automatique est coupée par défaut, car aucune signature ne garantit encore le binaire téléchargé. `statusline --update` reste utilisable à la main.
 
 ## Fichier d'état
 
@@ -210,7 +210,6 @@ Le programme lit les variables suivantes, toutes facultatives :
 | `WT_PROFILE_ID` | profil Windows Terminal en cours |
 | `GTK_THEME`, `XDG_CURRENT_DESKTOP` | thème du système sous Linux |
 | `HOME`, `USERPROFILE`, `LOCALAPPDATA`, `APPDATA`, `XDG_STATE_HOME`, `XDG_CONFIG_HOME` | emplacement des fichiers |
-| `SystemRoot` | emplacement de `curl.exe` sous Windows, pour `--update` |
 
 Une variable vide compte comme absente.
 
@@ -220,7 +219,7 @@ Une variable vide compte comme absente.
 cargo build --release
 ```
 
-Le binaire sort dans `target/release`. Sous Windows, `.cargo/config.toml` lie le programme avec `rust-lld` sans la bibliothèque C, et rien d'autre que Rust n'est nécessaire. Seule la cible `x86_64-pc-windows-msvc` y est prévue. Le profil de publication active `lto`, `panic = "abort"` et retire les symboles.
+Le binaire sort dans `target/release`. Sous Windows, `.cargo/config.toml` lie le programme avec `rust-lld` sans la bibliothèque C, et rien d'autre que Rust n'est nécessaire. Seule la cible `x86_64-pc-windows-msvc` y est prévue. Le même fichier active la protection CET (`/CETCOMPAT`), remplace l'horodatage du binaire par une empreinte de son contenu (`/Brepro`) et ne produit pas de `.pdb` : deux compilations du même code donnent le même fichier, quel que soit le dossier. Le profil de publication active `lto`, `panic = "abort"` et retire les symboles.
 
 Les tests (`cargo test`) tournent tels quels sous Linux et macOS. Sous Windows, ils ont besoin de la bibliothèque C de Visual Studio et d'une variable `RUSTFLAGS` qui remplace les options de liaison du fichier de configuration, comme le fait la CI (`RUSTFLAGS=-Cdebuginfo=0`).
 
@@ -238,10 +237,18 @@ Une étiquette `v*` publie une version avec les binaires ci-dessous. Elle doit r
 | `statusline-macos-x86_64` | macOS Intel |
 | `statusline-windows-x86_64.exe` | Windows 64 bits |
 
+La CI compile avec Rust 1.99.1, fixé par la variable `RUSTUP_TOOLCHAIN` du workflow. Chaque version publie aussi `SHA256SUMS`, qui donne l'empreinte SHA-256 de chaque binaire, et une attestation de provenance qui relie chaque fichier au workflow qui l'a compilé. Pour vérifier un binaire téléchargé avec GitHub CLI :
+
+```sh
+gh attestation verify statusline-linux-x86_64 --repo LetermeFlorent/claude-statusline
+```
+
+Sous Linux, `sha256sum -c SHA256SUMS --ignore-missing` compare aussi les binaires présents dans le dossier à la liste.
+
 `install.sh` télécharge le fichier de son système dans la dernière version publiée. Sous Windows, `install.ps1` utilise le binaire `bin/statusline.exe` du dépôt, qui est le même programme.
 
 ## Limites
 
-Le binaire macOS Intel est compilé par la CI sans y être lancé. Il n'y a pas de binaire Windows ARM64 natif. Sur les autres Unix (BSD par exemple), la barre fonctionne sans métriques du poste, sans thème du système et sans mise à jour automatique : `--%` partout sur la seconde ligne et fond sombre, sauf réglage. La mise à jour automatique demande `curl`, livré avec Windows 10 depuis la version 1803 et avec macOS, à installer sur certains Linux.
+Le binaire macOS Intel est compilé par la CI sans y être lancé. Il n'y a pas de binaire Windows ARM64 natif. Le binaire Linux arm64 se charge toujours à la même adresse : Rust ne sait pas encore produire d'exécutable statique indépendant de la position pour la cible `aarch64-unknown-linux-musl`. Sur les autres Unix (BSD par exemple), la barre fonctionne sans métriques du poste, sans thème du système et sans mise à jour automatique : `--%` partout sur la seconde ligne et fond sombre, sauf réglage. La mise à jour automatique demande `curl`, livré avec Windows 10 depuis la version 1803 et avec macOS, à installer sur certains Linux.
 
 Les couleurs sont envoyées en 24 bits, sans repli sur 256 couleurs, et la variable `NO_COLOR` n'est pas prise en compte. La détection du fond par le terminal hôte couvre VS Code et ses dérivés, Windows Terminal, Zed et Ghostty. Les autres terminaux passent par `COLORFGBG` ou le thème du système, et `STATUSLINE_BG` permet de forcer le choix.

@@ -1,7 +1,4 @@
-// Arrondis sans libm : sous Windows le binaire est en no_std, et core n'a ni
-// floor ni round. Au-dela de 2^52 un f64 est deja entier.
-
-const EXACT: f64 = 4503599627370496.0;
+const INTEGRAL_FROM: f64 = 4503599627370496.0;
 
 pub fn abs(x: f64) -> f64 {
     if x < 0.0 {
@@ -12,7 +9,7 @@ pub fn abs(x: f64) -> f64 {
 }
 
 pub fn trunc(x: f64) -> f64 {
-    if !(abs(x) < EXACT) {
+    if !(abs(x) < INTEGRAL_FROM) {
         return x;
     }
     (x as i64) as f64
@@ -36,7 +33,6 @@ pub fn ceil(x: f64) -> f64 {
     }
 }
 
-// f64::round : la moitie part loin de zero
 pub fn round(x: f64) -> f64 {
     let t = trunc(x);
     let d = x - t;
@@ -68,7 +64,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn arrondis() {
+    fn round_floor_and_ceil_behave_like_f64() {
         assert_eq!(round(2.5), 3.0);
         assert_eq!(round(-2.5), -3.0);
         assert_eq!(round(0.49999999999999994), 0.0);

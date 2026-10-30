@@ -1,6 +1,4 @@
 #!/bin/sh
-# Installe la barre pour tous les comptes Claude Code du poste (Linux, macOS).
-# Compile les sources si cargo est present, sinon telecharge le binaire de la derniere version publiee.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 main="$HOME/.claude"
@@ -23,9 +21,9 @@ else
       ;;
   esac
   echo "telechargement de $asset"
-  curl -fsSL "$repo/releases/latest/download/$asset" -o "$bin_dir/statusline.new"
+  curl -q -fsSL --proto =https --proto-redir =https "$repo/releases/latest/download/$asset" -o "$bin_dir/statusline.new"
 fi
-# Copie puis renommage : une barre en cours d'execution garde l'ancien fichier jusqu'a la fin
+
 chmod 755 "$bin_dir/statusline.new"
 mv -f "$bin_dir/statusline.new" "$bin_dir/statusline"
 echo "programme copie dans $bin_dir/statusline"
@@ -37,7 +35,6 @@ else
   echo "statusline.json installe"
 fi
 
-# Comptes : .claude, chaque .claude-compte*, et ceux declares dans le menu multi-comptes
 seen=""
 install_for() {
   d=${1%/}
@@ -56,29 +53,5 @@ if [ -f "$reg" ]; then
   grep -o '"Dir"[[:space:]]*:[[:space:]]*"[^"]*"' "$reg" | sed 's/.*"\([^"]*\)"$/\1/' | while IFS= read -r rel; do
     install_for "$HOME/$rel"
   done
-fi
-# Le statusLine global de ~/.claude.json peut lui aussi designer l'ancien poste
-# (migration vers un autre PC ou un autre nom d'utilisateur) : il est repare
-# quand il vise un programme absent, sans toucher au reste du fichier.
-gconf="$HOME/.claude.json"
-if [ -f "$gconf" ] && command -v python3 >/dev/null 2>&1; then
-  python3 - "$gconf" "$main/settings.json" "$bin_dir/statusline" <<'EOF' || echo "fichier global laisse tel quel : $gconf" >&2
-import json, os, re, sys
-path, settings, exe = sys.argv[1], sys.argv[2], sys.argv[3]
-try:
-    with open(settings, "r", encoding="utf-8") as f:
-        command = json.load(f)["statusLine"]["command"]
-    if isinstance(command, str) and command:
-        exe = command
-except (OSError, ValueError, KeyError, TypeError):
-    pass
-with open(path, "r", encoding="utf-8") as f:
-    text = f.read()
-m = re.search(r'"statusLine"\s*:\s*\{[^}]*"command"\s*:\s*"([^"]+)"', text)
-if m and not os.path.exists(os.path.expanduser(m.group(1))):
-    with open(path, "w", encoding="utf-8", newline="") as f:
-        f.write(text[:m.start(1)] + exe + text[m.end(1):])
-    print("statusLine global repare dans " + path + " (etait : " + m.group(1) + ")")
-EOF
 fi
 echo "termine, relancer Claude Code"

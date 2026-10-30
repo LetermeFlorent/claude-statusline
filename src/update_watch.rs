@@ -70,8 +70,11 @@ pub fn due(state: &mut State, now: f64) -> bool {
 }
 
 pub fn launch() {
-    if let Some(exe) = os::exe() {
-        os::spawn(&exe, &["--update"]);
+    let (Some(exe), Some(dir)) = (os::exe(), os::state_dir()) else {
+        return;
+    };
+    if os::mkdirs(&dir) {
+        os::spawn(&exe, &["--update"], &dir);
     }
 }
 
@@ -96,14 +99,14 @@ mod tests {
 
     #[test]
     fn verification() {
-        let mut s = State::parse("");
-        let _ = due(&mut s, 1000.0);
-        assert_eq!(s.get(CHECKED_KEY), Some("1000"));
-        assert!(!due(&mut s, 1000.0 + CHECK_EVERY - 1.0));
-        assert_eq!(s.get(CHECKED_KEY), Some("1000"));
-        let _ = due(&mut s, 1000.0 + CHECK_EVERY);
-        assert_eq!(s.get(CHECKED_KEY), Some("22600"));
-        let _ = due(&mut s, 500.0);
-        assert_eq!(s.get(CHECKED_KEY), Some("500"));
+        let mut state = State::parse("");
+        let _ = due(&mut state, 1000.0);
+        assert_eq!(state.get(CHECKED_KEY), Some("1000"));
+        assert!(!due(&mut state, 1000.0 + CHECK_EVERY - 1.0));
+        assert_eq!(state.get(CHECKED_KEY), Some("1000"));
+        let _ = due(&mut state, 1000.0 + CHECK_EVERY);
+        assert_eq!(state.get(CHECKED_KEY), Some("22600"));
+        let _ = due(&mut state, 500.0);
+        assert_eq!(state.get(CHECKED_KEY), Some("500"));
     }
 }
