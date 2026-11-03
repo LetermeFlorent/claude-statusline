@@ -92,3 +92,23 @@ fn the_spend_label_is_translated() {
     assert!(text.contains("dépense"), "{}", text);
     assert!(text.contains("3j02h"), "{}", text);
 }
+
+#[test]
+fn a_plan_without_a_five_hour_window_shows_only_seven_days() {
+    let mut data = spend_only();
+    data.quotas = Some(Quotas {
+        five_hour: None,
+        seven_day: Some(Quota {
+            pct: Some(40.0),
+            at: Some(NOW + THREE_DAYS + 7200.0),
+        }),
+    });
+    let text = bar(None, &data);
+    assert!(text.contains("7d") && !text.contains("5h"), "{}", text);
+    data.quotas = Some(Quotas {
+        five_hour: None,
+        seven_day: None,
+    });
+    let text = bar(None, &data);
+    assert!(text.contains("5h"), "{}", text);
+}
