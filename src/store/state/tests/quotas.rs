@@ -59,3 +59,23 @@ fn a_live_quota_past_its_reset_loses_its_percentage() {
     assert_eq!(quotas.five_hour, Some(Quota { pct: None, at }));
     assert_eq!(state.get("q5_pct@a"), Some("85"));
 }
+
+#[test]
+fn a_plan_without_a_five_hour_window_keeps_it_hidden() {
+    let now = 1_800_000_000.0;
+    let seven = Live {
+        pct: Some(40.0),
+        at: Some(now + 3600.0),
+    };
+    let mut state = State::parse("q5_at@a 1800001000\nq5_pct@a 9\n");
+    let quotas = state.quotas(Some((None, Some(seven))), now, "a").unwrap();
+    assert_eq!(quotas.five_hour, None);
+    assert_eq!(state.get("q5_none@a"), Some("1"));
+    assert_eq!(state.get("q5_pct@a"), None);
+    let stored = state.quotas(None, now, "a").unwrap();
+    assert_eq!(stored.five_hour, None);
+    assert!(stored.seven_day.is_some());
+    let mut state = State::parse("q_at@a 1799999999\nq7_at@a 1800003600\n");
+    let idle = state.quotas(None, now, "a").unwrap();
+    assert_eq!(idle.five_hour, Some(Quota::default()));
+}
