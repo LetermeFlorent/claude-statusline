@@ -32,11 +32,14 @@ impl State {
         tag: &str,
     ) -> Option<Quotas> {
         if let Some((five, seven)) = live {
-            for key in ["q_at", "q5_at", "q5_pct", "q7_at", "q7_pct"] {
+            for key in ["q_at", "q5_at", "q5_pct", "q5_none", "q7_at", "q7_pct"] {
                 self.remove(key);
                 self.remove(&format!("{}@{}", key, tag));
             }
             self.set(&format!("q_at@{}", tag), &format!("{}", now as i64));
+            if five.is_none() && seven.is_some() {
+                self.set(&format!("q5_none@{}", tag), "1");
+            }
             for (window, prefix) in [(five, "q5"), (seven, "q7")] {
                 if let Some(at) = window.and_then(|w| w.at) {
                     self.set(&format!("{}_at@{}", prefix, tag), &format!("{}", at));
@@ -57,8 +60,13 @@ impl State {
         if five_hour.is_none() && seven_day.is_none() {
             return None;
         }
+        let no_five = self.num(&format!("q5_none@{}", tag)).is_some();
         Some(Quotas {
-            five_hour,
+            five_hour: if no_five {
+                None
+            } else {
+                Some(five_hour.unwrap_or_default())
+            },
             seven_day,
         })
     }

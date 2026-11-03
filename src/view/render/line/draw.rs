@@ -34,7 +34,7 @@ pub(in crate::view::render) fn draw(
         out.ctx(data);
     }
     if let Some(quotas) = data.quotas {
-        if cfg.seg_5h {
+        if cfg.seg_5h && (quotas.five_hour.is_some() || quotas.seven_day.is_none()) {
             out.sep(&mut first);
             out.quota(QuotaWindow::FiveHour, quotas.five_hour, now);
         }
