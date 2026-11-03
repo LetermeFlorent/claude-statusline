@@ -2,6 +2,10 @@
 
 All notable changes to this project are listed here, newest first. Versions follow the `version` in Cargo.toml and the git tag of the same name.
 
+## 2.2.2 - 2026-11-03
+
+- Plans with no five-hour limit, such as Ultra, no longer show a `5h` segment. When Claude Code sends a seven-day window and no five-hour one, the segment is hidden and `q5_none@<tag>` is written to the shared state, so the line stays the same when it is drawn from stored values. A plan whose five-hour window is only idle still shows `5h`.
+
 ## 2.2.1 - 2026-10-30
 
 - The auto-compact marker is a dimmed `ª` against `ctx` again, as in 2.1.1, with no space between them. A marker set in `statusline.json` is drawn the same way, and an empty one still hides it.
