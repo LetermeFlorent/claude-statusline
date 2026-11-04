@@ -2,6 +2,10 @@
 
 All notable changes to this project are listed here, newest first. Versions follow the `version` in Cargo.toml and the git tag of the same name.
 
+## 2.2.4 - 2026-11-04
+
+- Two sessions of the same account no longer make the quota percentages jump back and forth. Each Claude Code window sends its own copy of the limits, and an older copy used to overwrite a newer one in the shared state on every render. A live render now merges with what is stored: for the same reset time (within 60 seconds) the higher percentage wins, and a window whose reset time is earlier than the stored one is treated as stale and replaced by the stored values. Every session then shows the same numbers.
+
 ## 2.2.3 - 2026-11-04
 
 - The shared state file is rewritten far less often. The disk and CPU baselines are refreshed when the last reading is 4.5 seconds old instead of 1, and `q_at@<tag>` is written again only when the quota values change or the stored time is 10 seconds old, so several sessions refreshing every 5 seconds no longer rewrite the file on nearly every render. `q_at@<tag>` never lags more than 10 seconds behind a live render.
