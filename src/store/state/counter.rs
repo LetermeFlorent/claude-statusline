@@ -2,7 +2,7 @@ use super::{recent, State};
 use crate::os::Activity;
 use alloc::format;
 
-const SAME_READING: f64 = 1.0;
+const SAME_READING: f64 = 4.5;
 const STALE_READING: f64 = 60.0;
 
 fn percent(previous: Activity, reading: Activity) -> Option<f64> {
@@ -28,8 +28,11 @@ impl State {
         let at = self
             .num(at_key)
             .filter(|_| self.get(source_key) == Some(source.as_str()));
-        if at.is_some_and(|at| recent(at, now, SAME_READING)) {
-            return self.num(pct_key);
+        let kept = self
+            .num(pct_key)
+            .filter(|_| at.is_some_and(|at| recent(at, now, SAME_READING)));
+        if kept.is_some() {
+            return kept;
         }
         let previous = self
             .int(clock_key)

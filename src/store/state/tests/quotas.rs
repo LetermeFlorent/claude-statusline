@@ -79,3 +79,44 @@ fn a_plan_without_a_five_hour_window_keeps_it_hidden() {
     let idle = state.quotas(None, now, "a").unwrap();
     assert_eq!(idle.five_hour, Some(Quota::default()));
 }
+
+fn live_window(pct: f64) -> Option<(Option<Live>, Option<Live>)> {
+    let window = Live {
+        pct: Some(pct),
+        at: Some(1_800_003_000.0),
+    };
+    Some((Some(window), None))
+}
+
+const STORED: &str = "q_at@a 1799999995
+q5_at@a 1800003000
+q5_pct@a 10
+";
+
+#[test]
+fn a_live_render_with_the_same_values_leaves_the_state_alone() {
+    let mut state = State::parse(STORED);
+    state.quotas(live_window(10.0), 1_800_000_000.0, "a");
+    assert!(!state.changed());
+    assert_eq!(state.get("q_at@a"), Some("1799999995"));
+}
+
+#[test]
+fn a_live_render_with_a_new_percentage_stamps_the_quotas() {
+    let mut state = State::parse(STORED);
+    state.quotas(live_window(11.0), 1_800_000_000.0, "a");
+    assert_eq!(state.get("q_at@a"), Some("1800000000"));
+    assert_eq!(state.get("q5_pct@a"), Some("11"));
+}
+
+#[test]
+fn a_live_render_ten_seconds_later_stamps_the_quotas_again() {
+    let mut state = State::parse(
+        "q_at@a 1799999990
+q5_at@a 1800003000
+q5_pct@a 10
+",
+    );
+    state.quotas(live_window(10.0), 1_800_000_000.0, "a");
+    assert_eq!(state.get("q_at@a"), Some("1800000000"));
+}
