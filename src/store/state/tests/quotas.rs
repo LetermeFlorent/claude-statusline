@@ -120,3 +120,32 @@ q5_pct@a 10
     state.quotas(live_window(10.0), 1_800_000_000.0, "a");
     assert_eq!(state.get("q_at@a"), Some("1800000000"));
 }
+
+fn render(state: &mut State, pct: f64, at: f64) -> Option<f64> {
+    let live = Live {
+        pct: Some(pct),
+        at: Some(at),
+    };
+    let quotas = state.quotas(Some((Some(live), None)), 1_800_000_000.0, "a");
+    quotas.and_then(|q| q.five_hour).and_then(|q| q.pct)
+}
+
+#[test]
+fn two_sessions_of_one_account_agree_on_the_highest_percentage() {
+    let mut state = State::parse("");
+    assert_eq!(render(&mut state, 46.0, 1_800_003_000.0), Some(46.0));
+    let first = state.text();
+    assert_eq!(render(&mut state, 29.0, 1_800_003_000.0), Some(46.0));
+    assert_eq!(state.text(), first);
+    assert_eq!(render(&mut state, 47.0, 1_800_003_020.0), Some(47.0));
+    assert_eq!(state.get("q5_at@a"), Some("1800003000"));
+}
+
+#[test]
+fn a_session_still_on_the_previous_window_does_not_overwrite_the_new_one() {
+    let mut state = State::parse("");
+    assert_eq!(render(&mut state, 5.0, 1_800_010_000.0), Some(5.0));
+    assert_eq!(render(&mut state, 90.0, 1_800_001_000.0), Some(5.0));
+    assert_eq!(state.get("q5_at@a"), Some("1800010000"));
+    assert_eq!(render(&mut state, 2.0, 1_800_020_000.0), Some(2.0));
+}
