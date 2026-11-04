@@ -2,7 +2,7 @@ use super::{recent, State};
 use crate::os::Activity;
 use alloc::format;
 
-const SAME_READING: f64 = 1.0;
+const SAME_READING: f64 = 4.5;
 const STALE_READING: f64 = 60.0;
 
 fn percent(previous: Activity, reading: Activity) -> Option<f64> {

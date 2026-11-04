@@ -24,6 +24,11 @@ fn split_device(number: u64) -> Device {
     (major, minor)
 }
 
+fn mount_table() -> Option<&'static str> {
+    static TABLE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| read_str(MOUNT_TABLE)).as_deref()
+}
+
 fn mounted_device(path: &str) -> Option<Device> {
     use std::os::unix::fs::{FileTypeExt, MetadataExt};
     let device = split_device(std::fs::metadata(path).ok()?.dev());
@@ -31,8 +36,7 @@ fn mounted_device(path: &str) -> Option<Device> {
         return Some(device);
     }
     let folder = std::fs::canonicalize(path).ok()?;
-    let table = read_str(MOUNT_TABLE)?;
-    let source = mounts::source(&table, folder.to_str()?)?;
+    let source = mounts::source(mount_table()?, folder.to_str()?)?;
     let node = std::fs::metadata(source).ok()?;
     node.file_type()
         .is_block_device()
@@ -40,7 +44,7 @@ fn mounted_device(path: &str) -> Option<Device> {
 }
 
 pub fn on_network(path: &str) -> bool {
-    read_str(MOUNT_TABLE).is_some_and(|table| mounts::on_network(&table, path))
+    mount_table().is_some_and(|table| mounts::on_network(table, path))
 }
 
 fn physical(name: &str) -> bool {
