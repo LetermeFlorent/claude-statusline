@@ -6,6 +6,7 @@ use alloc::string::String;
 
 const FRESH: f64 = 600.0;
 const STAMP_LAG: f64 = 10.0;
+const SAME_WINDOW: f64 = 60.0;
 const HOUR: f64 = 3600.0;
 pub(super) const FIVE_HOUR_PERIOD: f64 = 5.0 * HOUR;
 const SEVEN_DAY_PERIOD: f64 = 7.0 * 24.0 * HOUR;
@@ -37,6 +38,8 @@ impl State {
             let stamp_key = format!("q_at@{}", tag);
             let stamp = self.get(&stamp_key).map(String::from);
             let before = self.written(tag);
+            let five = self.merged(five, "q5", tag);
+            let seven = self.merged(seven, "q7", tag);
             for key in ["q_at", "q5_at", "q5_pct", "q5_none", "q7_at", "q7_pct"] {
                 self.remove(key);
                 self.remove(&format!("{}@{}", key, tag));
@@ -80,6 +83,31 @@ impl State {
                 Some(five_hour.unwrap_or_default())
             },
             seven_day,
+        })
+    }
+
+    fn merged(&self, window: Option<Live>, prefix: &str, tag: &str) -> Option<Live> {
+        let window = window?;
+        let (Some(at), Some(kept)) = (window.at, self.num(&format!("{}_at@{}", prefix, tag)))
+        else {
+            return Some(window);
+        };
+        let pct = self.num(&format!("{}_pct@{}", prefix, tag));
+        if kept > at + SAME_WINDOW {
+            return Some(Live {
+                pct,
+                at: Some(kept),
+            });
+        }
+        if kept < at - SAME_WINDOW {
+            return Some(window);
+        }
+        Some(Live {
+            pct: match (window.pct, pct) {
+                (Some(new), Some(old)) => Some(new.max(old)),
+                (new, old) => new.or(old),
+            },
+            at: Some(kept),
         })
     }
 
