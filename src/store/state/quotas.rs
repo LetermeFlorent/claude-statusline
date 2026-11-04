@@ -2,8 +2,10 @@ use super::{recent, State};
 use crate::render::{Quota, Quotas};
 use crate::session::Live;
 use alloc::format;
+use alloc::string::String;
 
 const FRESH: f64 = 600.0;
+const STAMP_LAG: f64 = 10.0;
 const HOUR: f64 = 3600.0;
 pub(super) const FIVE_HOUR_PERIOD: f64 = 5.0 * HOUR;
 const SEVEN_DAY_PERIOD: f64 = 7.0 * 24.0 * HOUR;
@@ -32,11 +34,13 @@ impl State {
         tag: &str,
     ) -> Option<Quotas> {
         if let Some((five, seven)) = live {
+            let stamp_key = format!("q_at@{}", tag);
+            let stamp = self.get(&stamp_key).map(String::from);
+            let before = self.written(tag);
             for key in ["q_at", "q5_at", "q5_pct", "q5_none", "q7_at", "q7_pct"] {
                 self.remove(key);
                 self.remove(&format!("{}@{}", key, tag));
             }
-            self.set(&format!("q_at@{}", tag), &format!("{}", now as i64));
             if five.is_none() && seven.is_some() {
                 self.set(&format!("q5_none@{}", tag), "1");
             }
@@ -48,6 +52,14 @@ impl State {
                     }
                 }
             }
+            let kept = stamp.filter(|at| {
+                before == self.written(tag)
+                    && at.parse::<f64>().is_ok_and(|at| recent(at, now, STAMP_LAG))
+            });
+            self.set(
+                &stamp_key,
+                &kept.unwrap_or_else(|| format!("{}", now as i64)),
+            );
             return Some(Quotas {
                 five_hour: five.map(|w| quota_as_of(w.quota(), FIVE_HOUR_PERIOD, now)),
                 seven_day: seven.map(|w| quota_as_of(w.quota(), SEVEN_DAY_PERIOD, now)),
@@ -69,6 +81,11 @@ impl State {
             },
             seven_day,
         })
+    }
+
+    fn written(&self, tag: &str) -> [Option<String>; 5] {
+        ["q5_at", "q5_pct", "q5_none", "q7_at", "q7_pct"]
+            .map(|key| self.get(&format!("{}@{}", key, tag)).map(String::from))
     }
 
     fn stored(&self, prefix: &str, tag: &str, period: f64, now: f64) -> Option<Quota> {
