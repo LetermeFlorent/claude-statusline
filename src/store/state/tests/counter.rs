@@ -67,3 +67,18 @@ fn a_reading_under_the_refresh_gap_keeps_the_reference() {
     assert_eq!(state.get("cpu_clock"), Some("200"));
     assert_eq!(state.get("cpu_value"), Some("60"));
 }
+
+#[test]
+fn a_second_reading_soon_after_the_first_still_gives_a_percent() {
+    let mut state = State::parse("");
+    assert_eq!(state.counter("cpu", reading(0, 100, 10), 1000.0), None);
+    assert_eq!(
+        state.counter("cpu", reading(0, 200, 60), 1001.0),
+        Some(50.0)
+    );
+    assert_eq!(
+        state.counter("cpu", reading(0, 300, 260), 1002.0),
+        Some(50.0)
+    );
+    assert_eq!(state.get("cpu_clock"), Some("200"));
+}
