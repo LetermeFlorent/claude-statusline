@@ -2,6 +2,11 @@
 
 All notable changes to this project are listed here, newest first. Versions follow the `version` in Cargo.toml and the git tag of the same name.
 
+## Unreleased
+
+- The shared state file is rewritten far less often. The disk and CPU baselines are refreshed when the last reading is 4.5 seconds old instead of 1, and `q_at@<tag>` is written again only when the quota values change or the stored time is 10 seconds old, so several sessions refreshing every 5 seconds no longer rewrite the file on nearly every render. `q_at@<tag>` never lags more than 10 seconds behind a live render.
+- On Linux, `/proc/self/mountinfo` is read once per process instead of up to four times per render.
+
 ## 2.2.2 - 2026-11-03
 
 - Plans with no five-hour limit, such as Ultra, no longer show a `5h` segment. When Claude Code sends a seven-day window and no five-hour one, the segment is hidden and `q5_none@<tag>` is written to the shared state, so the line stays the same when it is drawn from stored values. A plan whose five-hour window is only idle still shows `5h`.
