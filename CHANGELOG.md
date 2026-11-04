@@ -2,7 +2,7 @@
 
 All notable changes to this project are listed here, newest first. Versions follow the `version` in Cargo.toml and the git tag of the same name.
 
-## Unreleased
+## 2.2.3 - 2026-11-04
 
 - The shared state file is rewritten far less often. The disk and CPU baselines are refreshed when the last reading is 4.5 seconds old instead of 1, and `q_at@<tag>` is written again only when the quota values change or the stored time is 10 seconds old, so several sessions refreshing every 5 seconds no longer rewrite the file on nearly every render. `q_at@<tag>` never lags more than 10 seconds behind a live render.
 - On Linux, `/proc/self/mountinfo` is read once per process instead of up to four times per render.
