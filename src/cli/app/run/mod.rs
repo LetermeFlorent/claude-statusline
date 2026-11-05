@@ -8,14 +8,14 @@ use crate::config::Config;
 use crate::os;
 use crate::plain;
 use crate::render::{self, Data, SysValue};
-use crate::session::Session;
+use crate::session::{self, Session};
 use crate::state::{self, State};
 use crate::theme;
 use crate::update_watch;
 use alloc::string::String;
 use alloc::vec::Vec;
 pub(super) use laps::{Laps, Stage, STAGE_LABELS};
-use sources::{compact_files, read_file, stat_file};
+use sources::{compact_files, plan_tier, read_file, stat_file};
 pub(super) use sources::{local_only, sample};
 
 pub(super) type Readings<'a> = &'a dyn Fn(&Config, &mut State, f64) -> Vec<SysValue>;
@@ -36,11 +36,11 @@ pub(super) fn run_on(
     let cfg = load_config();
     laps.lap(Stage::Config);
     let session = Session::parse(input);
-    let quotas = state.quotas(
-        session.live,
-        now,
-        &state::account_tag(&os::claude_dir().unwrap_or_default()),
-    );
+    let dir = os::claude_dir().unwrap_or_default();
+    let live = session
+        .live
+        .map(|live| session::with_five_hour(live, || plan_tier(&dir)));
+    let quotas = state.quotas(live, now, &state::account_tag(&dir));
     laps.lap(Stage::Session);
     let project = local_only(session.project.as_deref().or(session.cwd.as_deref()));
     let light = theme::detect_light(cfg.light_override, project, &mut state, now);

@@ -123,3 +123,20 @@ fn long_model_names_are_capped() {
         crate::render::MAX_LABEL_CHARS
     );
 }
+
+#[test]
+fn a_plan_below_ultra_keeps_its_five_hour_window() {
+    let seven = Some(Live {
+        pct: Some(40.0),
+        at: Some(1_800_000_000.0),
+    });
+    let tier = |t: &str| Some(String::from(t));
+    let (five, _) = with_five_hour((None, seven), || tier("default_claude_max_5x"));
+    assert!(five.is_some_and(|w| w.pct.is_none() && w.at.is_none()));
+    let (five, _) = with_five_hour((None, seven), || tier("default_claude_max_20x"));
+    assert!(five.is_none());
+    let (five, _) = with_five_hour((None, seven), || None);
+    assert!(five.is_none());
+    let (five, seven) = with_five_hour((None, None), || panic!("not read"));
+    assert!(five.is_none() && seven.is_none());
+}
