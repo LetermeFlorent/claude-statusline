@@ -6,6 +6,8 @@ All notable changes to this project are listed here, newest first. Versions foll
 
 - Trame is recognized (`TERM_PROGRAM=trame`). It follows the system theme, so the bar now does the same instead of assuming a dark background as for an unknown terminal on Windows. `statusline --theme` names the system theme as the source. This also lets `colors.ink_dark` and `colors.ink_light` be set safely under Trame, which matters because Claude Code dims the whole status line.
 - The model name is no longer underlined.
+- The model and the effort no longer get cut off at the end of the first line. Claude Code sets `COLUMNS` to the full terminal width but draws the status line with 2 blank columns on each side, so the line now fits in `COLUMNS` minus 4.
+- In a very narrow terminal, once the bars are down to a single square, the `ctx` segment is hidden so that the quotas and the model still fit.
 
 ## 2.2.5 - 2026-11-05
 

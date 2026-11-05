@@ -69,7 +69,7 @@ Within a quota or machine bar, the squares get slightly lighter from left to rig
 
 The `5h`, `7d` and `spend` segments stay hidden as long as no quota is known for the account, neither in the session JSON nor in the state file from the last 10 minutes. The second line disappears when `system.enabled` is `false`, or when the `system.metrics` list holds no known name. Each segment can also be hidden through the `segments` setting; with all four hidden, the first line stays empty. During an update, `update` shows at the end of the second line, or on a line of its own when the second line is turned off.
 
-When `COLUMNS` is set, the bar keeps each line within that many characters. It first drops the reset times of the `5h` and `7d` quotas, then the effort next to the model name, then narrows the bars one square at a time down to a single square. With the default settings the sample line takes 85 columns; with `bar_width` at `4`, it fits in 80 columns with every detail. Without `COLUMNS`, nothing is dropped.
+When `COLUMNS` is set, the bar keeps each line within that many characters, less the 4 columns Claude Code leaves blank around the status line. It first drops the reset times of the `5h` and `7d` quotas, then the effort next to the model name, then narrows the bars one square at a time down to a single square, and last hides the `ctx` segment. With the default settings the sample line takes 85 characters; with `bar_width` at `4`, it fits in 80 characters with every detail. Without `COLUMNS`, nothing is dropped.
 
 ## 5-hour and 7-day quotas
 

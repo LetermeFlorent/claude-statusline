@@ -59,7 +59,7 @@ The program reads the following variables, all of them optional:
 | `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | auto-compact threshold |
 | `COLORFGBG` | terminal colors, for the background |
 | `COLORTERM` | `truecolor` or `24bit` keeps 24-bit colors; anything else, or nothing, switches to 256 colors |
-| `COLUMNS` | width of the terminal: the line drops details to fit in it |
+| `COLUMNS` | width of the terminal: the line drops details to fit in it, less the 4 columns Claude Code leaves blank around the status line |
 | `NO_COLOR`, `TERM` | plain text, when `NO_COLOR` is set or `TERM` is `dumb` |
 | `TERM_PROGRAM`, `VSCODE_INJECTION`, `VSCODE_PID`, `WT_SESSION` | host terminal detection |
 | `VSCODE_GIT_ASKPASS_NODE`, `VSCODE_GIT_ASKPASS_MAIN`, `VSCODE_CWD` | which of VS Code and its forks started the terminal |
