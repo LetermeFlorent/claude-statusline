@@ -81,6 +81,13 @@ fn an_unknown_host_is_dark_on_windows_and_follows_the_system_elsewhere() {
 }
 
 #[test]
+fn trame_follows_the_system_theme() {
+    let sandbox = Sandbox::new("trame-host");
+    let found = places(None, unix_side(&sandbox));
+    assert_eq!(mode(Host::Trame, &found, None, None), Mode::System);
+}
+
+#[test]
 fn zed_reads_the_appearance_of_a_custom_theme() {
     let sandbox = Sandbox::new("zed");
     let found = places(None, unix_side(&sandbox));
