@@ -45,7 +45,7 @@ The first line chains four segments separated by `|`, always in this order:
 - `5h`: the 5-hour quota as a percentage, then the time left before it resets (`3h29m`, or `45m` under an hour). With no known reset time it shows `--` in that place.
 - `7d`: the weekly quota, with the time before the reset in days and hours past one day (`3d16h`).
 - `spend`: shown in place of `5h` and `7d` when the session JSON holds only `rate_limits.spend_limit`, as it does behind a Claude apps gateway. It reads like a quota: the percentage of the spend limit used, then the time before its period resets (`dépense` in French).
-- the model, followed by `:` and the effort level. The effort letters are drawn in a gradient, with a hue of their own for `low`, `medium`, `high`, `xhigh` and `max`, and one shared hue for any other value. `auto` takes the hue of `low`, and `ultracode` shows as `ultracode(+workflows)`. The model name is cut before its first parenthesis: `Opus 4 (1M context)` becomes `Opus 4`.
+- the model, followed by `:` and the effort level. The effort letters are drawn in a gradient, with a hue of their own: green for `low`, yellow for `medium`, orange for `high`, red for `xhigh`, magenta for `max`, and cyan for any other value. When the line is too narrow for the effort, the model name takes its colors instead. `auto` takes the hue of `low`, and `ultracode` shows as `ultracode(+workflows)`. The model name is cut before its first parenthesis: `Opus 4 (1M context)` becomes `Opus 4`.
 
 The second line shows three machine metrics:
 
