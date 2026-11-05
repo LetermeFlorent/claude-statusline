@@ -14,6 +14,7 @@ pub struct Terminal {
 }
 
 const TRUE_COLOR_WORDS: [&str; 2] = ["truecolor", "24bit"];
+const CLAUDE_CODE_MARGINS: usize = 4;
 
 impl Terminal {
     #[cfg(test)]
@@ -37,7 +38,8 @@ impl Terminal {
         let known = announced || console_draws_24_bit || variable("WT_SESSION").is_some();
         let columns = variable("COLUMNS")
             .and_then(|text| text.trim().parse::<usize>().ok())
-            .filter(|columns| *columns > 0);
+            .filter(|columns| *columns > 0)
+            .map(|columns| columns.saturating_sub(CLAUDE_CODE_MARGINS));
         Terminal {
             columns,
             depth: if known {
@@ -98,8 +100,9 @@ mod tests {
 
     #[test]
     fn columns_count_only_when_they_are_a_positive_number() {
-        assert_eq!(terminal(&[("COLUMNS", "80")], false).columns, Some(80));
-        assert_eq!(terminal(&[("COLUMNS", " 132 ")], false).columns, Some(132));
+        assert_eq!(terminal(&[("COLUMNS", "80")], false).columns, Some(76));
+        assert_eq!(terminal(&[("COLUMNS", " 132 ")], false).columns, Some(128));
+        assert_eq!(terminal(&[("COLUMNS", "3")], false).columns, Some(0));
         for text in ["0", "-5", "wide", "", "8.5"] {
             assert_eq!(
                 terminal(&[("COLUMNS", text)], false).columns,

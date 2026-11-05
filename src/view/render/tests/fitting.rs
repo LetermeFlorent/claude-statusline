@@ -12,7 +12,7 @@ fn the_line_fits_in_80_columns() {
 }
 
 #[test]
-fn the_reset_times_go_first_then_the_effort_then_the_bar_width() {
+fn the_reset_times_go_first_then_the_effort_then_the_bar_width_then_the_ctx() {
     let text = |columns| glyphs(&fitted(columns, None));
     let bar = "\u{25A0}".repeat(8);
     assert!(text(84).contains("1h00"), "{}", text(84));
@@ -26,6 +26,10 @@ fn the_reset_times_go_first_then_the_effort_then_the_bar_width() {
     let narrow = text(60);
     assert!(!narrow.contains(&bar), "{}", narrow);
     assert!(fit::widest(&narrow) <= 60, "{}", narrow);
+    assert!(narrow.contains("ctx"), "{}", narrow);
+    let tiny = text(40);
+    assert!(!tiny.contains("ctx"), "{}", tiny);
+    assert!(tiny.contains("Opus 4"), "{}", tiny);
 }
 
 #[test]

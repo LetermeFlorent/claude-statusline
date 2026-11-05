@@ -5,6 +5,7 @@ pub struct Layout {
     pub resets: bool,
     pub effort: bool,
     pub width: usize,
+    pub ctx: bool,
 }
 
 impl Layout {
@@ -13,6 +14,7 @@ impl Layout {
             resets: true,
             effort: true,
             width,
+            ctx: true,
         }
     }
 
@@ -35,6 +37,9 @@ impl Layout {
                 ..self
             });
         }
+        if self.ctx {
+            return Some(Layout { ctx: false, ..self });
+        }
         None
     }
 }
@@ -52,20 +57,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_layout_gives_up_the_resets_then_the_effort_then_the_width() {
+    fn the_layout_gives_up_the_resets_then_the_effort_then_the_width_then_the_ctx() {
         let mut layout = Layout::full(3);
         let mut seen = alloc::vec![];
         while let Some(next) = layout.narrower() {
-            seen.push((next.resets, next.effort, next.width));
+            seen.push((next.resets, next.effort, next.width, next.ctx));
             layout = next;
         }
         assert_eq!(
             seen,
             [
-                (false, true, 3),
-                (false, false, 3),
-                (false, false, 2),
-                (false, false, 1)
+                (false, true, 3, true),
+                (false, false, 3, true),
+                (false, false, 2, true),
+                (false, false, 1, true),
+                (false, false, 1, false)
             ]
         );
     }

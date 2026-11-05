@@ -29,7 +29,7 @@ pub(in crate::view::render) fn draw(
         depth,
     };
     let mut first = true;
-    if cfg.seg_ctx {
+    if cfg.seg_ctx && layout.ctx {
         out.sep(&mut first);
         out.ctx(data);
     }

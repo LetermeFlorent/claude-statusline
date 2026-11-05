@@ -7,7 +7,6 @@ use alloc::vec::Vec;
 
 impl Out<'_> {
     pub(super) fn model(&mut self, data: &Data) {
-        self.line.push_str("\x1b[4m");
         let ink = self.col.ink;
         self.tint(ink);
         self.line.push_str(&data.model);
