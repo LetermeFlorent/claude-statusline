@@ -1,5 +1,6 @@
 use crate::compact;
 use crate::config::{Config, Metric};
+use crate::json::{self, Syntax};
 use crate::os;
 use crate::render::SysValue;
 use crate::state::State;
@@ -83,4 +84,16 @@ pub(in crate::cli::app) fn read_file(p: &str) -> Option<String> {
     } else {
         os::read_text(p)
     }
+}
+
+pub(in crate::cli::app) fn plan_tier(dir: &str) -> Option<String> {
+    if dir.is_empty() {
+        return None;
+    }
+    let text = read_file(&os::join(dir, &[".credentials.json"]))?;
+    let value = json::parse(&text, Syntax::Tolerant)?;
+    value
+        .at(&["claudeAiOauth", "rateLimitTier"])?
+        .str()
+        .map(String::from)
 }
