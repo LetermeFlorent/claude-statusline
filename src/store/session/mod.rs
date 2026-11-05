@@ -30,6 +30,23 @@ impl Live {
     }
 }
 
+pub fn with_five_hour(
+    live: (Option<Live>, Option<Live>),
+    tier: impl FnOnce() -> Option<String>,
+) -> (Option<Live>, Option<Live>) {
+    let (five, seven) = live;
+    if five.is_some() || seven.is_none() || tier().is_none_or(|t| t.contains("max_20x")) {
+        return (five, seven);
+    }
+    (
+        Some(Live {
+            pct: None,
+            at: None,
+        }),
+        seven,
+    )
+}
+
 fn model_name(model: Option<&Value>) -> String {
     let model = model.filter(|v| v.is_obj());
     match model

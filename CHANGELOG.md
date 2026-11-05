@@ -2,6 +2,10 @@
 
 All notable changes to this project are listed here, newest first. Versions follow the `version` in Cargo.toml and the git tag of the same name.
 
+## 2.2.5 - 2026-11-05
+
+- Only Ultra plans hide the `5h` segment. When Claude Code sends a seven-day window and no five-hour one, the line now reads `rateLimitTier` from `.credentials.json` in the account folder: a plan below Ultra (any tier without `max_20x`) keeps `5h` with an empty bar and `--`, and `q5_none@<tag>` is not written. When the file cannot be read, as with the macOS keychain, the segment is hidden as before.
+
 ## 2.2.4 - 2026-11-04
 
 - Two sessions of the same account no longer make the quota percentages jump back and forth. Each Claude Code window sends its own copy of the limits, and an older copy used to overwrite a newer one in the shared state on every render. A live render now merges with what is stored: for the same reset time (within 60 seconds) the higher percentage wins, and a window whose reset time is earlier than the stored one is treated as stale and replaced by the stored values. Every session then shows the same numbers.
