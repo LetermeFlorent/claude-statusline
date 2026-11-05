@@ -21,7 +21,8 @@ fn the_reset_times_go_first_then_the_effort_then_the_bar_width_then_the_ctx() {
     assert!(no_resets.contains(":high"), "{}", no_resets);
     let no_effort = text(70);
     assert!(!no_effort.contains(":high"), "{}", no_effort);
-    assert!(no_effort.contains("Opus 4"), "{}", no_effort);
+    let tinted = fitted(70, None);
+    assert!(tinted.contains("[#f59b46]O"), "{}", tinted);
     assert!(no_effort.contains(&bar), "{}", no_effort);
     let narrow = text(60);
     assert!(!narrow.contains(&bar), "{}", narrow);
