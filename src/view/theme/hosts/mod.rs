@@ -20,6 +20,7 @@ pub enum Host {
     Wt,
     Zed,
     Ghostty,
+    Trame,
     Other,
 }
 
@@ -47,7 +48,7 @@ pub fn host_files(terminal: Host, places: &Places, order: &[usize]) -> Vec<Strin
         Host::Wt => places.wt_files(),
         Host::Zed => places.zed_files(),
         Host::Ghostty => places.ghostty_files(),
-        Host::Other => Vec::new(),
+        Host::Trame | Host::Other => Vec::new(),
     }
 }
 
@@ -57,6 +58,7 @@ pub fn host_source(terminal: Host) -> Source {
         Host::Wt => Source::WindowsTerminal,
         Host::Zed => Source::Zed,
         Host::Ghostty => Source::Ghostty,
+        Host::Trame => Source::System,
         Host::Other => Source::Assumed,
     }
 }
@@ -67,6 +69,7 @@ pub fn host_stamp(terminal: Host, files: &[String], context: &Context<'_>) -> St
         Host::Wt => "wt|",
         Host::Zed => "zed|",
         Host::Ghostty => "ghostty|",
+        Host::Trame => "trame|",
         Host::Other => "os|",
     });
     stamp.push_str(context.profile_id.unwrap_or_default());
