@@ -2,6 +2,11 @@
 
 All notable changes to this project are listed here, newest first. Versions follow the `version` in Cargo.toml and the git tag of the same name.
 
+## 2.2.7 - 2026-11-05
+
+- Each effort level has a color of its own that is easy to tell apart: green for `low` and `auto`, yellow for `medium`, orange for `high`, red for `xhigh`, magenta for `max`, and cyan for any other value. The letters keep a light gradient within that color.
+- When the line is too narrow for the effort, the model name is drawn in the effort's colors, so the level still shows.
+
 ## 2.2.6 - 2026-11-05
 
 - Trame is recognized (`TERM_PROGRAM=trame`). It follows the system theme, so the bar now does the same instead of assuming a dark background as for an unknown terminal on Windows. `statusline --theme` names the system theme as the source. This also lets `colors.ink_dark` and `colors.ink_light` be set safely under Trame, which matters because Claude Code dims the whole status line.
