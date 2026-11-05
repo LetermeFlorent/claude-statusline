@@ -52,6 +52,7 @@ pub fn host_mode(terminal: Host, files: &[String], context: &Context<'_>) -> Mod
                 lookup::ghostty_theme(&dirs, name)
             })
         }
+        Host::Trame => Mode::System,
         Host::Other => other_host_mode(),
     }
 }

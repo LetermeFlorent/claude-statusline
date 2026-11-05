@@ -12,6 +12,7 @@ fn host() -> Host {
         Some("vscode") => return Host::Vscode,
         Some("zed") => return Host::Zed,
         Some("ghostty") => return Host::Ghostty,
+        Some("trame") => return Host::Trame,
         _ => {}
     }
     if var("VSCODE_INJECTION").is_some() || var("VSCODE_PID").is_some() {
