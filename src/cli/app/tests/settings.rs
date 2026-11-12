@@ -41,6 +41,7 @@ fn an_empty_file_counts_as_an_empty_object() {
     assert!(add_line(&path, "x").is_ok());
     let written = std::fs::read_to_string(&path).unwrap();
     assert!(written.contains("\"statusLine\""), "{}", written);
+    assert!(written.contains("\"subagentStatusLine\""), "{}", written);
 }
 
 #[test]
@@ -59,4 +60,29 @@ fn the_printed_backup_is_on_disk() {
 #[test]
 fn the_written_template_passes_the_check() {
     assert!(check::problems(TEMPLATE).is_empty());
+}
+
+#[test]
+fn install_keeps_a_foreign_subagent_line_and_uninstall_keeps_it_too() {
+    let sandbox = Sandbox::new("foreign-subagent-line");
+    let path = sandbox.path("settings.json");
+    std::fs::write(
+        &path,
+        "{\"subagentStatusLine\": {\"type\": \"command\", \"command\": \"mine\"}}",
+    )
+    .unwrap();
+    assert!(add_line(&path, "/t/statusline").is_ok());
+    let written = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        written.contains("\"mine\"") && written.contains("\"statusLine\""),
+        "{}",
+        written
+    );
+    assert!(remove_line(&path).is_ok());
+    let left = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        left.contains("\"mine\"") && !left.contains("\"statusLine\""),
+        "{}",
+        left
+    );
 }
