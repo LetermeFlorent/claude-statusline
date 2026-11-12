@@ -32,7 +32,7 @@ fn rgb(c: Rgb) -> Rgb {
     [num::round(c[0]), num::round(c[1]), num::round(c[2])]
 }
 
-struct Out<'a> {
+pub(in crate::view::render) struct Out<'a> {
     line: String,
     cfg: &'a Config,
     col: &'a Colors,

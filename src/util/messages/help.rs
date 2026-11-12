@@ -16,6 +16,8 @@ bar on standard output.
   --language    language of the messages: fr or en
   --check       lists the mistakes in the settings file, with their line
   --update      installs the latest release published on GitHub
+  subagents     reads the subagentStatusLine JSON on standard input and
+                writes one JSON row per task
   --version     version number
   --help        this help
 
@@ -37,6 +39,8 @@ barre sur la sortie standard.
   --language    langue des messages : fr ou en
   --check       liste les erreurs du fichier de réglages, avec leur ligne
   --update      installe la dernière version publiée sur GitHub
+  subagents     lit le JSON subagentStatusLine sur l'entrée standard et
+                écrit une ligne JSON par tâche
   --version     numéro de version
   --help        cette aide
 
