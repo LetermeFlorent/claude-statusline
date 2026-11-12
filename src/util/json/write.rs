@@ -2,6 +2,9 @@ use crate::json::Value;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+const INDENT_STEP: usize = 2;
+const FIRST_PRINTABLE: u32 = 0x20;
+
 pub fn pretty(v: &Value) -> String {
     let mut out = String::new();
     write_value(v, 0, &mut out);
@@ -21,49 +24,59 @@ fn write_value(value: &Value, ind: usize, out: &mut String) {
         Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
         Value::Num(_, raw) => out.push_str(raw),
         Value::Str(s) => quote(s, out),
-        Value::Arr(items) => {
-            if items.is_empty() {
-                out.push_str("[]");
-                return;
-            }
-            out.push_str("[\n");
-            for (i, x) in items.iter().enumerate() {
-                indent(ind + 2, out);
-                write_value(x, ind + 2, out);
-                if i + 1 < items.len() {
-                    out.push(',');
-                }
-                out.push('\n');
-            }
-            indent(ind, out);
-            out.push(']');
+        Value::Arr(items) => write_array(items, ind, out),
+        Value::Obj(members) => write_object(value, members, ind, out),
+    }
+}
+
+fn write_array(items: &[Value], ind: usize, out: &mut String) {
+    if items.is_empty() {
+        out.push_str("[]");
+        return;
+    }
+    out.push_str("[\n");
+    for (i, x) in items.iter().enumerate() {
+        indent(ind + INDENT_STEP, out);
+        write_value(x, ind + INDENT_STEP, out);
+        if i + 1 < items.len() {
+            out.push(',');
         }
-        Value::Obj(members) => {
-            let mut keys: Vec<&String> = Vec::new();
-            for (k, _) in members {
-                if !keys.contains(&k) {
-                    keys.push(k);
-                }
-            }
-            if keys.is_empty() {
-                out.push_str("{}");
-                return;
-            }
-            out.push_str("{\n");
-            for (i, k) in keys.iter().enumerate() {
-                indent(ind + 2, out);
-                quote(k, out);
-                out.push_str(": ");
-                write_value(value.get(k).unwrap_or(&Value::Null), ind + 2, out);
-                if i + 1 < keys.len() {
-                    out.push(',');
-                }
-                out.push('\n');
-            }
-            indent(ind, out);
-            out.push('}');
+        out.push('\n');
+    }
+    indent(ind, out);
+    out.push(']');
+}
+
+fn write_object(value: &Value, members: &[(String, Value)], ind: usize, out: &mut String) {
+    let mut keys: Vec<&String> = Vec::new();
+    for (k, _) in members {
+        if !keys.contains(&k) {
+            keys.push(k);
         }
     }
+    if keys.is_empty() {
+        out.push_str("{}");
+        return;
+    }
+    out.push_str("{\n");
+    for (i, k) in keys.iter().enumerate() {
+        indent(ind + INDENT_STEP, out);
+        quote(k, out);
+        out.push_str(": ");
+        write_value(value.get(k).unwrap_or(&Value::Null), ind + INDENT_STEP, out);
+        if i + 1 < keys.len() {
+            out.push(',');
+        }
+        out.push('\n');
+    }
+    indent(ind, out);
+    out.push('}');
+}
+
+pub fn string(s: &str) -> String {
+    let mut out = String::new();
+    quote(s, &mut out);
+    out
 }
 
 fn quote(s: &str, out: &mut String) {
@@ -78,7 +91,7 @@ fn quote(s: &str, out: &mut String) {
             '\t' => out.push_str("\\t"),
             '\u{8}' => out.push_str("\\b"),
             '\u{c}' => out.push_str("\\f"),
-            c if (c as u32) < 0x20 => {
+            c if (c as u32) < FIRST_PRINTABLE => {
                 out.push_str("\\u00");
                 out.push(HEX[(c as usize) >> 4] as char);
                 out.push(HEX[(c as usize) & 15] as char);

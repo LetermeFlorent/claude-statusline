@@ -1,8 +1,12 @@
 use super::tone::{Pair, Tone};
 use super::{lerp, rgb, Out, RESET};
+use crate::render::rows::Paint;
+use crate::render::screen::fit::Layout;
 use crate::render::Data;
 use alloc::format;
 use alloc::string::String;
+
+const ULTRACODE: &str = "ultracode";
 
 impl Out<'_> {
     pub(super) fn model(&mut self, data: &Data) {
@@ -17,13 +21,47 @@ impl Out<'_> {
             return;
         }
         self.ink(&data.model);
-        let word = if key == "ultracode" {
+        let word = if key == ULTRACODE {
             format!("{}(+workflows)", level)
         } else {
             String::from(level)
         };
         self.label(":");
         self.shade(&word, pair, true);
+    }
+
+    pub(in crate::view::render) fn row(
+        paint: &Paint,
+        name: &str,
+        model: &str,
+        effort: &str,
+    ) -> String {
+        let mut out = Out {
+            line: String::new(),
+            cfg: paint.cfg,
+            col: paint.col,
+            layout: Layout::full(paint.cfg.width),
+            depth: paint.depth,
+        };
+        if !name.is_empty() {
+            out.ink(name);
+        }
+        if !model.is_empty() {
+            if !name.is_empty() {
+                out.line.push(' ');
+            }
+            out.ink(model);
+        }
+        if !effort.is_empty() {
+            if !model.is_empty() {
+                out.label(":");
+            } else if !name.is_empty() {
+                out.line.push(' ');
+            }
+            let pair = Tone::of(&effort.to_lowercase()).pair(paint.col.light);
+            out.shade(effort, pair, true);
+        }
+        out.line
     }
 
     fn ink(&mut self, text: &str) {
