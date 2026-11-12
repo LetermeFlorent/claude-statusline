@@ -2,6 +2,11 @@
 
 All notable changes to this project are listed here, newest first. Versions follow the `version` in Cargo.toml and the git tag of the same name.
 
+## 2.3.0 - 2026-11-12
+
+- New `statusline subagents` command for Claude Code's `subagentStatusLine`. It shows each subagent's model and effort in the subagent panel, with the effort colours.
+- Install and uninstall now manage the `subagentStatusLine` setting. A value the user set themselves is left alone.
+
 ## 2.2.7 - 2026-11-05
 
 - Each effort level has a color of its own that is easy to tell apart: green for `low` and `auto`, yellow for `medium`, orange for `high`, red for `xhigh`, magenta for `max`, and cyan for any other value. The letters keep a light gradient within that color.
