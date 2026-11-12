@@ -31,8 +31,8 @@ fn awkward_folders_still_run_through_sh() {
     let folder = sandbox.path("a b'c$d");
     std::fs::create_dir(&folder).unwrap();
     let program = os::join(&folder, &["statusline"]);
-    std::os::unix::fs::symlink("/bin/echo", &program).unwrap();
-    let line = format!("{} ok", command(&program));
+    std::os::unix::fs::symlink("/bin/sh", &program).unwrap();
+    let line = format!("{} -c 'echo ok'", command(&program));
     let output = std::process::Command::new("sh")
         .arg("-c")
         .arg(&line)
