@@ -30,7 +30,6 @@ pub(super) fn subagents() -> i32 {
         cfg: &cfg,
         col: &colors,
         depth: Terminal::current().depth,
-        frame: os::now() as u64 & 2 == 0,
     };
     let project = os::claude_dir().zip(cwd.as_deref()).map(|(dir, cwd)| {
         let name: String = cwd
@@ -77,8 +76,6 @@ fn usage(project: &str, id: &str) -> Option<Used> {
         .as_deref()
         .and_then(os::read_text)
         .and_then(|t| Usage::decode(&t));
-    // a first sight of the transcript is not a rise
-    let known = usage.as_ref().map(Usage::totals);
     let mut usage = usage.unwrap_or_default();
     let before = usage.offset;
     while let Some(chunk) = os::read_from(&path, usage.offset, CHUNK) {
@@ -93,12 +90,8 @@ fn usage(project: &str, id: &str) -> Option<Used> {
             break;
         }
     }
-    let now = os::now() as u64;
-    if let Some(known) = known {
-        usage.note_rise(known, now);
-    }
     if let Some(cache) = cache.filter(|_| usage.offset != before) {
         os::write(&cache, usage.encode().as_bytes());
     }
-    Some(usage.used(now))
+    Some(usage.used())
 }
