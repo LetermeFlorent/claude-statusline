@@ -2,6 +2,10 @@
 
 All notable changes to this project are listed here, newest first. Versions follow the `version` in Cargo.toml and the git tag of the same name.
 
+## 2.3.1 - 2026-11-15
+
+- Each row of the subagent panel now ends, at the right edge, with the tokens the subagent sent (`↑`) and received (`↓`), summed over its whole transcript. Cache reads are not counted as sent. An arrow whose count just went up pulses in green for a few seconds.
+
 ## 2.3.0 - 2026-11-12
 
 - New `statusline subagents` command for Claude Code's `subagentStatusLine`. It shows each subagent's model and effort in the subagent panel, with the effort colours.

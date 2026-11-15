@@ -1,6 +1,7 @@
 use super::*;
 use crate::plain;
 use crate::render::screen::fit::widest;
+use crate::store::subagents::Used;
 
 fn task(name: Option<&str>, model: Option<&str>, effort: Option<&str>) -> Task {
     Task {
@@ -10,6 +11,16 @@ fn task(name: Option<&str>, model: Option<&str>, effort: Option<&str>) -> Task {
         status: None,
         model: model.map(String::from),
         effort: effort.map(String::from),
+        usage: None,
+    }
+}
+
+fn used(sent: u64, got: u64, sent_rising: bool, got_rising: bool) -> Used {
+    Used {
+        sent,
+        got,
+        sent_rising,
+        got_rising,
     }
 }
 
@@ -19,6 +30,7 @@ fn raw_row(task: &Task, columns: usize) -> String {
         cfg: &cfg,
         col: &cfg.colors(false),
         depth: Depth::TrueColor,
+        frame: true,
     };
     row(&paint, task, columns)
 }
@@ -89,4 +101,45 @@ fn a_narrow_width_cuts_the_row() {
     let t = task(None, Some("claude-opus-4-8"), Some("high"));
     assert_eq!(plain_row(&t, 8), "Opus 4.8");
     assert_eq!(plain_row(&t, 10), "Opus 4.8:h");
+}
+
+#[test]
+fn sent_and_received_tokens_sit_at_the_right_edge() {
+    let mut t = task(Some("scout"), Some("claude-opus-4-8"), Some("high"));
+    t.usage = Some(used(1_200_000, 34_000, false, false));
+    for columns in [40, 24] {
+        let row = plain_row(&t, columns);
+        assert!(row.starts_with("scout Opus 4.8"));
+        assert!(row.ends_with(" \u{2191}1M \u{2193}34k"));
+        assert_eq!(row.chars().count(), columns);
+    }
+    t.name = None;
+    t.model = None;
+    t.effort = None;
+    t.label = None;
+    t.usage = Some(used(5, 7, false, false));
+    assert_eq!(plain_row(&t, 10), "id1  \u{2191}5 \u{2193}7");
+    assert_eq!(plain_row(&t, 3), "id1");
+}
+
+#[test]
+fn a_rising_count_pulses_between_two_frames() {
+    let mut t = task(Some("scout"), None, None);
+    t.usage = Some(used(5, 7, true, false));
+    let lit = raw_row(&t, 30);
+    let dim = {
+        let cfg = Config::parse(None);
+        let paint = Paint {
+            cfg: &cfg,
+            col: &cfg.colors(false),
+            depth: Depth::TrueColor,
+            frame: false,
+        };
+        row(&paint, &t, 30)
+    };
+    assert_ne!(lit, dim);
+    assert!(lit.contains("\x1b[38;2;110;200;120m"));
+    assert_eq!(plain::strip(&lit), plain::strip(&dim));
+    t.usage = Some(used(5, 7, false, false));
+    assert!(!raw_row(&t, 30).contains("\x1b[38;2;110;200;120m"));
 }
