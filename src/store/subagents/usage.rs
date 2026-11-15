@@ -5,8 +5,6 @@ use alloc::string::String;
 const USER: &[u8] = b"\"type\":\"user\"";
 const USAGE: &[u8] = b"\"usage\":{";
 const HEAD_BYTES: usize = 300;
-/// How long an arrow stays lit after its count went up.
-const RISE_SECONDS: u64 = 8;
 
 fn has(hay: &[u8], needle: &[u8]) -> bool {
     hay.windows(needle.len()).any(|w| w == needle)
@@ -22,8 +20,6 @@ pub struct Usage {
     got: u64,
     last_sent: u64,
     last_got: u64,
-    rose_sent: u64,
-    rose_got: u64,
     id: String,
 }
 
@@ -72,39 +68,15 @@ impl Usage {
         )
     }
 
-    /// Notes, at time `now` in seconds, which total went up since `before`.
-    pub fn note_rise(&mut self, before: (u64, u64), now: u64) {
+    pub fn used(&self) -> super::Used {
         let (sent, got) = self.totals();
-        if sent > before.0 {
-            self.rose_sent = now;
-        }
-        if got > before.1 {
-            self.rose_got = now;
-        }
-    }
-
-    pub fn used(&self, now: u64) -> super::Used {
-        let (sent, got) = self.totals();
-        let recent = |at: u64| at > 0 && now.saturating_sub(at) <= RISE_SECONDS;
-        super::Used {
-            sent,
-            got,
-            sent_rising: recent(self.rose_sent),
-            got_rising: recent(self.rose_got),
-        }
+        super::Used { sent, got }
     }
 
     pub fn encode(&self) -> String {
         format!(
-            "{} {} {} {} {} {} {} {}",
-            self.offset,
-            self.sent,
-            self.got,
-            self.last_sent,
-            self.last_got,
-            self.rose_sent,
-            self.rose_got,
-            self.id
+            "{} {} {} {} {} {}",
+            self.offset, self.sent, self.got, self.last_sent, self.last_got, self.id
         )
     }
 
@@ -117,8 +89,6 @@ impl Usage {
             got: num()?,
             last_sent: num()?,
             last_got: num()?,
-            rose_sent: num()?,
-            rose_got: num()?,
             id: String::from(p.next().unwrap_or("")),
         })
     }
@@ -149,27 +119,10 @@ mod tests {
     }
 
     #[test]
-    fn a_total_that_went_up_lights_its_arrow_for_a_few_seconds() {
-        let mut u = Usage::default();
-        u.advance(format!("{A}\n").as_bytes());
-        u.note_rise((10, 30), 100);
-        u.advance(format!("{B}\n").as_bytes());
-        u.note_rise((10, 30), 100);
-        assert_eq!(
-            (u.used(100).sent_rising, u.used(100).got_rising),
-            (true, true)
-        );
-        assert!(u.used(108).sent_rising);
-        assert!(!u.used(109).sent_rising);
-        assert!(!Usage::default().used(5).got_rising);
-    }
-
-    #[test]
     fn the_cache_text_round_trips() {
         let mut u = Usage::default();
         u.advance(format!("{A}\n{B}\n").as_bytes());
         u.offset = 99;
-        u.note_rise((0, 0), 7);
         assert_eq!(Usage::decode(&u.encode()), Some(u));
         assert_eq!(Usage::decode("1 2"), None);
     }

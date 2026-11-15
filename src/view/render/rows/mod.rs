@@ -17,8 +17,6 @@ pub struct Paint<'a> {
     pub cfg: &'a Config,
     pub col: &'a Colors,
     pub depth: Depth,
-    /// Alternates between two looks so that a rising count pulses.
-    pub frame: bool,
 }
 
 fn short_model(id: &str) -> String {
@@ -87,9 +85,6 @@ pub fn row(paint: &Paint, task: &Task, columns: usize) -> String {
     } else {
         Default::default()
     };
-    let rising = task
-        .usage
-        .map_or((false, false), |u| (u.sent_rising, u.got_rising));
     let mut budget = columns - if sent.is_empty() { 0 } else { reserve };
     let name = cut(&name, &mut budget);
     let spacer = usize::from(!name.is_empty() && budget > 0);
@@ -102,14 +97,7 @@ pub fn row(paint: &Paint, task: &Task, columns: usize) -> String {
     } else {
         cut(&effort, &mut budget)
     };
-    let text = Out::row(
-        paint,
-        &name,
-        &model,
-        &effort,
-        [(&sent, rising.0), (&got, rising.1)],
-        columns,
-    );
+    let text = Out::row(paint, &name, &model, &effort, [&sent, &got], columns);
     debug_assert!(fit::widest(&text) <= columns);
     text
 }

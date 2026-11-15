@@ -4,7 +4,7 @@ All notable changes to this project are listed here, newest first. Versions foll
 
 ## 2.3.1 - 2026-11-15
 
-- Each row of the subagent panel now ends, at the right edge, with the tokens the subagent sent (`↑`) and received (`↓`), summed over its whole transcript. Cache reads are not counted as sent. An arrow whose count just went up pulses in green for a few seconds.
+- Each row of the subagent panel now ends, at the right edge, with the tokens the subagent sent (`↑`) and received (`↓`), summed over its whole transcript. Cache reads are not counted as sent.
 
 ## 2.3.0 - 2026-11-12
 

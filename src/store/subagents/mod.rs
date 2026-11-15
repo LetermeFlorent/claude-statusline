@@ -5,13 +5,11 @@ use alloc::vec::Vec;
 #[derive(Debug, PartialEq)]
 pub struct Invalid;
 
-/// Tokens a subagent sent to the model and got back, and which of the two rose a moment ago.
+/// Tokens a subagent sent to the model and got back.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Used {
     pub sent: u64,
     pub got: u64,
-    pub sent_rising: bool,
-    pub got_rising: bool,
 }
 
 #[derive(Debug, PartialEq)]
