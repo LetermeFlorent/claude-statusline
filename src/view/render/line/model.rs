@@ -1,7 +1,7 @@
 use super::tone::{Pair, Tone};
 use super::{lerp, rgb, Out, RESET};
 use crate::render::rows::Paint;
-use crate::render::screen::fit::Layout;
+use crate::render::screen::fit::{widest, Layout};
 use crate::render::Data;
 use alloc::format;
 use alloc::string::String;
@@ -35,6 +35,8 @@ impl Out<'_> {
         name: &str,
         model: &str,
         effort: &str,
+        tail: [&str; 2],
+        columns: usize,
     ) -> String {
         let mut out = Out {
             line: String::new(),
@@ -60,6 +62,17 @@ impl Out<'_> {
             }
             let pair = Tone::of(&effort.to_lowercase()).pair(paint.col.light);
             out.shade(effort, pair, true);
+        }
+        if !tail[0].is_empty() {
+            let width: usize = tail.iter().map(|t| t.chars().count() + 1).sum();
+            let pad = columns.saturating_sub(widest(&out.line) + width - 1);
+            (0..pad).for_each(|_| out.line.push(' '));
+            for (i, text) in tail.into_iter().enumerate() {
+                if i > 0 {
+                    out.line.push(' ');
+                }
+                out.ink(text);
+            }
         }
         out.line
     }
