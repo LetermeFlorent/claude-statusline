@@ -1,12 +1,13 @@
 use super::tone::{Pair, Tone};
 use super::{lerp, rgb, Out, RESET};
 use crate::render::rows::Paint;
-use crate::render::screen::fit::Layout;
+use crate::render::screen::fit::{widest, Layout};
 use crate::render::Data;
 use alloc::format;
 use alloc::string::String;
 
 const ULTRACODE: &str = "ultracode";
+const RISING: [f64; 3] = [110.0, 200.0, 120.0];
 
 impl Out<'_> {
     pub(super) fn model(&mut self, data: &Data) {
@@ -35,6 +36,8 @@ impl Out<'_> {
         name: &str,
         model: &str,
         effort: &str,
+        tail: [(&str, bool); 2],
+        columns: usize,
     ) -> String {
         let mut out = Out {
             line: String::new(),
@@ -60,6 +63,21 @@ impl Out<'_> {
             }
             let pair = Tone::of(&effort.to_lowercase()).pair(paint.col.light);
             out.shade(effort, pair, true);
+        }
+        if !tail[0].0.is_empty() {
+            let width: usize = tail.iter().map(|(t, _)| t.chars().count() + 1).sum();
+            let pad = columns.saturating_sub(widest(&out.line) + width - 1);
+            (0..pad).for_each(|_| out.line.push(' '));
+            for (i, (text, rising)) in tail.into_iter().enumerate() {
+                if i > 0 {
+                    out.line.push(' ');
+                }
+                match (rising, paint.frame) {
+                    (true, true) => out.strong(text, Some(RISING)),
+                    (true, false) => out.faint(text),
+                    _ => out.ink(text),
+                }
+            }
         }
         out.line
     }

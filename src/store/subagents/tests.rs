@@ -18,6 +18,7 @@ fn a_full_task_is_read() {
             status: opt("running"),
             model: opt("claude-opus-4-7"),
             effort: opt("high"),
+            usage: None,
         }]
     );
 }
