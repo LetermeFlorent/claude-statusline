@@ -2,7 +2,9 @@ use super::line::Out;
 use super::screen::fit;
 use super::{label_text, Depth};
 use crate::config::{Colors, Config};
+use crate::render::text::tokens;
 use crate::store::subagents::Task;
+use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -66,7 +68,24 @@ pub fn row(paint: &Paint, task: &Task, columns: usize) -> String {
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| label_text(&task.id));
     }
-    let mut budget = columns;
+    let (sent, got) = task.usage.map_or_else(Default::default, |u| {
+        (
+            format!("\u{2191}{}", tokens(u.sent)),
+            format!("\u{2193}{}", tokens(u.got)),
+        )
+    });
+    // the counts sit at the right edge, so their width and one space are kept free
+    let reserve = if sent.is_empty() {
+        0
+    } else {
+        sent.chars().count() + got.chars().count() + 2
+    };
+    let (sent, got) = if reserve < columns {
+        (sent, got)
+    } else {
+        Default::default()
+    };
+    let mut budget = columns - if sent.is_empty() { 0 } else { reserve };
     let name = cut(&name, &mut budget);
     let spacer = usize::from(!name.is_empty() && budget > 0);
     budget -= spacer.min(budget);
@@ -78,7 +97,7 @@ pub fn row(paint: &Paint, task: &Task, columns: usize) -> String {
     } else {
         cut(&effort, &mut budget)
     };
-    let text = Out::row(paint, &name, &model, &effort);
+    let text = Out::row(paint, &name, &model, &effort, [&sent, &got], columns);
     debug_assert!(fit::widest(&text) <= columns);
     text
 }

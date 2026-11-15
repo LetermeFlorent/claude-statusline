@@ -5,6 +5,13 @@ use alloc::vec::Vec;
 #[derive(Debug, PartialEq)]
 pub struct Invalid;
 
+/// Tokens a subagent sent to the model and got back.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Used {
+    pub sent: u64,
+    pub got: u64,
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Task {
     pub id: String,
@@ -13,6 +20,8 @@ pub struct Task {
     pub status: Option<String>,
     pub model: Option<String>,
     pub effort: Option<String>,
+    /// Tokens sent to the model and tokens it produced, summed over the whole transcript.
+    pub usage: Option<Used>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -41,6 +50,7 @@ fn task(v: &Value) -> Option<Task> {
         status: text(v, "status"),
         model: text(v, "model"),
         effort: effort(v),
+        usage: None,
     })
 }
 
@@ -61,6 +71,8 @@ pub fn parse(input: &str) -> Result<Payload, Invalid> {
             .unwrap_or_default(),
     })
 }
+
+pub mod usage;
 
 #[cfg(test)]
 mod tests;
