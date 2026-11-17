@@ -39,7 +39,6 @@ extern "system" {
     ) -> Handle;
     pub fn CloseHandle(handle: Handle) -> i32;
     pub fn GetFileSizeEx(file: Handle, size: *mut i64) -> i32;
-    pub fn SetFilePointerEx(file: Handle, distance: i64, now: *mut i64, method: u32) -> i32;
     pub fn GetFileInformationByHandle(file: Handle, info: *mut HandleInformation) -> i32;
     pub fn GetFileAttributesW(name: *const u16) -> u32;
     pub fn GetDriveTypeW(root: *const u16) -> u32;

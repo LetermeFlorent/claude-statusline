@@ -84,3 +84,10 @@ pub(super) fn expand(program: &str, home: Option<&str>) -> Option<String> {
 pub fn expanded(program: &str) -> Option<String> {
     expand(program, shell_home().as_deref())
 }
+
+pub fn tilde_path(path: &str) -> String {
+    match home_rest(path).filter(|_| tilde_is_home()) {
+        Some(rest) => format!("~/{}", rest),
+        None => slashes(path),
+    }
+}
