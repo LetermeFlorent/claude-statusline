@@ -1,9 +1,7 @@
 use super::*;
 
-mod subagents;
-
 const COMMAND: &str = "~/.claude/bin/statusline";
-const ONLY_LINE: &str = "{\n  \"statusLine\": {\n    \"type\": \"command\",\n    \"command\": \"~/.claude/bin/statusline\",\n    \"refreshInterval\": 3\n  },\n  \"subagentStatusLine\": {\n    \"type\": \"command\",\n    \"command\": \"~/.claude/bin/statusline subagents\"\n  }\n}\n";
+const ONLY_LINE: &str = "{\n  \"statusLine\": {\n    \"type\": \"command\",\n    \"command\": \"~/.claude/bin/statusline\",\n    \"refreshInterval\": 3\n  }\n}\n";
 
 #[test]
 fn missing_file_gets_the_line() {
@@ -36,8 +34,7 @@ fn other_keys_keep_their_order() {
             "  \"model\": \"opus\",\n",
             "  \"env\": {\n    \"B\": \"1\",\n    \"A\": \"2\"\n  },\n",
             "  \"hooks\": {},\n",
-            "  \"statusLine\": {\n    \"type\": \"command\",\n    \"command\": \"~/.claude/bin/statusline\",\n    \"refreshInterval\": 3\n  },\n",
-            "  \"subagentStatusLine\": {\n    \"type\": \"command\",\n    \"command\": \"~/.claude/bin/statusline subagents\"\n  }\n",
+            "  \"statusLine\": {\n    \"type\": \"command\",\n    \"command\": \"~/.claude/bin/statusline\",\n    \"refreshInterval\": 3\n  }\n",
             "}\n",
         ))
     );
@@ -52,8 +49,7 @@ fn existing_line_is_replaced_in_place() {
             "{\n",
             "  \"a\": 1,\n",
             "  \"statusLine\": {\n    \"type\": \"command\",\n    \"command\": \"~/.claude/bin/statusline\",\n    \"refreshInterval\": 10,\n    \"padding\": 0\n  },\n",
-            "  \"z\": 2,\n",
-            "  \"subagentStatusLine\": {\n    \"type\": \"command\",\n    \"command\": \"~/.claude/bin/statusline subagents\"\n  }\n",
+            "  \"z\": 2\n",
             "}\n",
         ))
     );
