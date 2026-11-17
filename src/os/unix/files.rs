@@ -25,16 +25,6 @@ pub fn read_limited(path: &str, limit: usize) -> Option<Vec<u8>> {
     (data.len() <= limit).then_some(data)
 }
 
-/// Up to `len` bytes of a file from byte `start`; shorter than `len` means the end was reached.
-pub fn read_from(path: &str, start: u64, len: usize) -> Option<Vec<u8>> {
-    use std::io::{Seek, SeekFrom};
-    let mut file = std::fs::File::open(path).ok()?;
-    file.seek(SeekFrom::Start(start)).ok()?;
-    let mut data = Vec::new();
-    file.take(len as u64).read_to_end(&mut data).ok()?;
-    Some(data)
-}
-
 pub fn write(path: &str, data: &[u8]) -> bool {
     std::fs::write(path, data).is_ok()
 }

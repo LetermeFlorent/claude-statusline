@@ -1,7 +1,6 @@
 mod data;
 pub mod demo;
 mod line;
-pub mod rows;
 mod screen;
 #[cfg(test)]
 mod tests;
