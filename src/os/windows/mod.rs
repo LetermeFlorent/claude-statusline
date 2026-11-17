@@ -7,8 +7,8 @@ mod rt;
 mod sys;
 
 pub use files::{
-    create_private, exists, hard_link, list, lock, make_executable, mkdirs, read_from,
-    read_limited, remove, rename, stamp, write, write_atomic, written, Lock,
+    create_private, exists, hard_link, list, lock, make_executable, mkdirs, read_limited, remove,
+    rename, stamp, write, write_atomic, written, Lock,
 };
 pub use host::{cpu, disk, err, memory, now, os_stamp, os_theme, out, stdin, ticks};
 pub use paths::on_network;
