@@ -1,7 +1,10 @@
 mod edit;
+mod plugin;
 mod repair;
 
 pub(in crate::cli::app) use edit::{add_line, remove_line};
+#[cfg(test)]
+pub(in crate::cli::app) use plugin::{folder as plugin_folder, write as write_plugin};
 use repair::repair_globals;
 
 use crate::app::paths::{config_path, settings_path};
@@ -34,7 +37,12 @@ pub(super) fn install() -> i32 {
         return os::fail(messages::NO_EXE.text(), FAILED_EXIT);
     };
     let command = portable::command(&exe);
-    match add_line(&path, &command) {
+    let plugin = plugin::folder(&exe).filter(|d| plugin::write(d));
+    match add_line(
+        &path,
+        &command,
+        plugin.as_deref().map(portable::tilde_path).as_deref(),
+    ) {
         Ok(told) => os::out(&told),
         Err(message) => return os::fail(&message, FAILED_EXIT),
     }
@@ -56,7 +64,10 @@ pub(super) fn uninstall() -> i32 {
     let Some(path) = settings_path() else {
         return os::fail(messages::NO_HOME.text(), FAILED_EXIT);
     };
-    match remove_line(&path) {
+    let plugin = os::exe()
+        .and_then(|e| plugin::folder(&e))
+        .map(|d| portable::tilde_path(&d));
+    match remove_line(&path, plugin.as_deref()) {
         Ok(told) => {
             os::out(&told);
             0

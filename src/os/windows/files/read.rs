@@ -47,23 +47,6 @@ pub fn read_all(file: Handle, hint: usize, limit: usize) -> Vec<u8> {
     out
 }
 
-/// Up to `len` bytes of a file from byte `start`; shorter than `len` means the end was reached.
-pub fn read_from(path: &str, start: u64, len: usize) -> Option<Vec<u8>> {
-    let file = open_existing(path, GENERIC_READ, FILE_ATTRIBUTE_NORMAL);
-    if file == INVALID {
-        return None;
-    }
-    let moved = unsafe { GetFileType(file) } == FILE_TYPE_DISK
-        && unsafe { SetFilePointerEx(file, start as i64, null_mut(), 0) } != 0;
-    let data = moved.then(|| {
-        let mut data = read_all(file, len, len);
-        data.truncate(len);
-        data
-    });
-    unsafe { CloseHandle(file) };
-    data
-}
-
 pub fn read_limited(path: &str, limit: usize) -> Option<Vec<u8>> {
     let file = open_existing(path, GENERIC_READ, FILE_ATTRIBUTE_NORMAL);
     if file == INVALID {

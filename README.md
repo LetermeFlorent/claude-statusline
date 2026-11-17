@@ -169,7 +169,7 @@ The program is installed in `~/.claude/bin`, as `statusline.exe` on Windows and 
 | `--theme` | prints the background in use, `light` or `dark`, and on a second line where that choice came from |
 | `--language` | prints the language of the messages, `fr` or `en`; the install scripts ask for it |
 | `--check` | lists the mistakes in `statusline.json` with their line and column, and exits with code 1 when there is one (see [Settings](#settings)) |
-| `--install` | writes the `statusLine` block into the `settings.json` of the current account (see [INSTALL.md](INSTALL.md)) |
+| `--install` | writes the `statusLine` block into the `settings.json` of the current account and turns on the subagent rows plugin (see [INSTALL.md](INSTALL.md)) |
 | `--uninstall` | removes that block |
 | `--update` | installs the latest release when it is newer (see below) |
 | `--version`, `-V` | prints `statusline` followed by the version number |

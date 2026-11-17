@@ -31,9 +31,13 @@ pub(in crate::cli::app) fn settings_bytes(path: &str) -> Result<Option<Vec<u8>>,
     }
 }
 
-pub(in crate::cli::app) fn add_line(path: &str, command: &str) -> Result<String, String> {
+pub(in crate::cli::app) fn add_line(
+    path: &str,
+    command: &str,
+    plugin: Option<&str>,
+) -> Result<String, String> {
     let raw = settings_bytes(path)?;
-    let next = settings::with_status_line(raw.as_deref(), command)
+    let next = settings::with_status_line(raw.as_deref(), command, plugin)
         .ok_or_else(|| messages::SETTINGS_INVALID.with(&[path]))?;
     let told = match raw {
         Some(raw) => replace(path, &raw, &next)?,
@@ -48,11 +52,11 @@ pub(in crate::cli::app) fn add_line(path: &str, command: &str) -> Result<String,
     Ok(told + &messages::INSTALLED.with(&[path]))
 }
 
-pub(in crate::cli::app) fn remove_line(path: &str) -> Result<String, String> {
+pub(in crate::cli::app) fn remove_line(path: &str, plugin: Option<&str>) -> Result<String, String> {
     let Some(raw) = settings_bytes(path)? else {
         return Ok(messages::NO_SETTINGS.with(&[path]));
     };
-    let next = match settings::without_status_line(&raw) {
+    let next = match settings::without_status_line(&raw, plugin) {
         Removal::Invalid => return Err(messages::SETTINGS_INVALID.with(&[path])),
         Removal::NoLine => return Ok(messages::NOTHING_TO_REMOVE.with(&[path])),
         Removal::Rewrite(next) => next,

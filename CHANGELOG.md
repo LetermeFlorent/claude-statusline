@@ -2,6 +2,12 @@
 
 All notable changes to this project are listed here, newest first. Versions follow the `version` in Cargo.toml and the git tag of the same name.
 
+## 2.4.0 - 2026-11-17
+
+- The subagent rows now come from a small Claude Code plugin, `subagent-rows`, since Claude Code 2.1.323 no longer reads `subagentStatusLine`. Each row under the prompt shows the agent's name, its model and effort with the effort colors of the bar, what it is doing, and the tokens it sent (`↑`) and received (`↓`) on the right. Cache reads are not counted as sent. When Claude Code leaves the effort out because the agent runs at the session's level, the effort of its last request is shown.
+- `--install` writes the plugin next to the program, in `~/.claude/bin/subagent-rows`, and adds that folder to `CLAUDE_CODE_PLUGIN_DIRS` in the `env` block of `settings.json`, so every session of the account loads it. It removes a `subagentStatusLine` block that runs this program. `--uninstall` undoes both.
+- The `statusline subagents` command is gone.
+
 ## 2.3.1 - 2026-11-15
 
 - Each row of the subagent panel now ends, at the right edge, with the tokens the subagent sent (`↑`) and received (`↓`), summed over its whole transcript. Cache reads are not counted as sent.
