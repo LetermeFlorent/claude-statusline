@@ -2,10 +2,10 @@
 
 All notable changes to this project are listed here, newest first. Versions follow the `version` in Cargo.toml and the git tag of the same name.
 
-## 2.3.0 - 2026-11-12
+## 2.3.0 - 2026-11-17
 
-- New `statusline subagents` command for Claude Code's `subagentStatusLine`. It shows each subagent's model and effort in the subagent panel, with the effort colours.
-- Install and uninstall now manage the `subagentStatusLine` setting. A value the user set themselves is left alone.
+- Each subagent row under the prompt now shows the subagent's model and effort, with the effort colors of the bar, and the tokens it sent and received on the right. It comes as a small Claude Code plugin, `subagent-rows`, that `--install` writes next to the program and loads in every session through `CLAUDE_CODE_PLUGIN_DIRS` in the `env` block of `settings.json`. The effort falls back on the one the subagent's last request carried, so it shows even when the subagent runs at the session's level.
+- `--install` removes a `subagentStatusLine` block that runs this program, since Claude Code 2.1.323 no longer reads that setting. `--uninstall` removes it too, along with the plugin folder from `CLAUDE_CODE_PLUGIN_DIRS`.
 
 ## 2.2.7 - 2026-11-05
 
