@@ -239,9 +239,10 @@ jobs:
           ext=""
           [ "$RUNNER_OS" = Windows ] && ext=.exe
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
-          line='  "statusLine": {\n    "type": "command",\n    "command": "~/.claude/bin/statusline'$ext'",\n    "refreshInterval": 3\n  },\n  "subagentStatusLine": {\n    "type": "command",\n    "command": "~/.claude/bin/statusline'$ext' subagents"\n  }\n'
-          printf '{\n  "model": "opus",\n  "env": {\n    "B": "1",\n    "A": "2"\n  },\n'"$line"'}\n' > "$RUNNER_TEMP/main.json"
-          printf '{\n'"$line"'}\n' > "$RUNNER_TEMP/account.json"
+          line='  "statusLine": {\n    "type": "command",\n    "command": "~/.claude/bin/statusline'$ext'",\n    "refreshInterval": 3\n  }'
+          plugin='"CLAUDE_CODE_PLUGIN_DIRS": "~/.claude/bin/subagent-rows"'
+          printf '{\n  "model": "opus",\n  "env": {\n    "B": "1",\n    "A": "2",\n    '"$plugin"'\n  },\n'"$line"'\n}\n' > "$RUNNER_TEMP/main.json"
+          printf '{\n'"$line"',\n  "env": {\n    '"$plugin"'\n  }\n}\n' > "$RUNNER_TEMP/account.json"
           config=statusline.json
           expect=""
           home_of() {
@@ -323,8 +324,8 @@ jobs:
               case "$out" in *"removed from the accounts"*) ;; *) echo "no uninstall message"; exit 1 ;; esac
               absent '"statusLine"' "$root/.claude/settings.json"
               absent '"statusLine"' "$root/.claude-compte2/settings.json"
-              absent '"subagentStatusLine"' "$root/.claude/settings.json"
-              absent '"subagentStatusLine"' "$root/.claude-compte2/settings.json"
+              absent 'CLAUDE_CODE_PLUGIN_DIRS' "$root/.claude/settings.json"
+              absent 'CLAUDE_CODE_PLUGIN_DIRS' "$root/.claude-compte2/settings.json"
               grep -q '"model": "opus"' "$root/.claude/settings.json"
               test -e "$root/.claude/bin/statusline$ext"
             done

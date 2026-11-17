@@ -3,5 +3,5 @@ mod shell;
 #[cfg(test)]
 mod tests;
 
-pub use path::{expanded, home_rest, same, same_path};
+pub use path::{expanded, home_rest, same, same_path, tilde_path};
 pub use shell::{command, unquoted};
