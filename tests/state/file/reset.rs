@@ -1,16 +1,10 @@
-use super::{input, now, FIVE_HOURS, SEVEN_DAYS};
+use super::{input, now, render, FIVE_HOURS, SEVEN_DAYS};
 use crate::common::Home;
-use std::io::Write;
 
 fn shown(home: &Home, lang: &str, percent: &str, reset: u64) -> String {
     let mut command = home.session_in(".claude");
     command.env("STATUSLINE_LANG", lang);
-    let mut child = command.spawn().unwrap();
-    let text = input_with(percent, reset);
-    child.stdin.take().unwrap().write_all(text.as_bytes()).unwrap();
-    let output = child.wait_with_output().unwrap();
-    assert!(output.status.success(), "{:?}", output);
-    String::from_utf8_lossy(&output.stdout).into_owned()
+    render(command, &input_with(percent, reset))
 }
 
 fn input_with(percent: &str, reset: u64) -> String {
@@ -24,7 +18,10 @@ fn input_with(percent: &str, reset: u64) -> String {
 }
 
 fn five_hour(text: &str) -> String {
-    let segment = text.split(" | ").find(|part| part.starts_with("5h ")).unwrap();
+    let segment = text
+        .split(" | ")
+        .find(|part| part.starts_with("5h "))
+        .unwrap();
     segment
         .split(' ')
         .find(|word| word.ends_with('%'))

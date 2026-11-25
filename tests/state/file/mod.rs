@@ -36,7 +36,7 @@ fn limits(account: usize, start: u64) -> (Window, Window) {
     (five, seven)
 }
 
-fn render(mut command: Command, input: &str) {
+fn render(mut command: Command, input: &str) -> String {
     let mut child = command.spawn().unwrap();
     let mut stdin = child.stdin.take().unwrap();
     stdin.write_all(input.as_bytes()).unwrap();
@@ -44,6 +44,7 @@ fn render(mut command: Command, input: &str) {
     let output = child.wait_with_output().unwrap();
     let errors = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success() && errors.is_empty(), "{}", errors);
+    String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
 fn lines_of<'a>(state: &'a str, tag: &str) -> Vec<&'a str> {
