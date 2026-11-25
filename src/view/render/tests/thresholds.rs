@@ -1,6 +1,5 @@
 use super::common::{line, sample};
 use crate::config::Metric;
-use crate::render::text::pct_text;
 use crate::render::{Ctx, Data, Quota, Quotas, SysValue};
 
 const CONFIG: &str = r#"{"thresholds": {"quota_warn": 50, "quota_hot": 90, "ctx_warn": 50, "ctx_hot": 90, "system_warn": 50, "system_hot": 90}}"#;
@@ -78,23 +77,4 @@ fn system_colour_follows_the_rounded_value() {
         colour(&cpu_data(50.04), "cpu"),
         colour(&cpu_data(50.0), "cpu")
     );
-}
-
-#[test]
-fn non_finite_percent_reads_dashes() {
-    assert_eq!(pct_text(Some(f64::NAN)), "--%");
-    assert_eq!(pct_text(Some(f64::INFINITY)), "--%");
-    assert_eq!(pct_text(Some(f64::NEG_INFINITY)), "--%");
-}
-
-#[test]
-fn huge_percent_is_clamped() {
-    assert_eq!(pct_text(Some(1e300)), "999.9%");
-    assert_eq!(pct_text(Some(f64::MAX)), "999.9%");
-}
-
-#[test]
-fn negative_zero_percent_reads_zero() {
-    assert_eq!(pct_text(Some(-0.0)), "0.0%");
-    assert_eq!(pct_text(Some(-0.04)), "0.0%");
 }

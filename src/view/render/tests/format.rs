@@ -35,3 +35,22 @@ fn a_count_close_to_a_million_moves_to_the_next_unit() {
 fn negative_percent_reads_zero() {
     assert_eq!(pct_text(Some(-3.0)), "0.0%");
 }
+
+#[test]
+fn non_finite_percent_reads_dashes() {
+    assert_eq!(pct_text(Some(f64::NAN)), "--%");
+    assert_eq!(pct_text(Some(f64::INFINITY)), "--%");
+    assert_eq!(pct_text(Some(f64::NEG_INFINITY)), "--%");
+}
+
+#[test]
+fn huge_percent_is_clamped() {
+    assert_eq!(pct_text(Some(1e300)), "999.9%");
+    assert_eq!(pct_text(Some(f64::MAX)), "999.9%");
+}
+
+#[test]
+fn negative_zero_percent_reads_zero() {
+    assert_eq!(pct_text(Some(-0.0)), "0.0%");
+    assert_eq!(pct_text(Some(-0.04)), "0.0%");
+}
