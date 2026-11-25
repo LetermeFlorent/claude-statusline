@@ -4,7 +4,7 @@ use crate::state::quotas::FIVE_HOUR_PERIOD;
 use crate::state::State;
 
 #[test]
-fn quotas() {
+fn a_stored_quota_past_its_reset_moves_to_the_next_window() {
     let now = 1_800_000_000.0;
     let mut state = State::parse("q_at@a 1799999999\nq5_at@a 1799990000\nq5_pct@a 40\n");
     let quotas = state.quotas(None, now, "a").unwrap();
@@ -16,9 +16,20 @@ fn quotas() {
         })
     );
     assert_eq!(quotas.seven_day, None);
+}
+
+#[test]
+fn another_tag_or_an_old_stamp_reads_no_stored_quota() {
+    let now = 1_800_000_000.0;
+    let mut state = State::parse("q_at@a 1799999999\nq5_at@a 1799990000\nq5_pct@a 40\n");
     assert!(state.quotas(None, now, "b").is_none());
     let mut state = State::parse("q_at@a 1\nq5_at@a 2000000\n");
     assert!(state.quotas(None, now, "a").is_none());
+}
+
+#[test]
+fn a_live_render_rewrites_only_the_quota_keys_of_its_tag() {
+    let now = 1_800_000_000.0;
     let live = Some((
         Some(Live {
             pct: Some(10.5),
@@ -166,6 +177,9 @@ fn an_absent_percentage_keeps_the_stored_one() {
         at: Some(1_800_003_000.0),
     };
     let quotas = state.quotas(Some((Some(live), None)), 1_800_000_000.0, "a");
-    assert_eq!(quotas.and_then(|q| q.five_hour).and_then(|q| q.pct), Some(10.0));
+    assert_eq!(
+        quotas.and_then(|q| q.five_hour).and_then(|q| q.pct),
+        Some(10.0)
+    );
     assert_eq!(state.get("q5_pct@a"), Some("10"));
 }
