@@ -19,7 +19,7 @@ impl Out<'_> {
                 let text = match (pct, reading.ram) {
                     (Some(_), Some((total, available))) => messages::RAM_USAGE
                         .with(&[&decimal((total - available) / GIB), &decimal(total / GIB)]),
-                    _ => String::from("--%"),
+                    _ => pct_text(None),
                 };
                 (String::from("ram"), cfg.pal_ram, pct, text)
             }
