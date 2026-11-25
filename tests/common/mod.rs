@@ -21,6 +21,21 @@ const INHERITED: [&str; 17] = [
     "NoDefaultCurrentDirectoryInExePath",
 ];
 
+const DEFAULT_LANG: &str = "fr";
+
+pub fn test_lang() -> String {
+    std::env::var("STATUSLINE_LANG").unwrap_or_else(|_| DEFAULT_LANG.to_string())
+}
+
+#[allow(dead_code)]
+pub fn decimal_point() -> &'static str {
+    if test_lang() == "en" {
+        "."
+    } else {
+        ","
+    }
+}
+
 pub struct Home(pub PathBuf);
 
 impl Home {
@@ -48,6 +63,7 @@ impl Home {
             .env("XDG_STATE_HOME", self.0.join("state"))
             .env("XDG_CONFIG_HOME", self.0.join("config"))
             .env("CLAUDE_CONFIG_DIR", self.0.join(folder))
+            .env("STATUSLINE_LANG", test_lang())
             .env("NO_COLOR", "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

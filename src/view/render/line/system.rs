@@ -1,7 +1,7 @@
 use super::Out;
 use crate::config::Metric;
 use crate::messages;
-use crate::render::text::{decimal, pct_text};
+use crate::render::text::{decimal, pct_text, tenth};
 use crate::render::SysValue;
 use alloc::string::String;
 
@@ -39,8 +39,8 @@ impl Out<'_> {
         self.label(&name);
         self.line.push(' ');
         let start = match pct {
-            Some(p) if p > cfg.sys_hot => palette.hot,
-            Some(p) if p > cfg.sys_warn => palette.warn,
+            Some(p) if tenth(p) > cfg.sys_hot => palette.hot,
+            Some(p) if tenth(p) > cfg.sys_warn => palette.warn,
             _ => palette.ok,
         };
         let last = self.gradient_bar(pct, start, cfg.grad_sys);

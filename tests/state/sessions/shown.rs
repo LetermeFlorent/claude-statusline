@@ -1,5 +1,5 @@
 use super::{percent, SESSIONS};
-use crate::common::Home;
+use crate::common::{decimal_point, Home};
 use std::process::Output;
 
 fn five_hour_percent(output: &Output) -> Option<String> {
@@ -28,7 +28,7 @@ pub fn assert_shows(outputs: &[Output], round: usize) {
         assert!(output.status.success(), "account {}: {}", account, errors);
         assert!(errors.is_empty(), "account {}: {}", account, errors);
         assert!(whole_bar(&shown), "account {}: {:?}", account, shown);
-        let expected = format!("{}%", percent(account, round));
+        let expected = format!("{}{}0%", percent(account, round), decimal_point());
         assert_eq!(
             five_hour_percent(output).as_deref(),
             Some(expected.as_str()),

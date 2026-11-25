@@ -33,5 +33,5 @@ fn a_count_close_to_a_million_moves_to_the_next_unit() {
 
 #[test]
 fn negative_percent_reads_zero() {
-    assert_eq!(pct_text(Some(-3.0)), "0%");
+    assert_eq!(pct_text(Some(-3.0)), "0.0%");
 }

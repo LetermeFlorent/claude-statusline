@@ -6,6 +6,7 @@ use core::ops::RangeInclusive;
 
 const MAX_TOKENS: u64 = 999_000_000_000;
 const LARGEST_TOKEN_UNIT: f64 = 1e9;
+const MAX_PERCENT: f64 = 999.9;
 const MINUTE: i64 = 60;
 const HOUR: i64 = 60 * MINUTE;
 const DAY: i64 = 24 * HOUR;
@@ -14,10 +15,14 @@ const MAX_RESET_SECS: f64 = (MAX_RESET_DAYS * DAY) as f64;
 pub const MAX_LABEL_CHARS: usize = 48;
 const BIDI_CONTROLS: [RangeInclusive<u32>; 2] = [0x202A..=0x202E, 0x2066..=0x2069];
 
+pub fn tenth(p: f64) -> f64 {
+    num::round(num::clamp(p, 0.0, MAX_PERCENT) * 10.0) / 10.0
+}
+
 pub fn pct_text(p: Option<f64>) -> String {
     match p {
-        Some(p) => format!("{}%", num::round(p) as u64),
-        None => String::from("--%"),
+        Some(p) if p.is_finite() => format!("{}%", decimal(tenth(p))),
+        _ => String::from("--%"),
     }
 }
 

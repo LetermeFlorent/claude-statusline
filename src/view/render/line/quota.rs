@@ -1,6 +1,6 @@
 use super::Out;
 use crate::messages;
-use crate::render::text::{pct_text, reset_text};
+use crate::render::text::{pct_text, reset_text, tenth};
 use crate::render::Quota;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -30,8 +30,8 @@ impl Out<'_> {
         self.label(window.label());
         self.line.push(' ');
         let start = match quota.pct {
-            Some(p) if p >= self.cfg.quota_hot => palette.hot,
-            Some(p) if p >= self.cfg.quota_warn => palette.warn,
+            Some(p) if tenth(p) >= self.cfg.quota_hot => palette.hot,
+            Some(p) if tenth(p) >= self.cfg.quota_warn => palette.warn,
             _ => palette.ok,
         };
         let last = self.gradient_bar(quota.pct, start, gradient);

@@ -1,0 +1,49 @@
+use super::{input, now, FIVE_HOURS, SEVEN_DAYS};
+use crate::common::Home;
+use std::io::Write;
+
+fn shown(home: &Home, lang: &str, percent: &str, reset: u64) -> String {
+    let mut command = home.session_in(".claude");
+    command.env("STATUSLINE_LANG", lang);
+    let mut child = command.spawn().unwrap();
+    let text = input_with(percent, reset);
+    child.stdin.take().unwrap().write_all(text.as_bytes()).unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success(), "{:?}", output);
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+fn input_with(percent: &str, reset: u64) -> String {
+    input((0, 0), (41, now() + SEVEN_DAYS)).replace(
+        "\"five_hour\":{\"used_percentage\":0,\"resets_at\":0}",
+        &format!(
+            "\"five_hour\":{{\"used_percentage\":{},\"resets_at\":{}}}",
+            percent, reset
+        ),
+    )
+}
+
+fn five_hour(text: &str) -> String {
+    let segment = text.split(" | ").find(|part| part.starts_with("5h ")).unwrap();
+    segment
+        .split(' ')
+        .find(|word| word.ends_with('%'))
+        .unwrap()
+        .to_string()
+}
+
+#[test]
+fn a_reset_window_shows_zero_with_one_decimal_not_the_stored_value() {
+    let home = Home::new("reset-zero");
+    let window = now() + FIVE_HOURS;
+    assert_eq!(five_hour(&shown(&home, "en", "86", window)), "86.0%");
+    assert_eq!(five_hour(&shown(&home, "en", "0", window)), "0.0%");
+    assert_eq!(five_hour(&shown(&home, "fr", "0", window)), "0,0%");
+}
+
+#[test]
+fn a_fractional_percentage_shows_one_decimal() {
+    let home = Home::new("reset-fraction");
+    let text = shown(&home, "en", "12.34", now() + FIVE_HOURS);
+    assert_eq!(five_hour(&text), "12.3%");
+}
