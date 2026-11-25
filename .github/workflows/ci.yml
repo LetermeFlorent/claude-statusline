@@ -211,7 +211,7 @@ jobs:
           echo "$first" | grep -Eq 'Opus 5:max'
           ram=$(echo "$last" | sed -En 's/.*ram .* ([0-9]+\.[0-9])\/([0-9]+\.[0-9])G.*/\1 \2/p')
           [ -n "$ram" ] || { echo "ram value missing"; exit 1; }
-          echo "$last" | grep -Eq 'cpu .* [0-9]+%' || { echo "cpu value missing"; exit 1; }
+          echo "$last" | grep -Eq 'cpu .* [0-9]+([.,][0-9])?%' || { echo "cpu value missing"; exit 1; }
           used=${ram% *}
           total=${ram#* }
           case "$RUNNER_OS" in
