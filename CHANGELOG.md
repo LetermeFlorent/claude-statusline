@@ -2,6 +2,12 @@
 
 All notable changes to this project are listed here, newest first. Versions follow the `version` in Cargo.toml and the git tag of the same name.
 
+## 2.5.0 - 2026-11-25
+
+- The quota percentages show one decimal.
+- Fixed: the quota bars stayed at the old value after an account reset. A reset that reports a small percentage in the same window (under half of the stored one) is now accepted.
+- README refreshed, and the dependabot configuration removed.
+
 ## 2.4.0 - 2026-11-17
 
 - The subagent rows now come from a small Claude Code plugin, `subagent-rows`, since Claude Code 2.1.323 no longer reads `subagentStatusLine`. Each row under the prompt shows the agent's name, its model and effort with the effort colors of the bar, what it is doing, and the tokens it sent (`↑`) and received (`↓`) on the right. Cache reads are not counted as sent. When Claude Code leaves the effort out because the agent runs at the session's level, the effort of its last request is shown.
