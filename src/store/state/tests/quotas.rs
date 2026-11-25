@@ -149,3 +149,23 @@ fn a_session_still_on_the_previous_window_does_not_overwrite_the_new_one() {
     assert_eq!(state.get("q5_at@a"), Some("1800010000"));
     assert_eq!(render(&mut state, 2.0, 1_800_020_000.0), Some(2.0));
 }
+
+#[test]
+fn a_reset_percentage_replaces_the_stored_one() {
+    let mut state = State::parse("");
+    assert_eq!(render(&mut state, 86.0, 1_800_003_000.0), Some(86.0));
+    assert_eq!(render(&mut state, 0.0, 1_800_003_000.0), Some(0.0));
+    assert_eq!(state.get("q5_pct@a"), Some("0"));
+}
+
+#[test]
+fn an_absent_percentage_keeps_the_stored_one() {
+    let mut state = State::parse(STORED);
+    let live = Live {
+        pct: None,
+        at: Some(1_800_003_000.0),
+    };
+    let quotas = state.quotas(Some((Some(live), None)), 1_800_000_000.0, "a");
+    assert_eq!(quotas.and_then(|q| q.five_hour).and_then(|q| q.pct), Some(10.0));
+    assert_eq!(state.get("q5_pct@a"), Some("10"));
+}

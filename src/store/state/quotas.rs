@@ -104,8 +104,9 @@ impl State {
         }
         Some(Live {
             pct: match (window.pct, pct) {
-                (Some(new), Some(old)) => Some(new.max(old)),
-                (new, old) => new.or(old),
+                (Some(new), Some(old)) if new > 0.0 => Some(new.max(old)),
+                (Some(new), _) => Some(new),
+                (None, old) => old,
             },
             at: Some(kept),
         })
