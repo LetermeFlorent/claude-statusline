@@ -1,7 +1,7 @@
 use super::Out;
 use crate::config::Metric;
 use crate::messages;
-use crate::render::text::{decimal, pct_text, tenth};
+use crate::render::text::{decimal, pct_text, tenth, PERCENT_SCALE};
 use crate::render::SysValue;
 use alloc::string::String;
 
@@ -15,7 +15,7 @@ impl Out<'_> {
                 let pct = reading
                     .ram
                     .filter(|(total, _)| *total > 0.0)
-                    .map(|(total, available)| (total - available) / total * 100.0);
+                    .map(|(total, available)| (total - available) / total * PERCENT_SCALE);
                 let text = match (pct, reading.ram) {
                     (Some(_), Some((total, available))) => messages::RAM_USAGE
                         .with(&[&decimal((total - available) / GIB), &decimal(total / GIB)]),

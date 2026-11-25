@@ -1,7 +1,7 @@
 use super::{lerp, rgb, Out};
 use crate::config::{HOT_SYS, WARN_SYS};
 use crate::messages;
-use crate::render::text::{pct_text, tenth, tokens};
+use crate::render::text::{pct_text, tenth, tokens, PERCENT_SCALE};
 use crate::render::Data;
 use alloc::format;
 
@@ -11,7 +11,7 @@ impl Out<'_> {
         let mut pct = data.ctx.pct;
         let used: Option<f64> = match (data.ctx.tokens, pct, size) {
             (Some(t), _, _) => Some(t as f64),
-            (None, Some(p), Some(s)) => Some((p * s / 100.0) as u64 as f64),
+            (None, Some(p), Some(s)) => Some((p * s / PERCENT_SCALE) as u64 as f64),
             _ => None,
         };
         let mut denom = size;
@@ -19,7 +19,7 @@ impl Out<'_> {
         if let (Some(size), Some(window)) = (size, data.window) {
             if window > 0 && (window as f64) < size {
                 denom = Some(window as f64);
-                pct = used.map(|u| u / window as f64 * 100.0);
+                pct = used.map(|u| u / window as f64 * PERCENT_SCALE);
                 marked = true;
             }
         }

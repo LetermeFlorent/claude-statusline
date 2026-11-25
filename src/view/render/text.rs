@@ -5,8 +5,13 @@ use alloc::string::String;
 use core::ops::RangeInclusive;
 
 const MAX_TOKENS: u64 = 999_000_000_000;
-const LARGEST_TOKEN_UNIT: f64 = 1e9;
+const UNIT_STEP: u64 = 1000;
+const THOUSAND: f64 = UNIT_STEP as f64;
+const MILLION: f64 = THOUSAND * THOUSAND;
+const LARGEST_TOKEN_UNIT: f64 = MILLION * THOUSAND;
+pub const PERCENT_SCALE: f64 = 100.0;
 const MAX_PERCENT: f64 = 999.9;
+const TENTHS: f64 = 10.0;
 const MINUTE: i64 = 60;
 const HOUR: i64 = 60 * MINUTE;
 const DAY: i64 = 24 * HOUR;
@@ -16,7 +21,7 @@ pub const MAX_LABEL_CHARS: usize = 48;
 const BIDI_CONTROLS: [RangeInclusive<u32>; 2] = [0x202A..=0x202E, 0x2066..=0x2069];
 
 pub fn tenth(p: f64) -> f64 {
-    num::round(num::clamp(p, 0.0, MAX_PERCENT) * 10.0) / 10.0
+    num::round(num::clamp(p, 0.0, MAX_PERCENT) * TENTHS) / TENTHS
 }
 
 pub fn pct_text(p: Option<f64>) -> String {
@@ -32,22 +37,26 @@ pub(super) fn decimal(value: f64) -> String {
 
 pub fn tokens(count: u64) -> String {
     let count = count.min(MAX_TOKENS);
-    if count < 1000 {
+    if count < UNIT_STEP {
         return format!("{}", count);
     }
     let amount = count as f64;
     let units = [
-        (1e3, "k"),
-        (1e6, "M"),
+        (THOUSAND, "k"),
+        (MILLION, "M"),
         (LARGEST_TOKEN_UNIT, messages::UNIT_BILLION.text()),
     ];
     for (size, unit) in units {
         let rounded = num::round(amount / size) as u64;
-        if rounded < 1000 || size == LARGEST_TOKEN_UNIT {
+        if rounded < UNIT_STEP || size == LARGEST_TOKEN_UNIT {
             return format!("{}{}", rounded, unit);
         }
     }
     format!("{}", count)
+}
+
+fn two_digits(value: i64) -> String {
+    format!("{:02}", value)
 }
 
 pub fn reset_text(secs: f64, long: bool) -> String {
@@ -60,10 +69,10 @@ pub fn reset_text(secs: f64, long: bool) -> String {
     }
     if long && secs >= DAY {
         let (days, hours) = (secs / DAY, (secs % DAY) / HOUR);
-        return messages::RESET_DAYS.with(&[&format!("{}", days), &format!("{:02}", hours)]);
+        return messages::RESET_DAYS.with(&[&format!("{}", days), &two_digits(hours)]);
     }
     let (hours, minutes) = (secs / HOUR, (secs % HOUR) / MINUTE);
-    messages::RESET_HOURS.with(&[&format!("{}", hours), &format!("{:02}", minutes)])
+    messages::RESET_HOURS.with(&[&format!("{}", hours), &two_digits(minutes)])
 }
 
 fn is_printable(c: char) -> bool {
