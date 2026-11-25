@@ -126,7 +126,7 @@ jobs:
           now=$(date +%s)
           in='{"model":{"display_name":"Opus"},"context_window":{"context_window_size":200000,"used_percentage":30},"rate_limits":{"five_hour":{"used_percentage":36,"resets_at":'$((now+3600))'}}}'
           out=$(echo "$in" | "$b")
-          echo "$out" | grep -q 36%
+          echo "$out" | grep -q "36[.,]0%"
           sleep 1
           out=$(echo "$in" | "$b")
           echo "$out" | tail -n 1 | grep -q cpu
@@ -206,8 +206,8 @@ jobs:
           first=$(echo "$out" | head -n 1)
           last=$(echo "$out" | tail -n 1)
           echo "$first" | grep -Eq 'ctx .*340k/1M'
-          echo "$first" | grep -Eq '5h .*36% 3h(29|30)m'
-          echo "$first" | grep -Eq '7d .*61% 3d1[67]h'
+          echo "$first" | grep -Eq '5h .*36[.,]0% 3h(29|30)m'
+          echo "$first" | grep -Eq '7d .*61[.,]0% 3d1[67]h'
           echo "$first" | grep -Eq 'Opus 5:max'
           ram=$(echo "$last" | sed -En 's/.*ram .* ([0-9]+\.[0-9])\/([0-9]+\.[0-9])G.*/\1 \2/p')
           [ -n "$ram" ] || { echo "ram value missing"; exit 1; }
