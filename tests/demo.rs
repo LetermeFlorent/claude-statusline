@@ -1,13 +1,9 @@
 mod common;
 
-use common::{decimal_point, Home};
+use common::{whole_percent, Home};
 use std::process::Output;
 
 const DISK_LABELS: [&str; 2] = ["dsk", "C:"];
-
-fn whole(value: &str) -> String {
-    format!("{}{}0%", value, decimal_point())
-}
 
 fn demo(arguments: &[&str]) -> Output {
     let home = Home::new("demo");
@@ -32,10 +28,15 @@ fn disk_percent(text: &str) -> Option<String> {
 #[test]
 fn the_demo_shows_a_disk_and_a_cpu_percentage() {
     let text = shown(&demo(&["--demo"]));
-    assert_eq!(disk_percent(&text).as_deref(), Some(whole("12").as_str()), "{}", text);
+    assert_eq!(
+        disk_percent(&text).as_deref(),
+        Some(whole_percent("12").as_str()),
+        "{}",
+        text
+    );
     assert_eq!(
         percent_after(&text, "cpu").as_deref(),
-        Some(whole("18").as_str()),
+        Some(whole_percent("18").as_str()),
         "{}",
         text
     );
@@ -44,18 +45,28 @@ fn the_demo_shows_a_disk_and_a_cpu_percentage() {
 #[test]
 fn the_demo_levels_cross_the_warning_and_the_hot_values() {
     let warn = shown(&demo(&["--demo", "warn"]));
-    assert_eq!(disk_percent(&warn).as_deref(), Some(whole("76").as_str()), "{}", warn);
+    assert_eq!(
+        disk_percent(&warn).as_deref(),
+        Some(whole_percent("76").as_str()),
+        "{}",
+        warn
+    );
     assert_eq!(
         percent_after(&warn, "cpu").as_deref(),
-        Some(whole("78").as_str()),
+        Some(whole_percent("78").as_str()),
         "{}",
         warn
     );
     let hot = shown(&demo(&["--demo", "HOT"]));
-    assert_eq!(disk_percent(&hot).as_deref(), Some(whole("93").as_str()), "{}", hot);
+    assert_eq!(
+        disk_percent(&hot).as_deref(),
+        Some(whole_percent("93").as_str()),
+        "{}",
+        hot
+    );
     assert_eq!(
         percent_after(&hot, "cpu").as_deref(),
-        Some(whole("96").as_str()),
+        Some(whole_percent("96").as_str()),
         "{}",
         hot
     );

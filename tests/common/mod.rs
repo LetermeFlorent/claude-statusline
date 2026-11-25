@@ -27,13 +27,17 @@ pub fn test_lang() -> String {
     std::env::var("STATUSLINE_LANG").unwrap_or_else(|_| DEFAULT_LANG.to_string())
 }
 
-#[allow(dead_code)]
-pub fn decimal_point() -> &'static str {
+fn decimal_point() -> &'static str {
     if test_lang() == "en" {
         "."
     } else {
         ","
     }
+}
+
+#[allow(dead_code)]
+pub fn whole_percent(value: impl std::fmt::Display) -> String {
+    format!("{}{}0%", value, decimal_point())
 }
 
 pub struct Home(pub PathBuf);
