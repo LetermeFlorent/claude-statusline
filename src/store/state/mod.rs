@@ -5,6 +5,7 @@ use alloc::vec::Vec;
 mod account;
 mod counter;
 mod hash;
+mod quota_keys;
 mod quotas;
 #[cfg(test)]
 mod tests;
