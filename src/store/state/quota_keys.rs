@@ -1,6 +1,9 @@
-use super::quotas::{FIVE_HOUR_PERIOD, SEVEN_DAY_PERIOD};
 use alloc::format;
 use alloc::string::String;
+
+const HOUR: f64 = 3600.0;
+const FIVE_HOUR_PERIOD: f64 = 5.0 * HOUR;
+const SEVEN_DAY_PERIOD: f64 = 7.0 * 24.0 * HOUR;
 
 pub(super) struct WindowKeys {
     pub(super) at: &'static str,

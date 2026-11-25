@@ -1,6 +1,6 @@
 use crate::render::Quota;
 use crate::session::Live;
-use crate::state::quotas::FIVE_HOUR_PERIOD;
+use crate::state::quota_keys::FIVE_HOUR;
 use crate::state::State;
 
 #[test]
@@ -66,7 +66,7 @@ fn a_live_quota_past_its_reset_loses_its_percentage() {
     };
     let mut state = State::parse("");
     let quotas = state.quotas(Some((Some(live), None)), now, "a").unwrap();
-    let at = Some(now - 600.0 + FIVE_HOUR_PERIOD);
+    let at = Some(now - 600.0 + FIVE_HOUR.period);
     assert_eq!(quotas.five_hour, Some(Quota { pct: None, at }));
     assert_eq!(state.get("q5_pct@a"), Some("85"));
 }
