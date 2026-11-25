@@ -8,6 +8,7 @@ use alloc::string::String;
 const FRESH: f64 = 600.0;
 const STAMP_LAG: f64 = 10.0;
 const SAME_WINDOW: f64 = 60.0;
+const RESET_SHARE: f64 = 0.5;
 const YEAR_2000: f64 = 946_684_800.0;
 const YEAR_2100: f64 = 4_102_444_800.0;
 
@@ -120,7 +121,7 @@ impl State {
         }
         Some(Live {
             pct: match (window.pct, pct) {
-                (Some(new), Some(old)) if new > 0.0 => Some(new.max(old)),
+                (Some(new), Some(old)) if new >= old * RESET_SHARE => Some(new.max(old)),
                 (Some(new), _) => Some(new),
                 (None, old) => old,
             },

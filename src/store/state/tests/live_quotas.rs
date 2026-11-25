@@ -93,3 +93,30 @@ fn an_absent_percentage_keeps_the_stored_one() {
     );
     assert_eq!(state.get("q5_pct@a"), Some("10"));
 }
+
+fn render_both(state: &mut State, pct: f64) -> (Option<f64>, Option<f64>) {
+    let window = |at| Live {
+        pct: Some(pct),
+        at: Some(at),
+    };
+    let live = (Some(window(1_800_003_000.0)), Some(window(1_800_500_000.0)));
+    let quotas = state.quotas(Some(live), 1_800_000_000.0, "a").unwrap();
+    let pct_of = |quota: Option<crate::render::Quota>| quota.and_then(|q| q.pct);
+    (pct_of(quotas.five_hour), pct_of(quotas.seven_day))
+}
+
+#[test]
+fn a_reset_to_a_small_percentage_in_the_same_window_replaces_the_stored_one() {
+    let mut state = State::parse("");
+    assert_eq!(render_both(&mut state, 86.0), (Some(86.0), Some(86.0)));
+    assert_eq!(render_both(&mut state, 2.0), (Some(2.0), Some(2.0)));
+    assert_eq!(state.get("q5_pct@a"), Some("2"));
+    assert_eq!(state.get("q7_pct@a"), Some("2"));
+}
+
+#[test]
+fn a_slightly_lower_percentage_from_another_session_keeps_the_highest() {
+    let mut state = State::parse("");
+    assert_eq!(render_both(&mut state, 40.0), (Some(40.0), Some(40.0)));
+    assert_eq!(render_both(&mut state, 39.5), (Some(40.0), Some(40.0)));
+}

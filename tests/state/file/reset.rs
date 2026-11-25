@@ -44,3 +44,24 @@ fn a_fractional_percentage_shows_one_decimal() {
     let text = shown(&home, "en", "12.34", now() + FIVE_HOURS);
     assert_eq!(five_hour(&text), "12.3%");
 }
+
+#[test]
+fn a_reset_to_a_small_percentage_in_the_same_windows_shows_the_new_value() {
+    let home = Home::new("reset-small");
+    let start = now();
+    let shown = |percent| {
+        let mut command = home.session_in(".claude");
+        command.env("STATUSLINE_LANG", "en");
+        let windows = (percent, start + FIVE_HOURS);
+        render(command, &input(windows, (percent, start + SEVEN_DAYS)))
+    };
+    let percents = |text: &str| -> Vec<String> {
+        text.split(" | ")
+            .filter(|part| part.starts_with("5h ") || part.starts_with("7d "))
+            .filter_map(|part| part.split(' ').find(|word| word.ends_with('%')))
+            .map(String::from)
+            .collect()
+    };
+    assert_eq!(percents(&shown(86)), ["86.0%", "86.0%"]);
+    assert_eq!(percents(&shown(2)), ["2.0%", "2.0%"]);
+}
