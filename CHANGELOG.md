@@ -2,6 +2,11 @@
 
 All notable changes to this project are listed here, newest first. Versions follow the `version` in Cargo.toml and the git tag of the same name.
 
+## 2.5.1 - 2026-11-26
+
+- The quota percentages show a decimal only when the value really has one (`24%`, `25.3%`), instead of a constant `.0`.
+- The cpu, disk and context percentages are whole numbers again, as in 2.4.0.
+
 ## 2.5.0 - 2026-11-25
 
 - The quota percentages show one decimal.
