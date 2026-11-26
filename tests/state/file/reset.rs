@@ -30,12 +30,12 @@ fn five_hour(text: &str) -> String {
 }
 
 #[test]
-fn a_reset_window_shows_zero_with_one_decimal_not_the_stored_value() {
+fn a_reset_window_shows_zero_not_the_stored_value() {
     let home = Home::new("reset-zero");
     let window = now() + FIVE_HOURS;
-    assert_eq!(five_hour(&shown(&home, "en", "86", window)), "86.0%");
-    assert_eq!(five_hour(&shown(&home, "en", "0", window)), "0.0%");
-    assert_eq!(five_hour(&shown(&home, "fr", "0", window)), "0,0%");
+    assert_eq!(five_hour(&shown(&home, "en", "86", window)), "86%");
+    assert_eq!(five_hour(&shown(&home, "en", "0", window)), "0%");
+    assert_eq!(five_hour(&shown(&home, "fr", "0", window)), "0%");
 }
 
 #[test]
@@ -43,6 +43,8 @@ fn a_fractional_percentage_shows_one_decimal() {
     let home = Home::new("reset-fraction");
     let text = shown(&home, "en", "12.34", now() + FIVE_HOURS);
     assert_eq!(five_hour(&text), "12.3%");
+    let text = shown(&home, "fr", "25.3", now() + FIVE_HOURS);
+    assert_eq!(five_hour(&text), "25,3%");
 }
 
 #[test]
@@ -62,6 +64,6 @@ fn a_reset_to_a_small_percentage_in_the_same_windows_shows_the_new_value() {
             .map(String::from)
             .collect()
     };
-    assert_eq!(percents(&shown(86)), ["86.0%", "86.0%"]);
-    assert_eq!(percents(&shown(2)), ["2.0%", "2.0%"]);
+    assert_eq!(percents(&shown(86)), ["86%", "86%"]);
+    assert_eq!(percents(&shown(2)), ["2%", "2%"]);
 }

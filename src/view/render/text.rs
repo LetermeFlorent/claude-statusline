@@ -24,10 +24,22 @@ pub fn tenth(p: f64) -> f64 {
     num::round(num::clamp(p, 0.0, MAX_PERCENT) * TENTHS) / TENTHS
 }
 
+pub fn whole(p: f64) -> f64 {
+    num::round(num::clamp(p, 0.0, MAX_PERCENT))
+}
+
 pub fn pct_text(p: Option<f64>) -> String {
     match p {
-        Some(p) if p.is_finite() => format!("{}%", decimal(tenth(p))),
+        Some(p) if p.is_finite() => format!("{}%", whole(p) as u64),
         _ => String::from("--%"),
+    }
+}
+
+pub fn quota_text(p: Option<f64>) -> String {
+    match p.filter(|p| p.is_finite()).map(tenth) {
+        Some(t) if t == num::round(t) => format!("{}%", t as u64),
+        Some(t) => format!("{}%", decimal(t)),
+        None => String::from("--%"),
     }
 }
 

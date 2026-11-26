@@ -1,6 +1,6 @@
 use super::Out;
 use crate::messages;
-use crate::render::text::{pct_text, reset_text, tenth};
+use crate::render::text::{quota_text, reset_text, tenth};
 use crate::render::Quota;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -36,7 +36,7 @@ impl Out<'_> {
         };
         let last = self.gradient_bar(quota.pct, start, gradient);
         self.line.push(' ');
-        self.value(&pct_text(quota.pct), quota.pct, last);
+        self.value(&quota_text(quota.pct), quota.pct, last);
         if !self.layout.resets {
             return;
         }

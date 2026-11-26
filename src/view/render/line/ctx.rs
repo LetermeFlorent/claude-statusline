@@ -1,7 +1,7 @@
 use super::{lerp, rgb, Out};
 use crate::config::{Rgb, HOT_SYS, WARN_SYS};
 use crate::messages;
-use crate::render::text::{pct_text, tenth, tokens, PERCENT_SCALE};
+use crate::render::text::{pct_text, tokens, whole, PERCENT_SCALE};
 use crate::render::Data;
 use alloc::format;
 
@@ -53,8 +53,8 @@ impl Out<'_> {
         };
         let grad = self.cfg.grad_sys;
         match pct {
-            Some(p) if tenth(p) >= self.cfg.ctx_hot => self.gradient_bar(pct, HOT_SYS, grad),
-            Some(p) if tenth(p) >= self.cfg.ctx_warn => self.gradient_bar(pct, WARN_SYS, grad),
+            Some(p) if whole(p) >= self.cfg.ctx_hot => self.gradient_bar(pct, HOT_SYS, grad),
+            Some(p) if whole(p) >= self.cfg.ctx_warn => self.gradient_bar(pct, WARN_SYS, grad),
             _ => self.bar(pct, &|i, _| rgb(lerp(from, to, i as f64 / span))),
         }
     }

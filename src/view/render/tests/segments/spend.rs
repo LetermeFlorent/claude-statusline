@@ -33,7 +33,7 @@ fn bar(config: Option<&str>, data: &Data) -> String {
 fn a_session_with_only_a_spend_limit_shows_the_spend_segment() {
     let text = bar(None, &spend_only());
     assert!(text.contains("spend"), "{}", text);
-    assert!(text.contains("63.0%"), "{}", text);
+    assert!(text.contains("63%"), "{}", text);
     assert!(text.contains("3d02h"), "{}", text);
     assert!(!text.contains("5h") && !text.contains("7d"), "{}", text);
 }
@@ -54,7 +54,7 @@ fn the_spend_segment_is_drawn_like_a_quota() {
     let quota = bar(Some(only_5h), &data);
     let drawn = |text: &str, label: &str| {
         let from = text.find(label).unwrap() + label.len();
-        text[from..].split("63.0%").next().unwrap().to_string()
+        text[from..].split("63%").next().unwrap().to_string()
     };
     assert_eq!(
         drawn(&text, "spend"),

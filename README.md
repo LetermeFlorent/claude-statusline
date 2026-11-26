@@ -3,8 +3,8 @@
 A status line for Claude Code on Windows, Linux and macOS. It takes two lines: the first follows the session (context, 5-hour and 7-day quotas, model and effort), the second follows the machine (RAM, disk activity, CPU).
 
 ```
-ctx ■■▪■■■■■ 340k/1M | 5h ■■■■■■■■ 36.0% 3h29m | 7d ■■■■■■■■ 61.0% 3d16h | Opus 5:max
-ram ■■■■■■■■ 11.3/15.3G | C: ▪■■■■■■■ 2.0% | cpu ▪■■■■■■■ 8.0%
+ctx ■■▪■■■■■ 340k/1M | 5h ■■■■■■■■ 36% 3h29m | 7d ■■■■■■■■ 61% 3d16h | Opus 5:max
+ram ■■■■■■■■ 11.3/15.3G | C: ▪■■■■■■■ 2% | cpu ▪■■■■■■■ 8%
 ```
 
 It is a small Rust program with no runtime dependencies: its only library, used to check the signature of updates, is built into the binary. Claude Code runs it every 3 seconds through the `statusLine` setting: it reads the session JSON on standard input, writes the bar on standard output and exits. A refresh takes a few milliseconds, most of it process start-up, and the binary weighs from 200 to 700 KB depending on the system: [Size and speed](#size-and-speed) gives the figures and says what each one measures. The program can update itself from the GitHub releases, an option that is on by default and installs only releases whose signature checks out. The technical details (terminal detection, state file format, environment variables, build and CI) are in the [technical reference](docs/reference.md). When the bar does not show or shows something odd, start with the [troubleshooting list](INSTALL.md#troubleshooting).
@@ -164,7 +164,7 @@ The program is installed in `~/.claude/bin`, as `statusline.exe` on Windows and 
 | Command | Effect |
 |---|---|
 | no argument | reads the Claude Code JSON on standard input, writes the bar and updates the state file. Run by hand in a terminal, it does not wait for input and draws a bar with no data. |
-| `--demo [low\|warn\|hot]` | sample rendering without Claude Code (Opus 5, effort `max`, context 340k of 1M, 5h at 36.0%, 7d at 61.0%), with the real settings and theme. The disk and the cpu show sample values (12.0% and 18.0%) and the memory is the real one. `warn` and `hot` move the context, memory, disk and cpu bars across the warning and hot thresholds (disk 76.0% and 93.0%, cpu 78.0% and 96.0%, context 74.0% and 93.0%), to see their colors. The state file is left alone. |
+| `--demo [low\|warn\|hot]` | sample rendering without Claude Code (Opus 5, effort `max`, context 340k of 1M, 5h at 36%, 7d at 61%), with the real settings and theme. The disk and the cpu show sample values (12% and 18%) and the memory is the real one. `warn` and `hot` move the context, memory, disk and cpu bars across the warning and hot thresholds (disk 76% and 93%, cpu 78% and 96%, context 74% and 93%), to see their colors. The state file is left alone. |
 | `--bench [n]` | renders the sample `n` times (200 by default) and prints the average time per rendering, then its breakdown: state, config, session, theme, compact, system, render, write. The first rendering starts from an empty state; each one then reads the state the previous one wrote, and writes it back only when it changed. Process startup is not counted. |
 | `--theme` | prints the background in use, `light` or `dark`, and on a second line where that choice came from |
 | `--language` | prints the language of the messages, `fr` or `en`; the install scripts ask for it |

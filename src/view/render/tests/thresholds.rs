@@ -62,7 +62,11 @@ fn quota_colour_follows_the_rounded_value() {
 #[test]
 fn context_colour_follows_the_rounded_value() {
     assert_eq!(
-        colour(&ctx_data(89.96), "ctx"),
+        colour(&ctx_data(89.6), "ctx"),
+        colour(&ctx_data(90.0), "ctx")
+    );
+    assert_ne!(
+        colour(&ctx_data(89.4), "ctx"),
         colour(&ctx_data(90.0), "ctx")
     );
 }
@@ -70,11 +74,15 @@ fn context_colour_follows_the_rounded_value() {
 #[test]
 fn system_colour_follows_the_rounded_value() {
     assert_eq!(
-        colour(&cpu_data(90.04), "cpu"),
+        colour(&cpu_data(90.4), "cpu"),
         colour(&cpu_data(90.0), "cpu")
     );
     assert_eq!(
-        colour(&cpu_data(50.04), "cpu"),
+        colour(&cpu_data(50.4), "cpu"),
+        colour(&cpu_data(50.0), "cpu")
+    );
+    assert_ne!(
+        colour(&cpu_data(50.6), "cpu"),
         colour(&cpu_data(50.0), "cpu")
     );
 }
