@@ -2,6 +2,11 @@
 
 All notable changes to this project are listed here, newest first. Versions follow the `version` in Cargo.toml and the git tag of the same name.
 
+## 2.5.2 - 2026-11-27
+
+- New bar style: a thin line of 16 cells, `━` filled and `╌` empty, one color per bar chosen by its level, with a gray empty part. The percentage of a quota, of the disk and of the CPU is right-aligned after the bar. The decimals are shown as in 2.5.1.
+- The settings `glyphs.half`, `gradient`, `system.gradient` and `colors.ctx_to_*` are gone, and `bar_width` now defaults to 16. A `statusline.json` written by an earlier version keeps its own glyphs and width until they are edited.
+
 ## 2.5.1 - 2026-11-26
 
 - The quota percentages show a decimal only when the value really has one (`24%`, `25.3%`), instead of a constant `.0`.
