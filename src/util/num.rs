@@ -24,15 +24,6 @@ pub fn floor(x: f64) -> f64 {
     }
 }
 
-pub fn ceil(x: f64) -> f64 {
-    let t = trunc(x);
-    if t < x {
-        t + 1.0
-    } else {
-        t
-    }
-}
-
 pub fn round(x: f64) -> f64 {
     let t = trunc(x);
     let d = x - t;
@@ -64,13 +55,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn round_floor_and_ceil_behave_like_f64() {
+    fn round_and_floor_behave_like_f64() {
         assert_eq!(round(2.5), 3.0);
         assert_eq!(round(-2.5), -3.0);
         assert_eq!(round(0.49999999999999994), 0.0);
         assert_eq!(floor(-0.5), -1.0);
-        assert_eq!(ceil(1.0000001), 2.0);
-        assert_eq!(ceil(-1.5), -1.0);
         assert_eq!(floor(1e300), 1e300);
     }
 }

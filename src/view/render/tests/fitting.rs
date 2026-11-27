@@ -14,14 +14,14 @@ fn the_line_fits_in_80_columns() {
 #[test]
 fn the_reset_times_go_first_then_the_effort_then_the_bar_width_then_the_ctx() {
     let text = |columns| glyphs(&fitted(columns, None));
-    let bar = "\u{25A0}".repeat(8);
-    assert!(text(84).contains("1h00"), "{}", text(84));
-    let no_resets = text(83);
+    let bar = "\u{2501}".repeat(8);
+    assert!(text(116).contains("1h00"), "{}", text(116));
+    let no_resets = text(115);
     assert!(!no_resets.contains("1h00"), "{}", no_resets);
     assert!(no_resets.contains(":high"), "{}", no_resets);
-    let no_effort = text(70);
+    let no_effort = text(103);
     assert!(!no_effort.contains(":high"), "{}", no_effort);
-    let tinted = fitted(70, None);
+    let tinted = fitted(103, None);
     assert!(tinted.contains("[#f59b46]O"), "{}", tinted);
     assert!(no_effort.contains(&bar), "{}", no_effort);
     let narrow = text(60);

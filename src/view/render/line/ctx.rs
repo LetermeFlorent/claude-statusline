@@ -1,4 +1,4 @@
-use super::{lerp, rgb, Out};
+use super::Out;
 use crate::config::{Rgb, HOT_SYS, WARN_SYS};
 use crate::messages;
 use crate::render::text::{pct_text, tokens, whole, PERCENT_SCALE};
@@ -45,17 +45,11 @@ impl Out<'_> {
     }
 
     fn ctx_bar(&mut self, pct: Option<f64>) -> Option<Rgb> {
-        let (from, to) = (self.col.ctx_from, self.col.ctx_to);
-        let span = if self.layout.width > 1 {
-            (self.layout.width - 1) as f64
-        } else {
-            1.0
+        let color = match pct {
+            Some(p) if whole(p) >= self.cfg.ctx_hot => HOT_SYS,
+            Some(p) if whole(p) >= self.cfg.ctx_warn => WARN_SYS,
+            _ => self.col.ctx_from,
         };
-        let grad = self.cfg.grad_sys;
-        match pct {
-            Some(p) if whole(p) >= self.cfg.ctx_hot => self.gradient_bar(pct, HOT_SYS, grad),
-            Some(p) if whole(p) >= self.cfg.ctx_warn => self.gradient_bar(pct, WARN_SYS, grad),
-            _ => self.bar(pct, &|i, _| rgb(lerp(from, to, i as f64 / span))),
-        }
+        self.bar(pct, color)
     }
 }

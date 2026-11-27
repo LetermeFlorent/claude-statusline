@@ -19,5 +19,4 @@ pub struct Colors {
     pub ink: Option<Rgb>,
     pub empty: Rgb,
     pub ctx_from: Rgb,
-    pub ctx_to: Rgb,
 }

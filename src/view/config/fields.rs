@@ -10,10 +10,6 @@ type Flag = (Path, fn(&mut Config, bool));
 type Number = (Path, fn(&mut Config, f64));
 type Text = (Path, fn(&mut Config, &str));
 
-fn unit(v: f64) -> f64 {
-    num::clamp(v, 0.0, 1.0)
-}
-
 fn bar_width(config: &mut Config, v: f64) {
     config.width = (num::trunc(v) as i64).clamp(1, 40) as usize;
 }
@@ -35,11 +31,8 @@ const FLAGS: [Flag; 8] = [
     (&["system", "enabled"], |c, v| c.sys_enabled = v),
 ];
 
-const NUMBERS: [Number; 10] = [
+const NUMBERS: [Number; 7] = [
     (&["bar_width"], bar_width),
-    (&["gradient", "5h"], |c, v| c.grad_5h = unit(v)),
-    (&["gradient", "7d"], |c, v| c.grad_7d = unit(v)),
-    (&["system", "gradient"], |c, v| c.grad_sys = unit(v)),
     (&["thresholds", "ctx_warn"], |c, v| c.ctx_warn = v),
     (&["thresholds", "ctx_hot"], |c, v| c.ctx_hot = v),
     (&["thresholds", "quota_warn"], |c, v| c.quota_warn = v),
@@ -48,13 +41,12 @@ const NUMBERS: [Number; 10] = [
     (&["thresholds", "system_hot"], |c, v| c.sys_hot = v),
 ];
 
-const TEXTS: [Text; 7] = [
+const TEXTS: [Text; 6] = [
     (&["terminal_background"], |c, v| {
         c.light_override = background_word(v)
     }),
     (&["glyphs", "filled"], |c, v| c.filled = printable(v)),
     (&["glyphs", "empty"], |c, v| c.empty = printable(v)),
-    (&["glyphs", "half"], |c, v| c.half = printable(v)),
     (&["auto_compact_marker"], |c, v| c.marker = printable(v)),
     (&["effort_style"], |c, v| {
         c.effort_flat = by_name(&EFFORT_NAMES, v) == Some(true)

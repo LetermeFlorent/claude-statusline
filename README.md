@@ -3,15 +3,15 @@
 A status line for Claude Code on Windows, Linux and macOS. It takes two lines: the first follows the session (context, 5-hour and 7-day quotas, model and effort), the second follows the machine (RAM, disk activity, CPU).
 
 ```
-ctx ■■▪■■■■■ 340k/1M | 5h ■■■■■■■■ 36% 3h29m | 7d ■■■■■■■■ 61% 3d16h | Opus 5:max
-ram ■■■■■■■■ 11.3/15.3G | C: ▪■■■■■■■ 2% | cpu ▪■■■■■■■ 8%
+ctx ━━━━━╌╌╌╌╌╌╌╌╌╌╌ 340k/1M | 5h  ━━━━━━╌╌╌╌╌╌╌╌╌╌    36% 3h29m | 7d  ━━━━━━━━━━╌╌╌╌╌╌    61% 3d16h | Opus 5:max
+ram ━━━━━━━━━━━━╌╌╌╌ 11.3/15.3G | C: ━╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌   2% | cpu ━╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌   8%
 ```
 
 It is a small Rust program with no runtime dependencies: its only library, used to check the signature of updates, is built into the binary. Claude Code runs it every 3 seconds through the `statusLine` setting: it reads the session JSON on standard input, writes the bar on standard output and exits. A refresh takes a few milliseconds, most of it process start-up, and the binary weighs from 200 to 700 KB depending on the system: [Size and speed](#size-and-speed) gives the figures and says what each one measures. The program can update itself from the GitHub releases, an option that is on by default and installs only releases whose signature checks out. The technical details (terminal detection, state file format, environment variables, build and CI) are in the [technical reference](docs/reference.md). When the bar does not show or shows something odd, start with the [troubleshooting list](INSTALL.md#troubleshooting).
 
 ## Platforms and requirements
 
-Released binaries exist for Windows 10 or later (x86_64 and arm64), Linux (x86_64 and arm64, static) and macOS (Apple silicon and Intel). Other Unix systems build from the sources but show no machine metrics (see [Limits](#limits)). You need Claude Code, and Rust only to compile the program yourself. The terminal has to draw the Unicode squares `■` and `▪`, or take the ASCII set shown in [INSTALL.md](INSTALL.md#configuring-the-look); 24-bit colors are used when the terminal announces them, 256 colors otherwise. The `5h` and `7d` quotas are those of the Claude.ai Pro and Max plans, see [5-hour and 7-day quotas](#5-hour-and-7-day-quotas).
+Released binaries exist for Windows 10 or later (x86_64 and arm64), Linux (x86_64 and arm64, static) and macOS (Apple silicon and Intel). Other Unix systems build from the sources but show no machine metrics (see [Limits](#limits)). You need Claude Code, and Rust only to compile the program yourself. The terminal has to draw the Unicode lines `━` and `╌`, or take the ASCII set shown in [INSTALL.md](INSTALL.md#configuring-the-look); 24-bit colors are used when the terminal announces them, 256 colors otherwise. The `5h` and `7d` quotas are those of the Claude.ai Pro and Max plans, see [5-hour and 7-day quotas](#5-hour-and-7-day-quotas).
 
 ## Install
 
@@ -61,15 +61,15 @@ Token counts are written as they are below 1000, then in `k`, `M` and `B`, round
 
 A quota bar takes its hue from its level: the normal hue under 30%, the warning hue from 30%, the critical hue from 70%. For the 5-hour quota that is violet, then mauve, then raspberry red; for the 7-day quota, green, then ochre, then red. The machine metrics keep their own hue (teal for RAM, khaki for the disk, blue for the CPU) up to 70%, turn orange above it, then red above 85%.
 
-The `ctx` bar is the exception to what follows. Its gradient does not depend on the level: the first square takes the `from` color and the last one the `to` color (`colors.ctx_from_*` and `colors.ctx_to_*`), whatever the fill, and on both backgrounds it runs from a lighter to a deeper blue. From `thresholds.ctx_warn` it takes the orange of the machine metrics, and from `thresholds.ctx_hot` their red, with the gradient strength of `system.gradient`; `gradient.5h` and `gradient.7d` never apply to it.
+The `ctx` bar is the exception to what follows. Below `thresholds.ctx_warn` it is blue (`colors.ctx_from_light` and `colors.ctx_from_dark`), from `thresholds.ctx_warn` it takes the orange of the machine metrics, and from `thresholds.ctx_hot` their red.
 
-Within a quota or machine bar, the squares get slightly lighter from left to right on a dark background, and darker on a light one. Filling is computed to the half square: the last filled square takes the small glyph (`▪`) only when it is half full, and a bar at 100% is made of full squares. Any value above zero fills at least one square, half full when the value is under half a square. The full and the empty squares share the `■` glyph by default and differ by color alone; `glyphs.empty` gives the empty ones another glyph. When the value reaches 100%, the number is drawn in the color of its bar. Labels and numbers are bold and stay in the default color of the terminal, so they read on any background; only the bars follow the detected background. `colors.ink_light` and `colors.ink_dark` color them.
+Each bar is drawn in a single color, and its empty part is gray. A bar is 16 cells wide, the filled ones drawn with `━` and the empty ones with `╌`, and the percentage of a quota, of the disk or of the CPU is right-aligned after it. A value fills the cells it covers, rounded to the nearest cell, and any value above zero fills at least one. `glyphs.filled` and `glyphs.empty` change the two glyphs. When the value reaches 100%, the number is drawn in the color of its bar. Labels and numbers are bold and stay in the default color of the terminal, so they read on any background; only the bars follow the detected background. `colors.ink_light` and `colors.ink_dark` color them.
 
 ### When parts are hidden
 
 The `5h`, `7d` and `spend` segments stay hidden as long as no quota is known for the account, neither in the session JSON nor in the state file from the last 10 minutes. The second line disappears when `system.enabled` is `false`, or when the `system.metrics` list holds no known name. Each segment can also be hidden through the `segments` setting; with all four hidden, the first line stays empty. During an update, `update` shows at the end of the second line, or on a line of its own when the second line is turned off.
 
-When `COLUMNS` is set, the bar keeps each line within that many characters, less the 4 columns Claude Code leaves blank around the status line. It first drops the reset times of the `5h` and `7d` quotas, then the effort next to the model name, then narrows the bars one square at a time down to a single square, and last hides the `ctx` segment. With the default settings the sample line takes 85 characters; with `bar_width` at `4`, it fits in 80 characters with every detail. Without `COLUMNS`, nothing is dropped.
+When `COLUMNS` is set, the bar keeps each line within that many characters, less the 4 columns Claude Code leaves blank around the status line. It first drops the reset times of the `5h` and `7d` quotas, then the effort next to the model name, then narrows the bars one cell at a time down to a single cell, and last hides the `ctx` segment. With the default settings the sample line takes 110 characters; with `bar_width` at `4`, it fits in 80 characters with every detail. Without `COLUMNS`, nothing is dropped.
 
 ## 5-hour and 7-day quotas
 
@@ -83,7 +83,7 @@ The `SessionStart` hook of [claude-account-menu](https://github.com/LetermeFlore
 
 ## Auto-compact threshold
 
-When an auto-compact threshold smaller than the context window is set, the `ctx` bar is measured against that threshold, the text becomes `used/threshold`, and a dimmed `ª` appears right before `ctx`, as in `ªctx ■■■■■■■■ 340k/400k`. The threshold is looked up in this order:
+When an auto-compact threshold smaller than the context window is set, the `ctx` bar is measured against that threshold, the text becomes `used/threshold`, and a dimmed `ª` appears right before `ctx`, as in `ªctx ━━━━━━━━━━━━━━╌╌ 340k/400k`. The threshold is looked up in this order:
 
 1. nothing at all when the `DISABLE_AUTO_COMPACT` environment variable is set to something other than empty, `0` or `false`;
 2. the `CLAUDE_CODE_AUTO_COMPACT_WINDOW` environment variable of the process, if it is a positive integer;
@@ -128,26 +128,23 @@ It is read again on every refresh. Its JSON may hold `//` and `/* */` comments, 
 | Key | Default | Effect |
 |---|---|---|
 | `terminal_background` | not set | `light`, `clair`, `dark` or `sombre` forces the background |
-| `bar_width` | `8` | squares per bar, from 1 to 40 |
+| `bar_width` | `16` | cells per bar, from 1 to 40 |
 | `bold` | `true` | `false` drops the bold from labels and numbers |
-| `glyphs.filled`, `glyphs.empty`, `glyphs.half` | `■`, `■`, `▪` | full square, empty square, half-filled last square |
+| `glyphs.filled`, `glyphs.empty` | `━`, `╌` | filled cell, empty cell |
 | `auto_compact_marker` | `ª` | auto-compact threshold marker, drawn dimmed right before `ctx`; empty to hide it |
 | `cold_cache_marker` | `false` | `true` adds `cold` (`froid` in French) after the `ctx` text when Claude Code reports `prompt_cache.warm` as `false`, meaning the next request will not reuse the prompt cache |
 | `effort_style` | `gradient` | `flat`, in any case, draws the effort in a single hue |
 | `segments.ctx`, `segments.5h`, `segments.7d`, `segments.spend`, `segments.model` | `true` | `false` hides the segment |
-| `gradient.5h`, `gradient.7d` | `0.55`, `0.3` | how strongly the bar lightens, from 0 to 1 |
-| `thresholds.ctx_warn`, `thresholds.ctx_hot` | `70`, `90` | percentages from which the context bar turns orange, then red (the blue gradient is kept below) |
+| `thresholds.ctx_warn`, `thresholds.ctx_hot` | `70`, `90` | percentages from which the context bar turns orange, then red (the bar is blue below) |
 | `thresholds.quota_warn`, `thresholds.quota_hot` | `30`, `70` | percentages from which a quota turns to warning, then critical |
 | `thresholds.system_warn`, `thresholds.system_hot` | `70`, `85` | percentages above which a machine metric turns to warning, then critical |
 | `palettes.5h.ok`, `.warn`, `.hot` | `#786EC8`, `#AA5AAF`, `#C83C5F` | hues of the 5-hour quota |
 | `palettes.7d.ok`, `.warn`, `.hot` | `#538977`, `#B88143`, `#B95555` | hues of the 7-day quota |
 | `colors.ink_light`, `colors.ink_dark` | not set | color of labels and numbers, on a light and on a dark background; unset, they keep the terminal's default color |
-| `colors.empty_light`, `colors.empty_dark` | `#C4C8CE`, `#55595F` | empty squares |
-| `colors.ctx_from_light`, `colors.ctx_to_light` | `#3D8BEB`, `#285AB4` | context gradient on a light background |
-| `colors.ctx_from_dark`, `colors.ctx_to_dark` | `#96CDFF`, `#4682DC` | context gradient on a dark background |
+| `colors.empty_light`, `colors.empty_dark` | `#C4C8CE`, `#55595F` | empty cells |
+| `colors.ctx_from_light`, `colors.ctx_from_dark` | `#3D8BEB`, `#96CDFF` | context bar below its thresholds, on a light and on a dark background |
 | `system.enabled` | `true` | `false` removes the second line |
 | `system.metrics` | `["ram", "io", "cpu"]` | metrics shown, in the order of the list: `ram`, `io` (or `dsk`) and `cpu`, in any case. A name listed twice counts once, and a list with no known name shows all three |
-| `system.gradient` | `0.45` | how strongly the bars of the second line lighten |
 | `system.disk_path` | `C:\` on Windows, `/` elsewhere | disk to watch |
 | `system.colors.ram.ok`, `.dsk.ok`, `.cpu.ok` | `#1E787D`, `#697855`, `#4F7FC4` | normal hue of each metric |
 | `system.colors.<metric>.warn`, `.hot` | `#BE823C`, `#C83C3C` | warning and critical hues |

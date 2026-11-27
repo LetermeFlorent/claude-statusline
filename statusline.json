@@ -1,21 +1,17 @@
 {
-  "bar_width": 8,
+  "bar_width": 16,
   "bold": true,
-  "glyphs": { "filled": "■", "empty": "■", "half": "▪" },
+  "glyphs": { "filled": "━", "empty": "╌" },
   "auto_compact_marker": "ª",
   "effort_style": "gradient",
   "segments": { "ctx": true, "5h": true, "7d": true, "model": true },
-  "gradient": { "5h": 0.55, "7d": 0.3 },
   "colors": {
     "ctx_from_light": "#3D8BEB",
-    "ctx_to_light": "#285AB4",
-    "ctx_from_dark": "#96CDFF",
-    "ctx_to_dark": "#4682DC"
+    "ctx_from_dark": "#96CDFF"
   },
   "system": {
     "enabled": true,
     "metrics": ["ram", "io", "cpu"],
-    "gradient": 0.45,
     "colors": {
       "ram": { "ok": "#1E787D" },
       "dsk": { "ok": "#697855" },

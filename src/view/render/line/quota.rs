@@ -3,6 +3,9 @@ use crate::messages;
 use crate::render::text::{quota_text, reset_text, tenth};
 use crate::render::Quota;
 
+const LABEL_FIELD: usize = 3;
+const QUOTA_FIELD: usize = 6;
+
 #[derive(Clone, Copy, PartialEq)]
 pub(super) enum QuotaWindow {
     FiveHour,
@@ -22,21 +25,24 @@ impl QuotaWindow {
 
 impl Out<'_> {
     pub(super) fn quota(&mut self, window: QuotaWindow, quota: Option<Quota>, now: f64) {
-        let (palette, gradient) = match window {
-            QuotaWindow::FiveHour | QuotaWindow::Spend => (self.cfg.pal_5h, self.cfg.grad_5h),
-            QuotaWindow::SevenDay => (self.cfg.pal_7d, self.cfg.grad_7d),
+        let palette = match window {
+            QuotaWindow::FiveHour | QuotaWindow::Spend => self.cfg.pal_5h,
+            QuotaWindow::SevenDay => self.cfg.pal_7d,
         };
         let quota = quota.unwrap_or_default();
         self.label(window.label());
+        for _ in window.label().chars().count()..LABEL_FIELD {
+            self.line.push(' ');
+        }
         self.line.push(' ');
-        let start = match quota.pct {
+        let color = match quota.pct {
             Some(p) if tenth(p) >= self.cfg.quota_hot => palette.hot,
             Some(p) if tenth(p) >= self.cfg.quota_warn => palette.warn,
             _ => palette.ok,
         };
-        let last = self.gradient_bar(quota.pct, start, gradient);
+        let last = self.bar(quota.pct, color);
         self.line.push(' ');
-        self.value(&quota_text(quota.pct), quota.pct, last);
+        self.percent(&quota_text(quota.pct), QUOTA_FIELD, quota.pct, last);
         if !self.layout.resets {
             return;
         }

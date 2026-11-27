@@ -28,11 +28,7 @@ pub const SETTINGS: Keys = &[
     ("bold", Kind::Flag),
     (
         "glyphs",
-        Kind::Object(&[
-            ("filled", Kind::Text),
-            ("empty", Kind::Text),
-            ("half", Kind::Text),
-        ]),
+        Kind::Object(&[("filled", Kind::Text), ("empty", Kind::Text)]),
     ),
     ("auto_compact_marker", Kind::Text),
     ("effort_style", Kind::Effort),
@@ -46,10 +42,6 @@ pub const SETTINGS: Keys = &[
             ("spend", Kind::Flag),
             ("model", Kind::Flag),
         ]),
-    ),
-    (
-        "gradient",
-        Kind::Object(&[("5h", Kind::Number), ("7d", Kind::Number)]),
     ),
     (
         "thresholds",
@@ -75,8 +67,6 @@ pub const SETTINGS: Keys = &[
             ("empty_dark", Kind::Color),
             ("ctx_from_light", Kind::Color),
             ("ctx_from_dark", Kind::Color),
-            ("ctx_to_light", Kind::Color),
-            ("ctx_to_dark", Kind::Color),
         ]),
     ),
     (
@@ -84,7 +74,6 @@ pub const SETTINGS: Keys = &[
         Kind::Object(&[
             ("enabled", Kind::Flag),
             ("metrics", Kind::List(&Kind::Metric)),
-            ("gradient", Kind::Number),
             ("disk_path", Kind::Text),
             (
                 "colors",

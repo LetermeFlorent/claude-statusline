@@ -54,7 +54,12 @@ fn the_spend_segment_is_drawn_like_a_quota() {
     let quota = bar(Some(only_5h), &data);
     let drawn = |text: &str, label: &str| {
         let from = text.find(label).unwrap() + label.len();
-        text[from..].split("63%").next().unwrap().to_string()
+        text[from..]
+            .split("63%")
+            .next()
+            .unwrap()
+            .trim_start()
+            .to_string()
     };
     assert_eq!(
         drawn(&text, "spend"),
